@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import multer from 'multer';
 import {
   getPool,
@@ -14,11 +14,11 @@ import {
   hashPassword,
   comparePassword,
   generateToken,
-  AuthenticatedRequest,
-  AuthUser,
+  type AuthenticatedRequest,
+  type AuthUser,
 } from './auth.ts';
-import { parseGRIFile, ParsedGRIStandard } from '../lib/griParser.ts';
-import { calculateAggregateScore, EvaluationRecord } from '../lib/scoring.ts';
+import { parseGRIFile, type ParsedGRIStandard } from '../lib/griParser.ts';
+import { calculateAggregateScore, type EvaluationRecord } from '../lib/scoring.ts';
 
 const router = express.Router();
 const upload = multer({
