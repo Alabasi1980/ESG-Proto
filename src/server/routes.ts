@@ -735,6 +735,614 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
 });
 
 // ----------------------------------------------------------------------
+// 6B. Evaluation Workflow (FIX BATCH 3)
+//
+// One evaluation per (client, item); one answer per (client, item,
+// department). Score scale: 0 = full gap, 50 = partial, 100 = no gap
+// (higher is better, never inverted). "Not evaluated" rows are excluded
+// from averages (never treated as zero); N/A rows are excluded from
+// averages and counters and always carry one of four stored reasons.
+// Submitted/approved answers are immutable except via appended revision
+// (PUT .../correct) — the answers correction-history trigger is the
+// backstop. Self-approval is forbidden.
+// ----------------------------------------------------------------------
+
+const EVALUATION_SCORES = [0, 50, 100] as const;
+
+const NA_REASONS = [
+  'not-applicable',
+  'legal-prohibitions',
+  'confidentiality-constraints',
+  'information-unavailable-incomplete',
+] as const;
+
+type QueueStatus = 'not_evaluated' | 'draft' | 'submitted' | 'approved' | 'returned' | 'not_applicable';
+
+function queueStatusFor(row: {
+  not_applicable?: boolean | null;
+  not_evaluated?: boolean | null;
+  evaluation_id?: string | null;
+  answer_status?: string | null;
+}): QueueStatus {
+  if (row.not_applicable) return 'not_applicable';
+  if (row.not_evaluated || !row.evaluation_id) return 'not_evaluated';
+  const s = row.answer_status;
+  if (s === 'submitted' || s === 'approved' || s === 'returned') return s;
+  return 'draft';
+}
+
+/** Tenant scope for evaluation endpoints. ge_admin may name a client explicitly. */
+function evalClientScope(user: AuthUser, explicit?: unknown): string | null {
+  if (typeof explicit === 'string' && explicit.trim()) {
+    if (user.role !== 'ge_admin' && explicit.trim() !== user.clientId) {
+      return null; // cross-tenant access — caller rejects with 403
+    }
+    return explicit.trim();
+  }
+  return user.clientId ?? null;
+}
+
+/**
+ * Department scope for evaluation reads/writes. Employees are pinned to
+ * their own department: naming any other department is a 403, not a filter.
+ */
+function evalDepartmentScope(user: AuthUser, explicit?: unknown): { departmentId: string } | { error: string } {
+  const named = typeof explicit === 'string' && explicit.trim() ? explicit.trim() : null;
+  if (user.role === 'employee') {
+    if (!user.departmentId) return { error: 'Your user account has no department assignment.' };
+    if (named && named !== user.departmentId) {
+      return { error: 'Employees may only access items assigned to their own department.' };
+    }
+    return { departmentId: user.departmentId };
+  }
+  if (named) return { departmentId: named };
+  if (user.departmentId) return { departmentId: user.departmentId };
+  return { error: 'A departmentId is required for this operation.' };
+}
+
+/**
+ * Loads an evaluation plus its draft answer row. The answer row is the one
+ * the evaluator wrote (submitted_by = evaluator_id): drafts are filed under
+ * an explicit department, which need not equal the evaluator's own
+ * department (tenant admins may draft on a department's behalf).
+ */
+async function loadEvaluationWithAnswer(
+  db: { query: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount: number | null }> },
+  evaluationId: string
+): Promise<{ evaluation: any; answer: any | null; evaluatorDepartmentId: string | null }> {
+  const evalRes = await db.query('SELECT * FROM evaluations WHERE id = $1', [evaluationId]);
+  if (!evalRes.rows[0]) {
+    throw Object.assign(new Error('Evaluation not found.'), { statusCode: 404 });
+  }
+  const evaluation = evalRes.rows[0];
+  const ansRes = await db.query(
+    'SELECT * FROM answers WHERE client_id = $1 AND item_id = $2 AND submitted_by = $3',
+    [evaluation.client_id, evaluation.item_id, evaluation.evaluator_id]
+  );
+  const answer: any | null = ansRes.rows[0] ?? null;
+  return { evaluation, answer, evaluatorDepartmentId: answer?.department_id ?? null };
+}
+
+// A1. Department queue: items assigned to the caller's department with
+// current evaluation + answer state. Employees are pinned to their own
+// department; client_admin sees the tenant queue (optional departmentId
+// filter); ge_admin sees all (optional clientId + departmentId filters).
+router.get('/queue', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const namedDept = typeof req.query.departmentId === 'string' && req.query.departmentId.trim()
+      ? req.query.departmentId.trim()
+      : null;
+    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim()
+      ? req.query.clientId.trim()
+      : null;
+
+    if (user.role === 'employee' && !user.departmentId) {
+      return res.status(400).json({ error: 'Your user account has no department assignment.' });
+    }
+    if (user.role === 'employee' && namedDept && namedDept !== user.departmentId) {
+      return res.status(403).json({ error: 'Employees may only access items assigned to their own department.' });
+    }
+    if (user.role === 'client_admin' && namedClient && namedClient !== user.clientId) {
+      return res.status(403).json({ error: 'Client administrators may only access their own tenant queue.' });
+    }
+    if (!user.clientId && user.role !== 'ge_admin') {
+      return res.status(400).json({ error: 'No tenant context for this user.' });
+    }
+
+    const deptFilter = user.role === 'employee' ? user.departmentId! : namedDept;
+    const clientFilter = user.role === 'ge_admin' ? namedClient : null;
+
+    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+      const params: any[] = [];
+      let where = '';
+      if (deptFilter) {
+        params.push(deptFilter);
+        where += ` AND a.department_id = $${params.length}`;
+      }
+      if (clientFilter) {
+        params.push(clientFilter);
+        where += ` AND a.client_id = $${params.length}`;
+      }
+      const result = await client.query(
+        `SELECT i.id AS item_id, i.code, i.requirement, i.priority, i.weight,
+                i.esg_class, i.topic, i.objective,
+                d.code AS disclosure_code, d.title AS disclosure_title,
+                s.code AS standard_code, s.category AS pillar,
+                dep.id AS department_id, dep.code AS department_code, dep.name AS department_name,
+                e.id AS evaluation_id, e.score, e.not_evaluated, e.not_applicable, e.na_reason,
+                e.justification, e.evaluator_id, e.previous_score, e.updated_at AS evaluation_updated_at,
+                ans.id AS answer_id, ans.status AS answer_status, ans.submitted_by AS answer_submitted_by,
+                ans.updated_at AS answer_updated_at
+         FROM assignments a
+         JOIN items i ON i.id = a.item_id
+         JOIN disclosures d ON d.id = i.disclosure_id
+         JOIN standards s ON s.id = d.standard_id
+         JOIN departments dep ON dep.id = a.department_id
+         LEFT JOIN evaluations e ON e.item_id = i.id AND e.client_id = a.client_id
+         LEFT JOIN answers ans ON ans.item_id = i.id AND ans.client_id = a.client_id
+                              AND ans.department_id = a.department_id
+         WHERE 1 = 1${where}
+         ORDER BY s.code ASC, d.code ASC, i.code ASC`
+        ,
+        params
+      );
+      return result.rows.map((row) => ({ ...row, status: queueStatusFor(row) }));
+    });
+
+    res.json({ items: rows, count: rows.length });
+  } catch (err: any) {
+    console.error('Queue fetch error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch evaluation queue' });
+  }
+});
+
+// A2. Create-or-update DRAFT evaluation + answer in one transaction.
+// Body: exactly one of {score} XOR {notEvaluated:true} XOR {notApplicable:true, naReason}.
+router.post('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const body = req.body ?? {};
+    const { itemId, score, notEvaluated, notApplicable, naReason, evidenceNote } = body;
+
+    if (!itemId || typeof itemId !== 'string') {
+      return res.status(400).json({ error: 'itemId is required.' });
+    }
+
+    const modeCount = [
+      score !== undefined && score !== null,
+      notEvaluated === true,
+      notApplicable === true,
+    ].filter(Boolean).length;
+    if (modeCount !== 1) {
+      return res.status(400).json({
+        error: 'Provide exactly one of: a score (0, 50, or 100), notEvaluated: true, or notApplicable: true with an naReason.',
+      });
+    }
+
+    let finalScore: number | null = null;
+    let finalNotEvaluated = false;
+    let finalNotApplicable = false;
+    let finalNaReason: string | null = null;
+
+    if (score !== undefined && score !== null) {
+      if (!(EVALUATION_SCORES as readonly unknown[]).includes(score)) {
+        return res.status(400).json({ error: 'Score must be one of 0 (full gap), 50 (partial gap), or 100 (no gap).' });
+      }
+      finalScore = score;
+    } else if (notApplicable === true) {
+      finalNotApplicable = true;
+      if (typeof naReason !== 'string' || !(NA_REASONS as readonly string[]).includes(naReason)) {
+        return res.status(400).json({
+          error: `notApplicable requires an naReason, one of: ${NA_REASONS.join(', ')}.`,
+        });
+      }
+      finalNaReason = naReason;
+    } else {
+      finalNotEvaluated = true;
+    }
+
+    const clientId = evalClientScope(user, body.clientId);
+    if (!clientId) {
+      return res.status(403).json({ error: 'Cross-tenant evaluation writes are forbidden.' });
+    }
+    const deptScope = evalDepartmentScope(user, body.departmentId);
+    if ('error' in deptScope) {
+      return res.status(user.role === 'employee' ? 403 : 400).json({ error: deptScope.error });
+    }
+    const departmentId = deptScope.departmentId;
+    const note = typeof evidenceNote === 'string' ? evidenceNote : '';
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const assignRes = await client.query(
+        'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
+        [clientId, itemId, departmentId]
+      );
+      if ((assignRes.rowCount ?? 0) === 0) {
+        throw Object.assign(new Error('This item is not assigned to the department.'), { statusCode: 403 });
+      }
+
+      const existingAnswer = await client.query(
+        'SELECT id, status FROM answers WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
+        [clientId, itemId, departmentId]
+      );
+      const currentStatus: string | undefined = existingAnswer.rows[0]?.status;
+      if (currentStatus === 'submitted' || currentStatus === 'approved') {
+        throw Object.assign(
+          new Error('This evaluation is already submitted. Post-submit changes must go through PUT /api/evaluations/:id/correct with a reason.'),
+          { statusCode: 409 }
+        );
+      }
+
+      const evalRes = await client.query(
+        `INSERT INTO evaluations (client_id, item_id, evaluator_id, score, not_evaluated, not_applicable, na_reason, justification)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (client_id, item_id) DO UPDATE SET
+           evaluator_id = EXCLUDED.evaluator_id,
+           score = EXCLUDED.score,
+           not_evaluated = EXCLUDED.not_evaluated,
+           not_applicable = EXCLUDED.not_applicable,
+           na_reason = EXCLUDED.na_reason,
+           justification = EXCLUDED.justification,
+           updated_at = NOW()
+         RETURNING *`,
+        [clientId, itemId, user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null]
+      );
+
+      // Draft upsert: never resets correction_history on conflict — the
+      // trigger guards submitted rows and history only ever grows via A5.
+      const ansRes = await client.query(
+        `INSERT INTO answers (client_id, item_id, department_id, submitted_by, status, value, correction_history)
+         VALUES ($1, $2, $3, $4, 'draft', $5, '[]'::jsonb)
+         ON CONFLICT (client_id, item_id, department_id) DO UPDATE SET
+           value = EXCLUDED.value,
+           status = 'draft',
+           submitted_by = EXCLUDED.submitted_by,
+           updated_at = NOW()
+         RETURNING *`,
+        [clientId, itemId, departmentId, user.id, note]
+      );
+
+      await recordAuditLog(client, {
+        clientId,
+        userId: user.id,
+        action: 'EVALUATION_DRAFT_SAVED',
+        entityType: 'evaluations',
+        entityId: evalRes.rows[0].id,
+        payload: {
+          itemId,
+          departmentId,
+          score: finalScore,
+          notEvaluated: finalNotEvaluated,
+          notApplicable: finalNotApplicable,
+          naReason: finalNaReason,
+        },
+      });
+
+      return { evaluation: evalRes.rows[0], answer: ansRes.rows[0] };
+    });
+
+    res.status(201).json(result);
+  } catch (err: any) {
+    console.error('Evaluation save error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to save evaluation draft' });
+  }
+});
+
+// A3. Submit a draft evaluation. Double submit is refused (409).
+router.post('/evaluations/:id/submit', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const evaluationId = req.params.id;
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+
+      if (user.role === 'employee' && user.id !== evaluation.evaluator_id) {
+        throw Object.assign(new Error('Only the evaluator or a tenant administrator may submit this evaluation.'), {
+          statusCode: 403,
+        });
+      }
+      if (!answer) {
+        throw Object.assign(new Error('No draft answer exists for this evaluation yet. Save a draft first.'), {
+          statusCode: 400,
+        });
+      }
+      if (answer.status === 'submitted' || answer.status === 'approved') {
+        throw Object.assign(new Error('This evaluation has already been submitted.'), { statusCode: 409 });
+      }
+
+      const updRes = await client.query(
+        `UPDATE answers SET status = 'submitted', updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [answer.id]
+      );
+
+      await recordAuditLog(client, {
+        clientId: evaluation.client_id,
+        userId: user.id,
+        action: 'EVALUATION_SUBMITTED',
+        entityType: 'evaluations',
+        entityId: evaluation.id,
+        payload: { itemId: evaluation.item_id, answerId: answer.id },
+      });
+
+      return { evaluation, answer: updRes.rows[0] };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('Evaluation submit error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to submit evaluation' });
+  }
+});
+
+// A4. Approve / return a submitted evaluation (admins only, never self).
+async function handleEvaluationDecision(
+  req: AuthenticatedRequest,
+  res: Response,
+  decision: 'approve' | 'return'
+) {
+  try {
+    const user = req.user!;
+    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
+      return res.status(403).json({ error: 'Only tenant or platform administrators may approve or return evaluations.' });
+    }
+    const evaluationId = req.params.id;
+    const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+    if (decision === 'return' && !comment) {
+      return res.status(400).json({ error: 'A return comment is required so the department knows what to rework.' });
+    }
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+
+      if (user.id === evaluation.evaluator_id || (answer && user.id === answer.submitted_by)) {
+        throw Object.assign(new Error('Self-approval is forbidden: the approver must differ from the evaluator and the submitter.'), {
+          statusCode: 403,
+        });
+      }
+      if (!answer || answer.status !== 'submitted') {
+        throw Object.assign(new Error('Only a submitted evaluation can be approved or returned.'), { statusCode: 409 });
+      }
+
+      const nextStatus = decision === 'approve' ? 'approved' : 'returned';
+      const approvalStatus = decision === 'approve' ? 'approved' : 'rejected';
+      const level = user.role === 'ge_admin' ? 'ge' : 'client';
+
+      const updRes = await client.query(
+        `UPDATE answers SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+        [nextStatus, answer.id]
+      );
+      const apprRes = await client.query(
+        `INSERT INTO approvals (client_id, answer_id, approver_id, level, status, comments)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [evaluation.client_id, answer.id, user.id, level, approvalStatus, comment || null]
+      );
+
+      await recordAuditLog(client, {
+        clientId: evaluation.client_id,
+        userId: user.id,
+        action: decision === 'approve' ? 'EVALUATION_APPROVED' : 'EVALUATION_RETURNED',
+        entityType: 'evaluations',
+        entityId: evaluation.id,
+        payload: { itemId: evaluation.item_id, answerId: answer.id, comment: comment || null },
+      });
+
+      return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('Evaluation decision error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to record evaluation decision' });
+  }
+}
+
+router.post('/evaluations/:id/approve', authMiddleware, (req: AuthenticatedRequest, res: Response) =>
+  handleEvaluationDecision(req, res, 'approve')
+);
+
+router.post('/evaluations/:id/return', authMiddleware, (req: AuthenticatedRequest, res: Response) =>
+  handleEvaluationDecision(req, res, 'return')
+);
+
+// A5. Post-submit correction: appended revision only. Requires a reason;
+// grows answers.correction_history (trigger-enforced) and stamps
+// evaluations.previous_score. Drafts must use POST /api/evaluations.
+router.put('/evaluations/:id/correct', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const evaluationId = req.params.id;
+    const body = req.body ?? {};
+    const { newScore, notEvaluated, notApplicable, naReason, reason } = body;
+
+    if (typeof reason !== 'string' || !reason.trim()) {
+      return res.status(400).json({ error: 'A correction reason is required.' });
+    }
+    const modeCount = [
+      newScore !== undefined && newScore !== null,
+      notEvaluated === true,
+      notApplicable === true,
+    ].filter(Boolean).length;
+    if (modeCount !== 1) {
+      return res.status(400).json({
+        error: 'Provide exactly one corrected outcome: newScore, notEvaluated: true, or notApplicable: true with naReason.',
+      });
+    }
+
+    let afterScore: number | null = null;
+    let afterNotEvaluated = false;
+    let afterNotApplicable = false;
+    let afterNaReason: string | null = null;
+    if (newScore !== undefined && newScore !== null) {
+      if (!(EVALUATION_SCORES as readonly unknown[]).includes(newScore)) {
+        return res.status(400).json({ error: 'newScore must be one of 0 (full gap), 50 (partial gap), or 100 (no gap).' });
+      }
+      afterScore = newScore;
+    } else if (notApplicable === true) {
+      afterNotApplicable = true;
+      if (typeof naReason !== 'string' || !(NA_REASONS as readonly string[]).includes(naReason)) {
+        return res.status(400).json({
+          error: `notApplicable requires an naReason, one of: ${NA_REASONS.join(', ')}.`,
+        });
+      }
+      afterNaReason = naReason;
+    } else {
+      afterNotEvaluated = true;
+    }
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+
+      const isEvaluator = user.id === evaluation.evaluator_id;
+      const isAdmin = user.role === 'client_admin' || user.role === 'ge_admin';
+      if (!isEvaluator && !isAdmin) {
+        throw Object.assign(new Error('Only the evaluator or a tenant administrator may correct this evaluation.'), {
+          statusCode: 403,
+        });
+      }
+      if (!answer || (answer.status !== 'submitted' && answer.status !== 'approved')) {
+        throw Object.assign(
+          new Error('Only a submitted or approved evaluation can be corrected. Edit the draft instead.'),
+          { statusCode: 409 }
+        );
+      }
+
+      const before = {
+        score: evaluation.score,
+        notEvaluated: evaluation.not_evaluated,
+        notApplicable: evaluation.not_applicable,
+        naReason: evaluation.na_reason,
+      };
+      const after = {
+        score: afterScore,
+        notEvaluated: afterNotEvaluated,
+        notApplicable: afterNotApplicable,
+        naReason: afterNaReason,
+      };
+
+      const evalRes = await client.query(
+        `UPDATE evaluations
+         SET score = $1, not_evaluated = $2, not_applicable = $3, na_reason = $4,
+             previous_score = score, updated_at = NOW()
+         WHERE id = $5 RETURNING *`,
+        [afterScore, afterNotEvaluated, afterNotApplicable, afterNaReason, evaluation.id]
+      );
+
+      const historyEntry = [{ before, after, actor: user.id, reason: reason.trim(), at: new Date().toISOString() }];
+      const ansRes = await client.query(
+        `UPDATE answers
+         SET correction_history = COALESCE(correction_history, '[]'::jsonb) || $1::jsonb,
+             updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [JSON.stringify(historyEntry), answer.id]
+      );
+
+      await recordAuditLog(client, {
+        clientId: evaluation.client_id,
+        userId: user.id,
+        action: 'EVALUATION_CORRECTED',
+        entityType: 'evaluations',
+        entityId: evaluation.id,
+        payload: { itemId: evaluation.item_id, answerId: answer.id, before, after, actor: user.id, reason: reason.trim() },
+      });
+
+      return { evaluation: evalRes.rows[0], answer: ansRes.rows[0], before, after };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('Evaluation correction error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to correct evaluation' });
+  }
+});
+
+// A6. Full history for one item: current evaluation + answers in scope +
+// related audit_log revision entries (submit / approve / return / correct).
+router.get('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const itemId = req.query.itemId;
+    if (!itemId || typeof itemId !== 'string') {
+      return res.status(400).json({ error: 'itemId query parameter is required.' });
+    }
+
+    const clientId = evalClientScope(user, req.query.clientId);
+    if (!clientId && user.role !== 'ge_admin') {
+      return res.status(400).json({ error: 'No tenant context for this user.' });
+    }
+    if (user.role === 'employee') {
+      if (!user.departmentId) {
+        return res.status(400).json({ error: 'Your user account has no department assignment.' });
+      }
+      const namedDept = typeof req.query.departmentId === 'string' && req.query.departmentId.trim()
+        ? req.query.departmentId.trim()
+        : null;
+      if (namedDept && namedDept !== user.departmentId) {
+        return res.status(403).json({ error: 'Employees may only access items assigned to their own department.' });
+      }
+    }
+
+    const data = await withTenantContext(contextFromUser(user), async (client) => {
+      const itemRes = await client.query(
+        `SELECT i.id, i.code, i.requirement, i.priority, i.weight, i.esg_class, i.topic,
+                d.code AS disclosure_code, s.code AS standard_code
+         FROM items i
+         JOIN disclosures d ON d.id = i.disclosure_id
+         JOIN standards s ON s.id = d.standard_id
+         WHERE i.id = $1`,
+        [itemId]
+      );
+      if (!itemRes.rows[0]) {
+        throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+      }
+
+      if (user.role === 'employee') {
+        const assignRes = await client.query(
+          'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
+          [clientId, itemId, user.departmentId]
+        );
+        if ((assignRes.rowCount ?? 0) === 0) {
+          throw Object.assign(new Error('This item is not assigned to your department.'), { statusCode: 403 });
+        }
+      }
+
+      const evalQuery = clientId
+        ? client.query('SELECT * FROM evaluations WHERE client_id = $1 AND item_id = $2', [clientId, itemId])
+        : client.query('SELECT * FROM evaluations WHERE item_id = $1', [itemId]);
+      const evalRes = await evalQuery;
+      const evaluation = evalRes.rows[0] ?? null;
+
+      const ansQuery = clientId
+        ? client.query('SELECT * FROM answers WHERE client_id = $1 AND item_id = $2 ORDER BY updated_at ASC', [clientId, itemId])
+        : client.query('SELECT * FROM answers WHERE item_id = $1 ORDER BY updated_at ASC', [itemId]);
+      const ansRes = await ansQuery;
+
+      let history: any[] = [];
+      if (evaluation) {
+        const histRes = await client.query(
+          `SELECT al.id, al.action, al.entity_type, al.entity_id, al.user_id,
+                  u.name AS actor_name, al.payload, al.created_at
+           FROM audit_log al
+           LEFT JOIN users u ON u.id = al.user_id
+           WHERE al.entity_type = 'evaluations' AND al.entity_id = $1
+           ORDER BY al.created_at ASC`,
+          [evaluation.id]
+        );
+        history = histRes.rows;
+      }
+
+      return { item: itemRes.rows[0], evaluation, answers: ansRes.rows, history };
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('Evaluation history error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch evaluation history' });
+  }
+});
+
+// ----------------------------------------------------------------------
 // 7. Clients & Departments (for Administration)
 // ----------------------------------------------------------------------
 router.get('/clients', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

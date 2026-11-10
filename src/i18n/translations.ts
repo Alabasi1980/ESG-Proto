@@ -168,6 +168,57 @@ export interface Translations {
     emptyTitle: string;
     emptyDescription: string;
     emptyAction: string;
+    queueTitle: string;
+    queueSubtitle: string;
+    emptyQueueTitle: string;
+    emptyQueueDesc: string;
+    selectPrompt: string;
+    priority: string;
+    pillar: string;
+    topic: string;
+    department: string;
+    stNotEvaluated: string;
+    stDraft: string;
+    stSubmitted: string;
+    stApproved: string;
+    stReturned: string;
+    stNotApplicable: string;
+    evaluateTitle: string;
+    scoreLabel: string;
+    score0: string;
+    score0Desc: string;
+    score50: string;
+    score50Desc: string;
+    score100: string;
+    score100Desc: string;
+    notEvalLabel: string;
+    notEvalDesc: string;
+    naLabel: string;
+    naDesc: string;
+    naReasonLabel: string;
+    naReasonOptions: Record<string, string>;
+    evidenceNoteLabel: string;
+    evidenceNotePh: string;
+    saveDraft: string;
+    submitEval: string;
+    saving: string;
+    submitting: string;
+    approvalTitle: string;
+    approvalDesc: string;
+    approveBtn: string;
+    returnBtn: string;
+    commentLabel: string;
+    commentPh: string;
+    selfApprovalNote: string;
+    decidedApproved: string;
+    decidedReturned: string;
+    historyTitle: string;
+    historyEmpty: string;
+    correctionTitle: string;
+    correctionDesc: string;
+    correctionReasonLabel: string;
+    correctionReasonPh: string;
+    applyCorrection: string;
   };
 
   settings: {
@@ -392,6 +443,62 @@ export const translations: Record<Language, Translations> = {
       emptyTitle: 'No Gap Assessments Active',
       emptyDescription: 'Import GRI standards to enable disclosure evaluations and gap scoring.',
       emptyAction: 'Go to GRI Import',
+      queueTitle: 'Department Evaluation Queue',
+      queueSubtitle: 'Items assigned to your department with live evaluation state',
+      emptyQueueTitle: 'No Items Assigned Yet',
+      emptyQueueDesc: 'There are no disclosure items assigned to your department. Import GRI data with department assignments to begin evaluations.',
+      selectPrompt: 'Select an item from the queue to evaluate it.',
+      priority: 'Priority',
+      pillar: 'Pillar',
+      topic: 'Topic',
+      department: 'Department',
+      stNotEvaluated: 'Not evaluated',
+      stDraft: 'Draft',
+      stSubmitted: 'Submitted',
+      stApproved: 'Approved',
+      stReturned: 'Returned',
+      stNotApplicable: 'N/A',
+      evaluateTitle: 'Evaluate Item',
+      scoreLabel: 'Gap score',
+      score0: '0 — Full gap',
+      score0Desc: 'Requirement not met at all',
+      score50: '50 — Partial gap',
+      score50Desc: 'Requirement partially met',
+      score100: '100 — No gap',
+      score100Desc: 'Requirement fully met',
+      notEvalLabel: 'Not evaluated',
+      notEvalDesc: 'Skip scoring for now; excluded from averages, never counted as zero',
+      naLabel: 'Not applicable',
+      naDesc: 'Excluded from averages and counters; a reason is stored',
+      naReasonLabel: 'N/A reason',
+      naReasonOptions: {
+        'not-applicable': 'Not applicable to this organization',
+        'legal-prohibitions': 'Legal prohibitions',
+        'confidentiality-constraints': 'Confidentiality constraints',
+        'information-unavailable-incomplete': 'Information unavailable / incomplete',
+      },
+      evidenceNoteLabel: 'Evidence note',
+      evidenceNotePh: 'Reference supporting evidence or system records...',
+      saveDraft: 'Save draft',
+      submitEval: 'Submit for approval',
+      saving: 'Saving...',
+      submitting: 'Submitting...',
+      approvalTitle: 'Approval',
+      approvalDesc: 'Review the submitted evaluation and approve or return it with a comment.',
+      approveBtn: 'Approve',
+      returnBtn: 'Return',
+      commentLabel: 'Comment',
+      commentPh: 'Decision comment (required when returning)...',
+      selfApprovalNote: 'You evaluated or submitted this item, so self-approval is not offered.',
+      decidedApproved: 'Approved',
+      decidedReturned: 'Returned for rework',
+      historyTitle: 'Revision history',
+      historyEmpty: 'No revisions recorded yet.',
+      correctionTitle: 'Post-submit correction',
+      correctionDesc: 'Submitted evaluations change only through an appended revision with a reason.',
+      correctionReasonLabel: 'Correction reason',
+      correctionReasonPh: 'Explain why the score changes...',
+      applyCorrection: 'Apply correction',
     },
 
     settings: {
@@ -615,6 +722,62 @@ export const translations: Record<Language, Translations> = {
       emptyTitle: 'لا توجد تقييمات فجوات نشطة',
       emptyDescription: 'قم باستيراد معايير GRI لتفعيل تقييمات الإفصاحات وحساب الفجوات.',
       emptyAction: 'الانتقال إلى استيراد GRI',
+      queueTitle: 'قائمة بنود التقييم للقسم',
+      queueSubtitle: 'البنود المسندة إلى قسمك مع حالة التقييم الحالية',
+      emptyQueueTitle: 'لا توجد بنود مسندة بعد',
+      emptyQueueDesc: 'لا توجد بنود إفصاح مسندة إلى قسمك. استورد بيانات GRI مع إسناد الأقسام لبدء التقييمات.',
+      selectPrompt: 'اختر بنداً من القائمة لتقييمه.',
+      priority: 'الأولوية',
+      pillar: 'الركيزة',
+      topic: 'الموضوع',
+      department: 'القسم',
+      stNotEvaluated: 'غير مُقيَّم',
+      stDraft: 'مسودة',
+      stSubmitted: 'مُرسَل',
+      stApproved: 'معتمَد',
+      stReturned: 'مُعاد',
+      stNotApplicable: 'غير مطبق',
+      evaluateTitle: 'تقييم البند',
+      scoreLabel: 'درجة الفجوة',
+      score0: '0 — فجوة كاملة',
+      score0Desc: 'المتطلب غير محقق إطلاقاً',
+      score50: '50 — فجوة جزئية',
+      score50Desc: 'المتطلب محقق جزئياً',
+      score100: '100 — بدون فجوة',
+      score100Desc: 'المتطلب محقق بالكامل',
+      notEvalLabel: 'غير مُقيَّم',
+      notEvalDesc: 'تخطَّ التسجيل مؤقتاً؛ يُستبعد من المتوسطات ولا يُحتسب صفراً أبداً',
+      naLabel: 'غير مطبق',
+      naDesc: 'يُستبعد من المتوسطات والعدادات؛ مع حفظ السبب',
+      naReasonLabel: 'سبب عدم الانطباق',
+      naReasonOptions: {
+        'not-applicable': 'غير منطبق على المنشأة',
+        'legal-prohibitions': 'موانع قانونية',
+        'confidentiality-constraints': 'قيود السرية',
+        'information-unavailable-incomplete': 'المعلومات غير متوفرة / غير مكتملة',
+      },
+      evidenceNoteLabel: 'ملاحظة الدليل',
+      evidenceNotePh: 'اذكر الأدلة الداعمة أو السجلات المرجعية...',
+      saveDraft: 'حفظ مسودة',
+      submitEval: 'إرسال للاعتماد',
+      saving: 'جارٍ الحفظ...',
+      submitting: 'جارٍ الإرسال...',
+      approvalTitle: 'الاعتماد',
+      approvalDesc: 'راجع التقييم المرسل ثم اعتمده أو أعده مع تعليق.',
+      approveBtn: 'اعتماد',
+      returnBtn: 'إعادة',
+      commentLabel: 'التعليق',
+      commentPh: 'تعليق القرار (مطلوب عند الإعادة)...',
+      selfApprovalNote: 'لقد قيّمت هذا البند أو أرسلته، لذا لا يُعرض الاعتماد الذاتي.',
+      decidedApproved: 'معتمَد',
+      decidedReturned: 'مُعاد للمعالجة',
+      historyTitle: 'سجل المراجعات',
+      historyEmpty: 'لا توجد مراجعات مسجلة بعد.',
+      correctionTitle: 'تصحيح بعد الإرسال',
+      correctionDesc: 'التقييمات المرسلة تتغير فقط عبر مراجعة مُلحقة مع ذكر السبب.',
+      correctionReasonLabel: 'سبب التصحيح',
+      correctionReasonPh: 'اشرح سبب تغير الدرجة...',
+      applyCorrection: 'تطبيق التصحيح',
     },
 
     settings: {
