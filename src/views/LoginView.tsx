@@ -8,10 +8,10 @@ import {
   UserPlus,
   Globe,
   Database,
-  Sparkles,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
-import { useAuth, AuthUser } from '../context/AuthContext.tsx';
+import { useAuth } from '../context/AuthContext.tsx';
+import { DemoBanner } from '../components/DemoBanner.tsx';
 
 interface LoginViewProps {
   onSwitchToSetup: () => void;
@@ -73,20 +73,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
     }
   };
 
-  const handleExploreDemo = () => {
-    const previewUser: AuthUser = {
-      id: 'preview-consultant-id',
-      email: 'consultant@greenedge.io',
-      name: 'Sustainability Consultant',
-      role: 'ge_admin',
-      clientId: null,
-      clientName: 'GreenEdge Global (Consultant)',
-    };
-    login('preview-session-token', previewUser);
-  };
-
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-slate-100 relative">
+      <DemoBanner />
       {/* Language Switch top corner */}
       <div className="absolute top-6 end-6">
         <button
@@ -119,17 +108,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
                 <Database className="w-4 h-4 shrink-0" />
                 <span>{t.auth.dbUnconfiguredNotice}</span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
+              <p className="text-[11px] text-slate-400 leading-relaxed">
                 {t.auth.dbUnconfiguredHelp}
               </p>
-              <button
-                type="button"
-                onClick={handleExploreDemo}
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500 transition-colors shadow-xs"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{t.auth.exploreDemoMode}</span>
-              </button>
             </div>
           )}
 

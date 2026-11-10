@@ -69,7 +69,7 @@ async function startServer() {
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[GreenEdge Server] Full-stack ESG & GRI service running on http://0.0.0.0:${PORT}`);
+    console.log(`[ESG GRI Server] Full-stack ESG & GRI service running on http://0.0.0.0:${PORT}`);
   });
 
   server.on('error', (err: any) => {

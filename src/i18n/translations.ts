@@ -49,7 +49,6 @@ export interface Translations {
     tenant: string;
     department: string;
     notAssigned: string;
-    exploreDemoMode: string;
     dbUnconfiguredNotice: string;
     dbUnconfiguredHelp: string;
   };
@@ -220,14 +219,15 @@ export interface Translations {
     boolean: string;
     date: string;
     file: string;
+    demoBanner: string;
   };
 }
 
 export const translations: Record<Language, Translations> = {
   en: {
-    appName: 'GreenEdge ESG Platform',
+    appName: 'ESG GRI Platform',
     appTagline: 'Sustainability & GRI Reporting Management System',
-    brandGreenEdge: 'GreenEdge ESG',
+    brandGreenEdge: 'ESG GRI Platform',
 
     nav: {
       dashboard: 'Dashboard',
@@ -245,7 +245,7 @@ export const translations: Record<Language, Translations> = {
     },
 
     auth: {
-      signInTitle: 'Welcome to GreenEdge',
+      signInTitle: 'Welcome to ESG GRI Platform',
       signInSubtitle: 'Sign in to access your ESG & GRI compliance dashboard',
       emailLabel: 'Email Address',
       emailPlaceholder: 'user@company.com',
@@ -266,27 +266,26 @@ export const translations: Record<Language, Translations> = {
       passwordTooShort: 'New password must contain at least 6 characters.',
       role: 'Role',
       roles: {
-        ge_admin: 'GreenEdge Consultant Admin',
+        ge_admin: 'Platform Administrator',
         client_admin: 'Client Tenant Admin',
         employee: 'Department Employee',
       },
       tenant: 'Client Tenant',
       department: 'Department',
       notAssigned: 'Enterprise Level (Unrestricted)',
-      exploreDemoMode: 'Explore Platform & GRI Parser (Preview Mode)',
       dbUnconfiguredNotice: 'Live PostgreSQL connection (DATABASE_URL) is not yet set.',
-      dbUnconfiguredHelp: 'Set DATABASE_URL in your environment or .env file to persist records with Row-Level Security, or explore the UI and file parser preview right now.',
+      dbUnconfiguredHelp: 'Set DATABASE_URL in your environment or .env file to persist records with Row-Level Security.',
     },
 
     setup: {
-      title: 'Initialize GreenEdge ESG Platform',
+      title: 'Initialize ESG GRI Platform',
       subtitle: 'Create the initial administrator account and verify PostgreSQL database',
       adminName: 'Full Name',
       adminEmail: 'Administrator Email',
       adminPassword: 'Password',
       adminPasswordHint: 'Minimum 6 characters, must be kept secure',
       clientSectionTitle: 'Client Tenant Details (Optional)',
-      clientSectionDesc: 'Leave blank to initialize as a GreenEdge Consultant Super Admin, or enter company details to create the first client tenant.',
+      clientSectionDesc: 'Leave blank to initialize as a platform administrator, or enter company details to create the first client tenant.',
       clientName: 'Organization / Client Name',
       clientCode: 'Client Code (e.g. ACME-01)',
       submitButton: 'Initialize Platform & Create Account',
@@ -442,15 +441,16 @@ export const translations: Record<Language, Translations> = {
       text: 'Text',
       number: 'Number',
       boolean: 'Yes / No',
-      date: 'Date',
-      file: 'Document Attachment',
-    },
+        date: 'Date',
+        file: 'Document Attachment',
+        demoBanner: "Demo build — content is the client's own GRI workbook",
+      },
   },
 
   ar: {
-    appName: 'منصة جرين إيدج للاستدامة',
+    appName: 'منصة ESG GRI',
     appTagline: 'نظام إدارة الاستدامة وتقارير المبادرة العالمية للتقارير GRI',
-    brandGreenEdge: 'جرين إيدج للاستدامة',
+    brandGreenEdge: 'منصة ESG GRI',
 
     nav: {
       dashboard: 'لوحة المؤشرات',
@@ -468,7 +468,7 @@ export const translations: Record<Language, Translations> = {
     },
 
     auth: {
-      signInTitle: 'مرحباً بك في جرين إيدج',
+      signInTitle: 'مرحباً بك في منصة ESG GRI',
       signInSubtitle: 'سجّل الدخول للوصول إلى لوحة امتثال الاستدامة ومعايير GRI',
       emailLabel: 'البريد الإلكتروني',
       emailPlaceholder: 'user@company.com',
@@ -489,27 +489,26 @@ export const translations: Record<Language, Translations> = {
       passwordTooShort: 'يجب أن تتكون كلمة المرور الجديدة من 6 أحرف على الأقل.',
       role: 'الدور الوظيفي',
       roles: {
-        ge_admin: 'مدير استشاري جرين إيدج',
+        ge_admin: 'مدير المنصة',
         client_admin: 'مدير العميل (المستأجر)',
         employee: 'موظف القسم',
       },
       tenant: 'العميل المستأجر',
       department: 'القسم',
       notAssigned: 'مستوى المنشأة العام (شامل)',
-      exploreDemoMode: 'استكشاف المنصة ومحلل ملفات GRI (وضع المعاينة)',
       dbUnconfiguredNotice: 'اتصال PostgreSQL المباشر (DATABASE_URL) غير معين حتى الآن.',
-      dbUnconfiguredHelp: 'قم بتعيين DATABASE_URL في البيئة أو ملف .env لحفظ السجلات مع عزل RLS، أو استكشف الواجهة ومحلل الملفات الآن.',
+      dbUnconfiguredHelp: 'قم بتعيين DATABASE_URL في البيئة أو ملف .env لحفظ السجلات مع عزل RLS.',
     },
 
     setup: {
-      title: 'تهيئة منصة جرين إيدج للاستدامة',
+      title: 'تهيئة منصة ESG GRI',
       subtitle: 'إنشاء حساب المسؤول الرئيسي والتحقق من قاعدة بيانات PostgreSQL',
       adminName: 'الاسم الكامل',
       adminEmail: 'بريد المسؤول الإلكتروني',
       adminPassword: 'كلمة المرور',
       adminPasswordHint: '6 أحرف على الأقل، يجب الحفاظ على سريتها',
       clientSectionTitle: 'تفاصيل العميل المستأجر (اختياري)',
-      clientSectionDesc: 'اتركه فارغاً للتهيئة كمسؤول عام استشاري لجرين إيدج، أو أدخل بيانات المنشأة لإنشاء العميل الأول.',
+      clientSectionDesc: 'اتركه فارغاً للتهيئة كمدير للمنصة، أو أدخل بيانات المنشأة لإنشاء العميل الأول.',
       clientName: 'اسم المنشأة / العميل',
       clientCode: 'رمز العميل (مثال: ACME-01)',
       submitButton: 'تهيئة المنصة وإنشاء الحساب',
@@ -665,8 +664,9 @@ export const translations: Record<Language, Translations> = {
       text: 'نصي',
       number: 'رقمي',
       boolean: 'نعم / لا',
-      date: 'تاريخ',
-      file: 'مرفق مستند',
-    },
+        date: 'تاريخ',
+        file: 'مرفق مستند',
+        demoBanner: 'نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل',
+      },
   },
 };

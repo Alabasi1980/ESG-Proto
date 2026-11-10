@@ -768,7 +768,7 @@ router.post('/clients', authMiddleware, async (req: AuthenticatedRequest, res: R
   try {
     const user = req.user!;
     if (user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only GreenEdge Super Admins can create new client tenants.' });
+      return res.status(403).json({ error: 'Only platform administrators can create new client tenants.' });
     }
 
     const { code, name, industry, contactEmail } = req.body;

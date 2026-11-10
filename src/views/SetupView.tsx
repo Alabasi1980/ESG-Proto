@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldCheck, User, Mail, Lock, Building, AlertTriangle, ArrowLeft, RefreshCw, Globe } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth, AuthUser } from '../context/AuthContext.tsx';
+import { DemoBanner } from '../components/DemoBanner.tsx';
 
 interface SetupViewProps {
   onBackToLogin: () => void;
@@ -65,6 +66,7 @@ export const SetupView: React.FC<SetupViewProps> = ({ onBackToLogin }) => {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-slate-100 relative">
+      <DemoBanner />
       <div className="absolute top-6 end-6">
         <button
           onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
@@ -134,7 +136,7 @@ export const SetupView: React.FC<SetupViewProps> = ({ onBackToLogin }) => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@greenedge.io"
+                  placeholder="admin@company.com"
                   className="w-full ps-9 pe-4 py-2.5 rounded-xl text-xs bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                 />
               </div>

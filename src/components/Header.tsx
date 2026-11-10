@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, Globe, ShieldCheck, Database } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { DemoBanner } from './DemoBanner.tsx';
 import { ActiveTab } from './Sidebar.tsx';
 
 interface HeaderProps {
@@ -53,7 +54,9 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 transition-colors">
+    <div className="sticky top-0 z-30">
+      <DemoBanner />
+    <header className="flex items-center justify-between px-6 py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 transition-colors">
       <div className="flex items-center gap-4">
         {/* Mobile menu button */}
         <button
@@ -101,5 +104,6 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
     </header>
+    </div>
   );
 };

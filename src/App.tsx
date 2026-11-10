@@ -42,7 +42,7 @@ const MainApp: React.FC = () => {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
-          <span className="text-xs text-slate-400">Loading GreenEdge ESG Platform...</span>
+          <span className="text-xs text-slate-400">Loading ESG GRI Platform...</span>
         </div>
       </div>
     );
