@@ -1,0 +1,6 @@
+{
+  "name": "GreenEdge ESG & GRI Sustainability Platform",
+  "description": "Multi-tenant enterprise ESG & GRI sustainability consulting and compliance platform with PostgreSQL RLS, Arabic/English bilingual interface, and GRI disclosure import.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
