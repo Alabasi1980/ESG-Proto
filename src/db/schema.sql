@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS items (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- NOTE (fix batch 1): new item columns, the (disclosure_id, code) natural-key
+-- unique index, and the weight<->priority tie are applied idempotently in the
+-- "FIX BATCH 1" section at the end of this file. New code must not add plain
+-- ALTER TABLE ... ADD COLUMN here because this file is re-applied wholesale.
+
 -- 8. Client Services
 CREATE TABLE IF NOT EXISTS client_services (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -327,12 +332,14 @@ CREATE POLICY answers_isolation_policy ON answers
 
 -- 7. items RLS
 -- Department-specific items: If item has department_id, an employee can only see their department's items.
+-- NOTE (fix batch 1): the unauthenticated escape hatch
+-- (OR current_setting('app.current_user_role', true) IS NULL) was removed.
+-- Anonymous/empty-role sessions now only see global items (department_id IS NULL).
 DROP POLICY IF EXISTS items_isolation_policy ON items;
 CREATE POLICY items_isolation_policy ON items
   FOR ALL
   USING (
     current_setting('app.current_user_role', true) IN ('ge_admin', 'client_admin')
-    OR current_setting('app.current_user_role', true) IS NULL
     OR (
       department_id IS NULL
       OR department_id::text = current_setting('app.current_user_department_id', true)
@@ -398,3 +405,204 @@ CREATE POLICY audit_log_isolation_policy ON audit_log
     current_setting('app.current_user_role', true) = 'ge_admin'
     OR client_id::text = current_setting('app.current_tenant_id', true)
   );
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 1 (demo) — idempotent additions.
+-- This file is re-applied wholesale by runMigrations(), so every statement
+-- below must be safe to re-run: DO-blocks guarded by catalogue checks,
+-- CREATE ... IF NOT EXISTS, DROP ... IF EXISTS, or data repairs that are
+-- no-ops once applied. Do NOT add bare ALTER TABLE ... ADD COLUMN here.
+--------------------------------------------------------------------------------
+
+-- A1. items: new descriptive columns ---------------------------------------
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'objective') THEN
+    ALTER TABLE items ADD COLUMN objective TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'topic') THEN
+    ALTER TABLE items ADD COLUMN topic TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'reference') THEN
+    ALTER TABLE items ADD COLUMN reference TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'baseline_gap_percent') THEN
+    ALTER TABLE items ADD COLUMN baseline_gap_percent NUMERIC(5,2);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'baseline_note') THEN
+    ALTER TABLE items ADD COLUMN baseline_note TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'sort_order') THEN
+    ALTER TABLE items ADD COLUMN sort_order INTEGER;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'import_batch_id') THEN
+    ALTER TABLE items ADD COLUMN import_batch_id TEXT;
+  END IF;
+END $$;
+
+-- A1. items.baseline_gap_percent range check (NULL allowed; workbook col J is reference-only) --
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'items_baseline_gap_valid') THEN
+    ALTER TABLE items ADD CONSTRAINT items_baseline_gap_valid
+      CHECK (baseline_gap_percent IS NULL OR (baseline_gap_percent >= 0 AND baseline_gap_percent <= 100));
+  END IF;
+END $$;
+
+-- A1. One-time dedupe of legacy duplicate items (pre-upsert plain INSERTs).
+-- Preserves tenant data: children (answers/assignments/evaluations/actions) are
+-- repointed to the earliest-created keeper row; conflicting child duplicates
+-- keep the earliest row. No-op when no duplicates exist. Must run BEFORE the
+-- unique index below is created.
+DO $$ DECLARE
+  grp RECORD;
+  keeper_id UUID;
+  loser_id UUID;
+BEGIN
+  FOR grp IN SELECT disclosure_id AS d_id, code AS c_code FROM items GROUP BY disclosure_id, code HAVING COUNT(*) > 1 LOOP
+    SELECT id INTO keeper_id FROM items WHERE disclosure_id = grp.d_id AND code = grp.c_code ORDER BY created_at ASC, id ASC LIMIT 1;
+    FOR loser_id IN SELECT id FROM items WHERE disclosure_id = grp.d_id AND code = grp.c_code AND id <> keeper_id ORDER BY created_at ASC LOOP
+      -- assignments (UNIQUE client,item,dept): repoint non-conflicting, drop conflicting dupes
+      UPDATE assignments SET item_id = keeper_id WHERE item_id = loser_id
+        AND NOT EXISTS (SELECT 1 FROM assignments a2 WHERE a2.client_id = assignments.client_id AND a2.item_id = keeper_id AND a2.department_id = assignments.department_id);
+      DELETE FROM assignments WHERE item_id = loser_id;
+      -- answers (UNIQUE client,item,dept): same treatment
+      UPDATE answers SET item_id = keeper_id WHERE item_id = loser_id
+        AND NOT EXISTS (SELECT 1 FROM answers a2 WHERE a2.client_id = answers.client_id AND a2.item_id = keeper_id AND a2.department_id = answers.department_id);
+      DELETE FROM answers WHERE item_id = loser_id;
+      -- evaluations (UNIQUE client,item): same treatment
+      UPDATE evaluations SET item_id = keeper_id WHERE item_id = loser_id
+        AND NOT EXISTS (SELECT 1 FROM evaluations e2 WHERE e2.client_id = evaluations.client_id AND e2.item_id = keeper_id);
+      DELETE FROM evaluations WHERE item_id = loser_id;
+      -- actions: no uniqueness on item_id, repoint all
+      UPDATE actions SET item_id = keeper_id WHERE item_id = loser_id;
+      DELETE FROM items WHERE id = loser_id;
+    END LOOP;
+  END LOOP;
+END $$;
+
+-- A1. Natural key for import idempotency: one row per (disclosure, code) --
+CREATE UNIQUE INDEX IF NOT EXISTS ux_items_disclosure_code ON items(disclosure_id, code);
+
+-- A1. Weight tied to priority: normalise legacy weights first, then enforce.
+-- Legacy imports stored weights like 1.0/1.5/2.0 which violate the new domain;
+-- map them to the priority-derived value so the CHECK below can be added.
+UPDATE items SET weight = CASE priority WHEN 'high' THEN 3 WHEN 'low' THEN 1 ELSE 2 END
+  WHERE weight IS NULL OR weight NOT IN (1, 2, 3);
+
+ALTER TABLE items ALTER COLUMN weight SET DEFAULT 2;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'items_weight_valid') THEN
+    ALTER TABLE items ADD CONSTRAINT items_weight_valid CHECK (weight IN (1, 2, 3));
+  END IF;
+END $$;
+
+-- DB-level rule so even direct SQL complies: weight is always derived from priority.
+CREATE OR REPLACE FUNCTION enforce_item_weight_priority()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.weight := CASE NEW.priority WHEN 'high' THEN 3 WHEN 'low' THEN 1 ELSE 2 END;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_enforce_item_weight_priority ON items;
+CREATE TRIGGER trg_enforce_item_weight_priority
+BEFORE INSERT OR UPDATE OF priority, weight ON items
+FOR EACH ROW EXECUTE FUNCTION enforce_item_weight_priority();
+
+-- A2. disclosures.sort_order ------------------------------------------------
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'disclosures' AND column_name = 'sort_order') THEN
+    ALTER TABLE disclosures ADD COLUMN sort_order INTEGER;
+  END IF;
+END $$;
+
+-- A3. answers.status: extend to ('draft','submitted','approved','reopened','returned').
+-- The enforce_answer_correction_history trigger already references 'approved';
+-- extending the CHECK makes that previously-dead branch real.
+ALTER TABLE answers DROP CONSTRAINT IF EXISTS answers_status_check;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'answers_status_valid') THEN
+    ALTER TABLE answers ADD CONSTRAINT answers_status_valid
+      CHECK (status IN ('draft', 'submitted', 'approved', 'reopened', 'returned'));
+  END IF;
+END $$;
+
+-- A4. evaluations.na_reason + coherence ------------------------------------
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'evaluations' AND column_name = 'na_reason') THEN
+    ALTER TABLE evaluations ADD COLUMN na_reason TEXT;
+  END IF;
+END $$;
+
+-- One-time coherence repair so the CHECKs below can be added on legacy data:
+-- flagged-but-scored rows keep the flag and drop the score; free-text
+-- not_applicable rows without a reason get the neutral 'information-unavailable-incomplete'.
+UPDATE evaluations SET score = NULL WHERE (not_applicable OR not_evaluated) AND score IS NOT NULL;
+UPDATE evaluations SET na_reason = 'information-unavailable-incomplete' WHERE not_applicable AND na_reason IS NULL;
+UPDATE evaluations SET not_evaluated = true WHERE score IS NULL AND NOT not_evaluated AND NOT not_applicable;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'evaluations_na_reason_valid') THEN
+    ALTER TABLE evaluations ADD CONSTRAINT evaluations_na_reason_valid
+      CHECK (na_reason IS NULL OR na_reason IN ('not-applicable', 'legal-prohibitions', 'confidentiality-constraints', 'information-unavailable-incomplete'));
+  END IF;
+END $$;
+
+-- Exactly one of: scored XOR not_evaluated XOR not_applicable.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'evaluations_coherence_valid') THEN
+    ALTER TABLE evaluations ADD CONSTRAINT evaluations_coherence_valid
+      CHECK (((score IS NOT NULL)::int + (not_evaluated)::int + (not_applicable)::int) = 1);
+  END IF;
+END $$;
+
+-- not_applicable requires a reason; a flagged row must not carry a score.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'evaluations_na_reason_required') THEN
+    ALTER TABLE evaluations ADD CONSTRAINT evaluations_na_reason_required
+      CHECK (NOT not_applicable OR na_reason IS NOT NULL);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'evaluations_score_null_when_flagged') THEN
+    ALTER TABLE evaluations ADD CONSTRAINT evaluations_score_null_when_flagged
+      CHECK ((NOT not_applicable AND NOT not_evaluated) OR score IS NULL);
+  END IF;
+END $$;
+
+-- C. FORCE ROW LEVEL SECURITY so the table-owner connection cannot bypass RLS.
+-- (Policies above define ge_admin + tenant scoping; bootstrap/service reads run
+-- under an explicit ge_admin transaction context — see routes.ts.)
+ALTER TABLE clients FORCE ROW LEVEL SECURITY;
+ALTER TABLE departments FORCE ROW LEVEL SECURITY;
+ALTER TABLE users FORCE ROW LEVEL SECURITY;
+ALTER TABLE client_services FORCE ROW LEVEL SECURITY;
+ALTER TABLE assignments FORCE ROW LEVEL SECURITY;
+ALTER TABLE answers FORCE ROW LEVEL SECURITY;
+ALTER TABLE approvals FORCE ROW LEVEL SECURITY;
+ALTER TABLE evaluations FORCE ROW LEVEL SECURITY;
+ALTER TABLE actions FORCE ROW LEVEL SECURITY;
+ALTER TABLE profile_assessments FORCE ROW LEVEL SECURITY;
+ALTER TABLE report_settings FORCE ROW LEVEL SECURITY;
+ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
+ALTER TABLE items FORCE ROW LEVEL SECURITY;

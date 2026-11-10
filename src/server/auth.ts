@@ -2,7 +2,21 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'greenedge-esg-default-secret-2026';
+/**
+ * FAIL-CLOSED secret resolution (fix batch 1): the JWT secret comes ONLY
+ * from process.env.JWT_SECRET. There is no fallback/default — any signing or
+ * verification attempt without a configured secret throws, and server.ts
+ * refuses to boot when the variable is missing.
+ */
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim() === '') {
+    throw new Error(
+      'JWT_SECRET environment variable is not set. Set JWT_SECRET and restart the server — refusing to sign or verify tokens without it.'
+    );
+  }
+  return secret;
+}
 
 export interface AuthUser {
   id: string;
@@ -39,14 +53,14 @@ export function generateToken(user: AuthUser): string {
       name: user.name,
       role: user.role,
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '7d' }
   );
 }
 
 export function verifyToken(token: string): AuthUser | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as AuthUser;
+    return jwt.verify(token, getJwtSecret()) as AuthUser;
   } catch (err) {
     return null;
   }

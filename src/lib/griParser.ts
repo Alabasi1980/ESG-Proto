@@ -8,6 +8,23 @@ export interface ParsedGRIItem {
   priority: 'high' | 'mid' | 'low';
   esgClass: 'environmental' | 'social' | 'governance' | 'general';
   weight: number;
+  /** Owning department name as written in the workbook (optional column). */
+  department?: string;
+  /** Objective text (optional column). */
+  objective?: string;
+  /** Topic/theme text (optional column). */
+  topic?: string;
+  /** Reference/source text (optional column). */
+  reference?: string;
+  /**
+   * Workbook "% OF GAP" column (col J): REFERENCE-ONLY baseline stored on the
+   * item. Never pre-fills an evaluation. NULL when absent/invalid.
+   */
+  baselineGapPercent?: number | null;
+  /** Baseline note (optional column). */
+  baselineNote?: string;
+  /** Row sort order within the disclosure (optional column). */
+  sortOrder?: number | null;
 }
 
 export interface ParsedGRIDisclosure {
@@ -250,6 +267,55 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
     const answerType = inferAnswerType(normalized['answertype'] || normalized['type']);
     const hint = normalized['hint'] || normalized['guidance'] || undefined;
 
+    // Optional descriptive columns (absent in legacy sheets -> undefined, never breaks parse)
+    const department =
+      normalized['department'] ||
+      normalized['dept'] ||
+      normalized['ownerdepartment'] ||
+      normalized['responsibledepartment'] ||
+      normalized['departmentname'] ||
+      undefined;
+    const objective = normalized['objective'] || normalized['goal'] || undefined;
+    const topic = normalized['topic'] || normalized['theme'] || undefined;
+    const reference =
+      normalized['reference'] ||
+      normalized['ref'] ||
+      normalized['source'] ||
+      normalized['sourcereference'] ||
+      undefined;
+    const baselineNote =
+      normalized['baselinenote'] ||
+      normalized['gapnote'] ||
+      undefined;
+
+    // Workbook column J ("% OF GAP"): reference-only baseline for the item.
+    // Normalised keys: '% OF GAP' -> 'ofgap', 'GAP %' -> 'gap', etc.
+    const rawGap =
+      normalized['ofgap'] ??
+      normalized['gappercent'] ??
+      normalized['gap'] ??
+      normalized['baselinegap'] ??
+      normalized['baselinegappercent'] ??
+      '';
+    let baselineGapPercent: number | null | undefined;
+    if (rawGap !== '') {
+      const parsed = parseFloat(String(rawGap).replace('%', '').trim());
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+        baselineGapPercent = Math.round(parsed * 100) / 100;
+      } else {
+        warnings.push(`Row ${rowNum}: "% OF GAP" value "${rawGap}" is not a 0-100 percent; stored as NULL (reference-only, does not block import).`);
+        baselineGapPercent = undefined;
+      }
+    }
+
+    // Optional sort order within the disclosure
+    const rawOrder = normalized['sortorder'] || normalized['order'] || normalized['sequence'] || normalized['roworder'] || '';
+    let sortOrder: number | null | undefined;
+    if (rawOrder !== '') {
+      const parsed = parseInt(String(rawOrder), 10);
+      sortOrder = !isNaN(parsed) ? parsed : undefined;
+    }
+
     const item: ParsedGRIItem = {
       code: itemCode,
       requirement: requirement || `Reporting requirement for ${disclosureCode || itemCode}`,
@@ -258,6 +324,13 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
       priority,
       esgClass,
       weight,
+      department: department ? department.trim() || undefined : undefined,
+      objective: objective ? objective.trim() || undefined : undefined,
+      topic: topic ? topic.trim() || undefined : undefined,
+      reference: reference ? reference.trim() || undefined : undefined,
+      baselineGapPercent: baselineGapPercent ?? null,
+      baselineNote: baselineNote ? baselineNote.trim() || undefined : undefined,
+      sortOrder: sortOrder ?? null,
     };
 
     disclosuresMap.get(discKey)!.items.push(item);

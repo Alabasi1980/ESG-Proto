@@ -8,6 +8,13 @@ import { runMigrations, isDatabaseConfigured } from './src/db/index.ts';
 
 dotenv.config();
 
+// FAIL CLOSED (fix batch 1): JWT_SECRET has no fallback anywhere. Refuse to
+// boot when it is missing instead of serving an insecure demo.
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
+  console.error('[Security] JWT_SECRET environment variable is not set. Refusing to boot.');
+  process.exit(1);
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
