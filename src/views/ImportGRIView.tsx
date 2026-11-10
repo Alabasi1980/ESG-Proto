@@ -44,6 +44,19 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // B1: platform admins target a tenant explicitly for the import.
+  const [tenants, setTenants] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [targetTenantId, setTargetTenantId] = useState<string>('');
+  const isGeAdmin = user?.role === 'ge_admin';
+
+  React.useEffect(() => {
+    if (!isGeAdmin || !token) return;
+    fetch('/api/clients', { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setTenants(Array.isArray(data) ? data : []))
+      .catch(() => setTenants([]));
+  }, [isGeAdmin, token]);
+
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
     setParsing(true);
@@ -99,15 +112,19 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
     setErrorMessage(null);
 
     try {
+      const body: { standards: ParsedGRIStandard[]; clientId?: string } = {
+        standards: parseResult.standards,
+      };
+      if (isGeAdmin && targetTenantId) {
+        body.clientId = targetTenantId;
+      }
       const res = await fetch('/api/gri/commit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: token ? `Bearer ${token}` : '',
         },
-        body: JSON.stringify({
-          standards: parseResult.standards,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -346,6 +363,30 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
               </button>
             </div>
           </div>
+
+          {/* B1: explicit target tenant for platform admins */}
+          {isGeAdmin && (
+            <div className="px-5 pb-5 -mt-3 bg-white dark:bg-slate-800 rounded-b-2xl border border-t-0 border-slate-200 dark:border-slate-700/60 shadow-xs">
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1.5">
+                {t.importGRI.targetTenantLabel}
+              </label>
+              <select
+                value={targetTenantId}
+                onChange={(e) => setTargetTenantId(e.target.value)}
+                className="w-full sm:max-w-sm px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="">{t.importGRI.selectTenantPlaceholder}</option>
+                {tenants.map((tn) => (
+                  <option key={tn.id} value={tn.id}>
+                    {tn.name} ({tn.code})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                {t.importGRI.targetTenantHint}
+              </p>
+            </div>
+          )}
 
           {/* Tab Navigation */}
           <div className="flex items-center border-b border-slate-200 dark:border-slate-700">

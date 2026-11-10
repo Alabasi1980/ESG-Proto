@@ -145,6 +145,9 @@ export interface Translations {
     noWarnings: string;
     selectFilePrompt: string;
     importingNotice: string;
+    targetTenantLabel: string;
+    targetTenantHint: string;
+    selectTenantPlaceholder: string;
   };
 
   standards: {
@@ -243,6 +246,29 @@ export interface Translations {
     securitySettings: string;
     updatePasswordButton: string;
     userProfile: string;
+  };
+
+  users: {
+    title: string;
+    subtitle: string;
+    listTitle: string;
+    emptyList: string;
+    emailLabel: string;
+    passwordLabel: string;
+    nameLabel: string;
+    roleLabel: string;
+    tenantLabel: string;
+    departmentLabel: string;
+    createButton: string;
+    creating: string;
+    deactivateButton: string;
+    reactivateButton: string;
+    deactivateConfirm: string;
+    activeLabel: string;
+    inactiveLabel: string;
+    createdSuccess: string;
+    tenantPlaceholder: string;
+    noTenantOption: string;
   };
 
   common: {
@@ -420,6 +446,9 @@ export const translations: Record<Language, Translations> = {
       noWarnings: 'All rows conform strictly to GRI schema requirements.',
       selectFilePrompt: 'Please select a spreadsheet or CSV file to inspect before committing.',
       importingNotice: 'Records are written to PostgreSQL within a single atomic database transaction.',
+      targetTenantLabel: 'Target tenant',
+      targetTenantHint: 'As platform admin, choose which tenant receives this import.',
+      selectTenantPlaceholder: 'Select a tenant…',
     },
 
     standards: {
@@ -523,6 +552,29 @@ export const translations: Record<Language, Translations> = {
       securitySettings: 'Account Security',
       updatePasswordButton: 'Update Password',
       userProfile: 'Current User Identity',
+    },
+
+    users: {
+      title: 'User Management',
+      subtitle: 'Create tenant users and deactivate accounts (accounts are never deleted)',
+      listTitle: 'Users',
+      emptyList: 'No users found.',
+      emailLabel: 'Email',
+      passwordLabel: 'Password (min 6 characters)',
+      nameLabel: 'Full name',
+      roleLabel: 'Role',
+      tenantLabel: 'Tenant',
+      departmentLabel: 'Department',
+      createButton: 'Create user',
+      creating: 'Creating…',
+      deactivateButton: 'Deactivate',
+      reactivateButton: 'Reactivate',
+      deactivateConfirm: 'Deactivate this user? They will no longer be able to sign in.',
+      activeLabel: 'Active',
+      inactiveLabel: 'Deactivated',
+      createdSuccess: 'User created successfully.',
+      tenantPlaceholder: 'Select a tenant…',
+      noTenantOption: 'No tenant (platform admin only)',
     },
 
     common: {
@@ -699,6 +751,9 @@ export const translations: Record<Language, Translations> = {
       noWarnings: 'جميع الصفوف متطابقة تماماً مع متطلبات مخطط GRI.',
       selectFilePrompt: 'يرجى اختيار ملف جدول بيانات أو CSV لمعاينته قبل الاعتماد.',
       importingNotice: 'تُكتب السجلات إلى PostgreSQL داخل معاملة قاعدة بيانات ذرية موحدة.',
+      targetTenantLabel: 'المستأجر المستهدف',
+      targetTenantHint: 'بصفتك مدير المنصة، اختر المستأجر الذي سيستقبل هذا الاستيراد.',
+      selectTenantPlaceholder: 'اختر مستأجراً…',
     },
 
     standards: {
@@ -802,6 +857,29 @@ export const translations: Record<Language, Translations> = {
       securitySettings: 'أمان الحساب',
       updatePasswordButton: 'تحديث كلمة المرور',
       userProfile: 'بيانات المستخدم الحالي',
+    },
+
+    users: {
+      title: 'إدارة المستخدمين',
+      subtitle: 'إنشاء مستخدمي المستأجرين وإلغاء تنشيط الحسابات (لا تُحذف الحسابات أبداً)',
+      listTitle: 'المستخدمون',
+      emptyList: 'لا يوجد مستخدمون.',
+      emailLabel: 'البريد الإلكتروني',
+      passwordLabel: 'كلمة المرور (6 أحرف على الأقل)',
+      nameLabel: 'الاسم الكامل',
+      roleLabel: 'الدور',
+      tenantLabel: 'المستأجر',
+      departmentLabel: 'القسم',
+      createButton: 'إنشاء مستخدم',
+      creating: 'جارٍ الإنشاء…',
+      deactivateButton: 'إلغاء التنشيط',
+      reactivateButton: 'إعادة التنشيط',
+      deactivateConfirm: 'إلغاء تنشيط هذا المستخدم؟ لن يتمكن من تسجيل الدخول بعد ذلك.',
+      activeLabel: 'نشط',
+      inactiveLabel: 'ملغى التنشيط',
+      createdSuccess: 'تم إنشاء المستخدم بنجاح.',
+      tenantPlaceholder: 'اختر مستأجراً…',
+      noTenantOption: 'بدون مستأجر (مدير المنصة فقط)',
     },
 
     common: {

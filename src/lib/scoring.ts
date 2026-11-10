@@ -32,6 +32,57 @@ export interface AggregateScoreResult {
 }
 
 /**
+ * One joined dashboard source row: an item plus its tenant evaluation (if any)
+ * plus whether a linked answer is submitted/approved.
+ *
+ * F-01 (FIX-BATCH-4, binding OD-03 follow-up): drafts remain visible in the
+ * queue/history but are invisible to dashboard numbers — only evaluations
+ * whose linked answers.status IN ('submitted','approved') count toward
+ * aggregates and coverage.
+ */
+export interface DashboardSourceRow {
+  itemId: string;
+  weight: number;
+  score?: 0 | 50 | 100 | null;
+  notEvaluated: boolean;
+  notApplicable: boolean;
+  justification?: string;
+  note?: string;
+  /** True when an evaluations row exists for (client, item). */
+  hasEvaluation: boolean;
+  /** True when a linked answers row is submitted or approved. */
+  hasSubmittedAnswer: boolean;
+}
+
+/**
+ * Applies the F-01 drafts-excluded gate: rows without a submitted/approved
+ * linked answer are returned as applicable-but-not-evaluated, i.e. exactly as
+ * if no evaluation existed (denominator keeps the item, numerator skips it).
+ */
+export function gateDraftEvaluations(rows: DashboardSourceRow[]): EvaluationRecord[] {
+  return rows.map((row) => {
+    if (row.hasEvaluation && row.hasSubmittedAnswer) {
+      return {
+        itemId: row.itemId,
+        weight: row.weight,
+        score: row.score,
+        notEvaluated: row.notEvaluated,
+        notApplicable: row.notApplicable,
+        justification: row.justification,
+        note: row.note,
+      };
+    }
+    return {
+      itemId: row.itemId,
+      weight: row.weight,
+      score: null,
+      notEvaluated: true,
+      notApplicable: false,
+    };
+  });
+}
+
+/**
  * Calculates aggregate ESG/GRI scores and review coverage strictly adhering to domain rules:
  * - 0 means full gap, 50 partial gap, 100 no gap; higher is better.
  * - not_evaluated is not zero and must be excluded from every average.

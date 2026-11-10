@@ -35,3 +35,19 @@ test('handles empty CSV gracefully', () => {
   assert.equal(result.summary.totalStandards, 0);
   assert.equal(result.summary.totalItems, 0);
 });
+
+test('FIX-BATCH-4: dash-numeric codes are NOT date-mangled (2-29 vs 3-1 stay distinct)', () => {
+  const csvData = `Standard Code,Standard Title,Category,Disclosure Code,Disclosure Title,Item Code,Requirement,Priority,ESG Class,Weight,Answer Type
+GRI 2,General Disclosures 2021,Universal,2-29,Approach to stakeholder engagement,2-29-1,Approach text,high,governance,3,text
+GRI 3,Material Topics 2021,Governance,3-1,Process to determine material topics,3-1-1,Process text,high,governance,3,text
+`;
+  const result = parseGRIFile(csvData);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.summary.totalStandards, 2);
+  assert.equal(result.summary.totalDisclosures, 2);
+  assert.equal(result.summary.totalItems, 2);
+  const codes = result.standards.flatMap((s) => s.disclosures.map((d) => `${s.code}::${d.code}`));
+  assert.deepEqual(codes.sort(), ['GRI 2::2-29', 'GRI 3::3-1']);
+  const itemCodes = result.standards.flatMap((s) => s.disclosures.flatMap((d) => d.items.map((i) => i.code)));
+  assert.deepEqual(itemCodes.sort(), ['2-29-1', '3-1-1']);
+});

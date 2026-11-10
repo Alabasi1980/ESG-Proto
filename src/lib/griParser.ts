@@ -109,10 +109,13 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
 
   let workbook: XLSX.WorkBook;
   try {
+    // raw:true disables SheetJS type-guessing at read time. Without it,
+    // dash-numeric codes are date-mangled ("2-29" and "3-1" BOTH become the
+    // serial for 3/1/01), irreversibly conflating distinct disclosures.
     if (typeof bufferOrString === 'string') {
-      workbook = XLSX.read(bufferOrString, { type: 'string' });
+      workbook = XLSX.read(bufferOrString, { type: 'string', raw: true });
     } else {
-      workbook = XLSX.read(bufferOrString, { type: 'buffer' });
+      workbook = XLSX.read(bufferOrString, { type: 'buffer', raw: true });
     }
   } catch (err: any) {
     return {
@@ -299,7 +302,7 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
       '';
     let baselineGapPercent: number | null | undefined;
     if (rawGap !== '') {
-      const parsed = parseFloat(String(rawGap).replace('%', '').trim());
+      const parsed = parseFloat(String(rawGap).replace(/%/g, '').trim());
       if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
         baselineGapPercent = Math.round(parsed * 100) / 100;
       } else {

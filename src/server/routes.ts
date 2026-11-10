@@ -18,7 +18,8 @@ import {
   type AuthUser,
 } from './auth.ts';
 import { parseGRIFile, type ParsedGRIStandard } from '../lib/griParser.ts';
-import { calculateAggregateScore, type EvaluationRecord } from '../lib/scoring.ts';
+import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../lib/scoring.ts';
+import { resolveImportTenant, validateNewUser } from '../lib/tenantAccess.ts';
 
 const router = express.Router();
 const upload = multer({
@@ -271,12 +272,12 @@ router.post('/auth/login', async (req: Request, res: Response) => {
     // verification still applies; RLS scoping resumes after login.
     const outcome = await withTenantContext(ELEVATED_CONTEXT, async (client) => {
       const result = await client.query(
-        `SELECT u.id, u.email, u.name, u.password_hash, u.role, u.client_id, u.department_id,
+        `SELECT u.id, u.email, u.name, u.password_hash, u.role, u.client_id, u.department_id, u.is_active,
                 c.name as client_name, d.name as department_name
          FROM users u
          LEFT JOIN clients c ON u.client_id = c.id
          LEFT JOIN departments d ON u.department_id = d.id
-         WHERE LOWER(u.email) = LOWER($1) AND u.is_active = true`,
+         WHERE LOWER(u.email) = LOWER($1)`,
         [email.trim()]
       );
 
@@ -288,6 +289,12 @@ router.post('/auth/login', async (req: Request, res: Response) => {
       const valid = await comparePassword(password, userRow.password_hash);
       if (!valid) {
         return null;
+      }
+
+      // C1: deactivated accounts fail closed with a human message (still 401,
+      // only after a correct password so the existence signal stays minimal).
+      if (userRow.is_active === false) {
+        return { deactivated: true as const };
       }
 
       const authUser: AuthUser = {
@@ -317,6 +324,9 @@ router.post('/auth/login', async (req: Request, res: Response) => {
 
     if (!outcome) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    if ('deactivated' in outcome) {
+      return res.status(401).json({ error: 'Your account has been deactivated. Please contact your administrator.' });
     }
 
     res.cookie('token', outcome.token, {
@@ -410,15 +420,33 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
       return res.status(403).json({ error: 'Only administrators can import GRI standard disclosures.' });
     }
 
-    const { standards } = req.body as { standards: ParsedGRIStandard[] };
+    const { standards, clientId: rawClientId } = req.body as { standards: ParsedGRIStandard[]; clientId?: unknown };
     if (!standards || !Array.isArray(standards) || standards.length === 0) {
       return res.status(400).json({ error: 'No valid standards provided for commit.' });
     }
+
+    // B1/B2: ge_admin may target any tenant explicitly; client_admin always
+    // uses their own tenant (another tenant → 403); tenant-less ge_admin
+    // without clientId → 400 "choose a tenant" (never orphan rows).
+    const tenantResolution = resolveImportTenant(
+      { id: user.id, role: user.role, clientId: user.clientId ?? null },
+      rawClientId
+    );
+    if (!tenantResolution.ok) {
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    }
+    const effectiveClientId = tenantResolution.effectiveClientId;
+    const explicitTenant = tenantResolution.explicit;
 
     // Run in tenant context to enforce RLS and audit log
     const result = await withTenantContext(
       contextFromUser(user),
       async (client) => {
+        // The explicit tenant must exist (ge_admin names it by id).
+        const tenantCheck = await client.query('SELECT id, code, name FROM clients WHERE id = $1', [effectiveClientId]);
+        if ((tenantCheck.rowCount ?? 0) === 0) {
+          throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
+        }
         let standardsProcessed = 0;
         let disclosuresProcessed = 0;
         let inserted = 0;
@@ -529,24 +557,24 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
         }
 
         // Auto-provision tenant departments + assignments for departments named
-        // in the payload. Tenant-scoped: only when the caller has a tenant.
-        // Departments upsert on (client_id, code); assignments are
+        // in the payload. Uses the EFFECTIVE tenant (the explicit one for
+        // ge_admin). Departments upsert on (client_id, code); assignments are
         // INSERT ... ON CONFLICT DO NOTHING, so re-imports change nothing.
         let departmentsUpserted = 0;
         let assignmentsCreated = 0;
-        if (user.clientId && deptToItemIds.size > 0) {
+        if (deptToItemIds.size > 0) {
           for (const [deptCode, entry] of deptToItemIds) {
             const deptRes = await client.query(
               `INSERT INTO departments (client_id, code, name)
                VALUES ($1, $2, $3)
                ON CONFLICT (client_id, code) DO UPDATE SET name = EXCLUDED.name
                RETURNING id`,
-              [user.clientId, deptCode, entry.name]
+              [effectiveClientId, deptCode, entry.name]
             );
             departmentsUpserted++;
             const departmentId = deptRes.rows[0].id;
             if (entry.itemIds.length > 0) {
-              const params: any[] = [user.clientId, departmentId, ...entry.itemIds];
+              const params: any[] = [effectiveClientId, departmentId, ...entry.itemIds];
               const placeholders = entry.itemIds.map((_, i) => `($1, $${i + 3}, $2)`).join(', ');
               const assignRes = await client.query(
                 `INSERT INTO assignments (client_id, item_id, department_id)
@@ -560,13 +588,18 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
           }
         }
 
-        // Record in append-only audit log
+        // Record in append-only audit log (explicit-tenant commits carry
+        // actor + targetTenant + counts per B1).
         await recordAuditLog(client, {
-          clientId: user.clientId,
+          clientId: effectiveClientId,
           userId: user.id,
           action: 'IMPORT_GRI_DISCLOSURES',
           entityType: 'standards',
           payload: {
+            actor: user.id,
+            actorRole: user.role,
+            targetTenant: effectiveClientId,
+            explicitTenant,
             standardsCount: standardsProcessed,
             disclosuresCount: disclosuresProcessed,
             inserted,
@@ -599,7 +632,7 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
     });
   } catch (err: any) {
     console.error('Commit GRI error:', err);
-    res.status(500).json({ error: err.message || 'Failed to commit GRI data' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to commit GRI data' });
   }
 });
 
@@ -694,10 +727,21 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
         };
       }
 
-      // Fetch evaluations if tenant is present
+      // Fetch evaluations if tenant is present.
+      // F-01 (binding OD-03 follow-up): aggregates AND coverage count only
+      // evaluations whose linked answers.status IN ('submitted','approved').
+      // Drafts stay visible in the queue/history but are gated out here via
+      // gateDraftEvaluations (treated exactly as not-yet-evaluated).
       let evalQuery = `
         SELECT i.id as item_id, i.weight::float as weight,
-               e.score, e.not_evaluated, e.not_applicable, e.justification, e.note
+               e.score, e.not_evaluated, e.not_applicable, e.justification, e.note,
+               (e.id IS NOT NULL) AS has_evaluation,
+               EXISTS (
+                 SELECT 1 FROM answers a2
+                 WHERE a2.item_id = i.id
+                   AND a2.client_id = e.client_id
+                   AND a2.status IN ('submitted', 'approved')
+               ) AS has_submitted
         FROM items i
         LEFT JOIN evaluations e ON e.item_id = i.id
       `;
@@ -708,15 +752,19 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
       }
 
       const evalRes = await client.query(evalQuery, params);
-      const evalRecords: EvaluationRecord[] = evalRes.rows.map((row) => ({
-        itemId: row.item_id,
-        weight: row.weight || 1.0,
-        score: row.score !== null ? Number(row.score) as 0 | 50 | 100 : null,
-        notEvaluated: Boolean(row.not_evaluated),
-        notApplicable: Boolean(row.not_applicable),
-        justification: row.justification,
-        note: row.note,
-      }));
+      const evalRecords = gateDraftEvaluations(
+        evalRes.rows.map((row): DashboardSourceRow => ({
+          itemId: row.item_id,
+          weight: row.weight || 1.0,
+          score: row.score !== null && row.score !== undefined ? (Number(row.score) as 0 | 50 | 100) : null,
+          notEvaluated: Boolean(row.not_evaluated),
+          notApplicable: Boolean(row.not_applicable),
+          justification: row.justification,
+          note: row.note,
+          hasEvaluation: row.has_evaluation === true,
+          hasSubmittedAnswer: row.has_submitted === true,
+        }))
+      );
 
       const scoreResult = calculateAggregateScore(evalRecords);
 
@@ -1433,6 +1481,202 @@ router.get('/departments', authMiddleware, async (req: AuthenticatedRequest, res
     res.json(rows);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------------------------
+// 8. Minimal User Management (FIX BATCH 4, demo only)
+//
+// The demo ships exactly one bootstrap account (/setup/admin is once-only),
+// so admins need list + create + deactivate. Accounts are never deleted;
+// deactivated logins fail closed with a human 401 (see /auth/login).
+// Every write is audit-logged under the effective tenant.
+// ----------------------------------------------------------------------
+
+const SAFE_USER_COLUMNS = `
+  u.id, u.email, u.name, u.role, u.is_active, u.client_id, u.department_id,
+  u.created_at, c.name AS client_name, d.name AS department_name
+`;
+
+function requireUserAdmin(user: AuthUser, res: Response): boolean {
+  if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
+    res.status(403).json({ error: 'Only administrators can manage users.' });
+    return false;
+  }
+  return true;
+}
+
+// C1. List users — ge_admin: all; client_admin: own tenant.
+router.get('/users', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!requireUserAdmin(user, res)) return;
+
+    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+      let query = `SELECT ${SAFE_USER_COLUMNS} FROM users u
+                   LEFT JOIN clients c ON u.client_id = c.id
+                   LEFT JOIN departments d ON u.department_id = d.id`;
+      const params: any[] = [];
+      if (user.role !== 'ge_admin') {
+        if (!user.clientId) return [];
+        query += ' WHERE u.client_id = $1';
+        params.push(user.clientId);
+      }
+      query += ' ORDER BY u.created_at ASC';
+      const result = await client.query(query, params);
+      return result.rows;
+    });
+
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch users' });
+  }
+});
+
+// C1. Create user — ge_admin: any tenant (explicit clientId); client_admin:
+// own tenant only. Duplicate e-mail → 409. Audit-logged.
+router.post('/users', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const creator = req.user!;
+    if (!requireUserAdmin(creator, res)) return;
+
+    const validation = validateNewUser(
+      { id: creator.id, role: creator.role, clientId: creator.clientId ?? null },
+      req.body ?? {}
+    );
+    if (!validation.ok) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+    const input = validation.user;
+
+    const created = await withTenantContext(contextFromUser(creator), async (client) => {
+      // E-mail uniqueness is case-insensitive (C3 → 409).
+      const dupe = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [input.email]);
+      if ((dupe.rowCount ?? 0) > 0) {
+        throw Object.assign(new Error('A user with this email already exists.'), { statusCode: 409 });
+      }
+
+      // Target tenant must exist for tenant-scoped roles.
+      if (input.effectiveClientId) {
+        const tenantCheck = await client.query('SELECT id FROM clients WHERE id = $1', [input.effectiveClientId]);
+        if ((tenantCheck.rowCount ?? 0) === 0) {
+          throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
+        }
+      }
+
+      // Employee departments must exist inside the effective tenant.
+      if (input.role === 'employee' && input.departmentId) {
+        const deptCheck = await client.query(
+          'SELECT id, client_id FROM departments WHERE id = $1',
+          [input.departmentId]
+        );
+        const dept = deptCheck.rows[0];
+        if (!dept) {
+          throw Object.assign(new Error('Department not found for the given departmentId.'), { statusCode: 404 });
+        }
+        if (dept.client_id !== input.effectiveClientId) {
+          throw Object.assign(new Error('Department does not belong to the target tenant.'), { statusCode: 400 });
+        }
+      }
+
+      const passwordHash = await hashPassword(input.password);
+      let createdRow;
+      try {
+        const insertRes = await client.query(
+          `INSERT INTO users (email, password_hash, name, role, client_id, department_id)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, email, name, role, is_active, client_id, department_id, created_at`,
+          [input.email, passwordHash, input.name, input.role, input.effectiveClientId, input.departmentId]
+        );
+        createdRow = insertRes.rows[0];
+      } catch (dbErr: any) {
+        // Race on the unique e-mail index still surfaces as 409, never 500.
+        if (dbErr?.code === '23505') {
+          throw Object.assign(new Error('A user with this email already exists.'), { statusCode: 409 });
+        }
+        throw dbErr;
+      }
+
+      await recordAuditLog(client, {
+        clientId: input.effectiveClientId,
+        userId: creator.id,
+        action: 'USER_CREATED',
+        entityType: 'users',
+        entityId: createdRow.id,
+        payload: {
+          actor: creator.id,
+          actorRole: creator.role,
+          targetTenant: input.effectiveClientId,
+          createdRole: createdRow.role,
+          email: createdRow.email,
+        },
+      });
+
+      return createdRow;
+    });
+
+    res.status(201).json(created);
+  } catch (err: any) {
+    console.error('Create user error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create user' });
+  }
+});
+
+// C1. Deactivate (or reactivate) — never delete. Self-deactivation is refused.
+router.patch('/users/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = req.user!;
+    if (!requireUserAdmin(actor, res)) return;
+
+    const { isActive } = req.body ?? {};
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ error: 'isActive (boolean) is required.' });
+    }
+    const targetId = req.params.id;
+    if (targetId === actor.id) {
+      return res.status(400).json({ error: 'You cannot change your own active status.' });
+    }
+
+    const updated = await withTenantContext(contextFromUser(actor), async (client) => {
+      const found = await client.query(
+        `SELECT ${SAFE_USER_COLUMNS} FROM users u
+         LEFT JOIN clients c ON u.client_id = c.id
+         LEFT JOIN departments d ON u.department_id = d.id
+         WHERE u.id = $1`,
+        [targetId]
+      );
+      const target = found.rows[0];
+      // Outside the caller's tenant scope the row is simply not visible.
+      if (!target) {
+        throw Object.assign(new Error('User not found.'), { statusCode: 404 });
+      }
+      if (actor.role === 'client_admin' && target.role === 'ge_admin') {
+        throw Object.assign(new Error('Client administrators cannot change platform administrator accounts.'), {
+          statusCode: 403,
+        });
+      }
+
+      const updRes = await client.query(
+        'UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2 RETURNING id, email, name, role, is_active, client_id, department_id, created_at',
+        [isActive, targetId]
+      );
+
+      await recordAuditLog(client, {
+        clientId: target.client_id,
+        userId: actor.id,
+        action: isActive ? 'USER_REACTIVATED' : 'USER_DEACTIVATED',
+        entityType: 'users',
+        entityId: targetId,
+        payload: { actor: actor.id, actorRole: actor.role, targetTenant: target.client_id, isActive },
+      });
+
+      return updRes.rows[0];
+    });
+
+    res.json(updated);
+  } catch (err: any) {
+    console.error('Update user error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update user' });
   }
 });
 
