@@ -48,6 +48,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
+        hmr: false,
       },
       appType: 'spa',
     });
@@ -60,8 +61,16 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[GreenEdge Server] Full-stack ESG & GRI service running on http://0.0.0.0:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[Server Error] Port ${PORT} is already in use. Existing process running.`);
+    } else {
+      console.error('[Server Error]', err);
+    }
   });
 }
 

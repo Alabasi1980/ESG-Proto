@@ -37,12 +37,16 @@ export function getPool(): pg.Pool {
 
   // Enforce TLS connection. Support cloud and standard SSL modes.
   const isLocalhost = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
-  const sslConfig = isLocalhost ? false : { rejectUnauthorized: false };
+
+  // Remove url ssl query parameters to prevent overriding explicit ssl: { rejectUnauthorized: false }
+  const cleanUrl = isLocalhost
+    ? databaseUrl
+    : databaseUrl.replace(/[?&]sslmode=[^&#]+/i, '').replace(/[?&]ssl=[^&#]+/i, '');
 
   pool = new Pool({
-    connectionString: databaseUrl,
+    connectionString: cleanUrl,
     max: 5, // Hard constraint: maximum 5 connections
-    ssl: sslConfig, // Hard constraint: TLS enabled
+    ssl: isLocalhost ? false : { rejectUnauthorized: false }, // Hard constraint: TLS enabled
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
   });
