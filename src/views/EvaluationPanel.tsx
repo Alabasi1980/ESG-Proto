@@ -7,6 +7,10 @@ import {
   History,
   AlertTriangle,
   PencilLine,
+  RefreshCw,
+  Paperclip,
+  Download,
+  Trash2,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -28,6 +32,7 @@ export interface QueueItem {
   department_code: string;
   department_name: string;
   evaluation_id: string | null;
+  evaluation_version: number | null;
   score: number | null;
   not_evaluated: boolean | null;
   not_applicable: boolean | null;
@@ -37,8 +42,45 @@ export interface QueueItem {
   previous_score: number | null;
   answer_id: string | null;
   answer_status: string | null;
+  answer_version: number | null;
   answer_submitted_by: string | null;
   status: string;
+}
+
+interface VersionConflictPayload {
+  expectedVersion?: number | null;
+  providedVersion?: number | null;
+  evaluation?: {
+    version?: number | null;
+    score?: number | null;
+    notEvaluated?: boolean | null;
+    notApplicable?: boolean | null;
+    naReason?: string | null;
+    evidenceNote?: string | null;
+    actorId?: string | null;
+    actorName?: string | null;
+    updatedAt?: string | null;
+  } | null;
+  answer?: {
+    version?: number | null;
+    status?: string | null;
+    evidenceNote?: string | null;
+    actorId?: string | null;
+    actorName?: string | null;
+    updatedAt?: string | null;
+  } | null;
+  attempted?: unknown;
+}
+
+interface AttachmentRow {
+  id: string;
+  answer_id: string;
+  file_name: string;
+  mime: string;
+  size_bytes: number;
+  uploaded_by: string | null;
+  uploaded_by_name: string | null;
+  created_at: string;
 }
 
 interface HistoryEntry {
@@ -64,6 +106,275 @@ function outcomeLabel(item: QueueItem, t: any): string {
   return `${t.gapAnalysis.scoreLabel}: ${item.score}`;
 }
 
+/** Map stable API message keys to localized UI strings (fallback: server text). */
+function serverMessage(code: string | undefined, fallback: string, t: any): string {
+  switch (code) {
+    case 'attachments.oversize':
+      return t.attachments.oversize;
+    case 'attachments.mime':
+      return t.attachments.mime;
+    case 'attachments.missing':
+      return t.attachments.missing;
+    default:
+      return fallback;
+  }
+}
+
+function fmtBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = n;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${v >= 100 ? Math.round(v) : Math.round(v * 10) / 10} ${units[u]}`;
+}
+
+/** Mine-vs-theirs conflict box (A-15): shows the server's current values + reload. */
+const ConflictBox: React.FC<{ conflict: VersionConflictPayload; t: any; onReload: () => void }> = ({
+  conflict,
+  t,
+  onReload,
+}) => {
+  const ev = conflict.evaluation;
+  const an = conflict.answer;
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex justify-between gap-2 py-0.5">
+      <span className="text-slate-400">{label}</span>
+      <span className="font-semibold text-slate-700 dark:text-slate-200 text-end break-all">{value}</span>
+    </div>
+  );
+  return (
+    <div className="mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-[11px]">
+      <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-200 mb-1">
+        <AlertTriangle className="w-4 h-4 shrink-0" />
+        <span>{t.conflict.title}</span>
+      </div>
+      <p className="text-amber-700 dark:text-amber-300 mb-2">{t.conflict.desc}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/50 border border-amber-200 dark:border-amber-800">
+          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.conflict.theirsLabel}</div>
+          {row(t.conflict.versionLabel, ev?.version ?? an?.version ?? '—')}
+          {row(t.gapAnalysis.scoreLabel, ev?.score ?? (ev?.notApplicable ? t.gapAnalysis.stNotApplicable : t.gapAnalysis.stNotEvaluated))}
+          {row(t.gapAnalysis.evidenceNoteLabel, ev?.evidenceNote || an?.evidenceNote || '—')}
+          {row(t.gapAnalysis.status, an?.status ?? '—')}
+          {row(t.conflict.actorLabel, ev?.actorName || an?.actorName || '—')}
+          {row(t.conflict.timeLabel, ev?.updatedAt ? new Date(ev.updatedAt).toLocaleString() : '—')}
+        </div>
+        <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.conflict.mineLabel}</div>
+          <pre className="whitespace-pre-wrap font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+            {JSON.stringify(conflict.attempted ?? {}, null, 1)}
+          </pre>
+        </div>
+      </div>
+      <button
+        onClick={onReload}
+        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[11px] font-bold hover:bg-amber-700 transition-colors"
+      >
+        <RefreshCw className="w-3 h-3" />
+        <span>{t.conflict.reloadRetry}</span>
+      </button>
+    </div>
+  );
+};
+
+/** Evidence attachments: attach / list / download / delete + usage readout (D). */
+const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: any }> = ({ answerId, token, t }) => {
+  const [files, setFiles] = useState<AttachmentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [usage, setUsage] = useState<{ bytes: number; files: number; formatted: string; warn: boolean } | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  const authOnly = { Authorization: token ? `Bearer ${token}` : '' };
+
+  const fetchFiles = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments`, { headers: authOnly });
+      if (res.ok) {
+        const data = await res.json();
+        setFiles(data.items || []);
+      }
+    } catch (err) {
+      console.error('Failed to load attachments:', err);
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answerId, token]);
+
+  const fetchUsage = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/storage/usage', { headers: authOnly });
+      if (res.ok) setUsage(await res.json());
+    } catch (err) {
+      console.error('Failed to load storage usage:', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
+    fetchFiles();
+    fetchUsage();
+  }, [fetchFiles, fetchUsage]);
+
+  const doUpload = async () => {
+    if (!pendingFile) {
+      setMsg({ kind: 'err', text: t.attachments.missing });
+      return;
+    }
+    setUploading(true);
+    setMsg(null);
+    try {
+      const form = new FormData();
+      form.append('file', pendingFile);
+      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments`, {
+        method: 'POST',
+        headers: authOnly,
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(serverMessage(data.code, data.error || t.attachments.uploadFailed, t));
+      setMsg({ kind: 'ok', text: t.common.success });
+      setPendingFile(null);
+      setInputKey((k) => k + 1);
+      fetchFiles();
+      fetchUsage();
+    } catch (err: any) {
+      setMsg({ kind: 'err', text: err.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const doDownload = async (f: AttachmentRow) => {
+    try {
+      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments/${encodeURIComponent(f.id)}/download`, {
+        headers: authOnly,
+      });
+      if (!res.ok) throw new Error(t.attachments.uploadFailed);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.file_name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setMsg({ kind: 'err', text: err.message });
+    }
+  };
+
+  const doDelete = async (f: AttachmentRow) => {
+    if (!window.confirm(t.attachments.deleteConfirm)) return;
+    try {
+      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments/${encodeURIComponent(f.id)}`, {
+        method: 'DELETE',
+        headers: authOnly,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(serverMessage(data.code, data.error || t.attachments.uploadFailed, t));
+      fetchFiles();
+      fetchUsage();
+    } catch (err: any) {
+      setMsg({ kind: 'err', text: err.message });
+    }
+  };
+
+  return (
+    <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+      <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.attachments.title}</h4>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.attachments.typesNote}</p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          key={inputKey}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.txt"
+          onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)}
+          className="text-[11px] text-slate-600 dark:text-slate-300 file:me-2 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-slate-300 dark:file:border-slate-600 file:bg-slate-50 dark:file:bg-slate-700 file:text-[11px] file:font-semibold"
+        />
+        <button
+          onClick={doUpload}
+          disabled={uploading || !pendingFile}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
+        >
+          <Paperclip className="w-3.5 h-3.5" />
+          <span>{uploading ? t.attachments.uploading : t.attachments.attachBtn}</span>
+        </button>
+      </div>
+
+      {msg && (
+        <div
+          className={`mt-2 p-2.5 rounded-lg text-[11px] flex items-center gap-2 ${
+            msg.kind === 'ok'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
+              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'
+          }`}
+        >
+          {msg.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
+          <span>{msg.text}</span>
+        </div>
+      )}
+
+      <div className="mt-3">
+        {loading && <p className="text-[11px] text-slate-500">{t.common.loading}</p>}
+        {!loading && files.length === 0 && (
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.attachments.emptyText}</p>
+        )}
+        <ul className="space-y-2">
+          {files.map((f) => (
+            <li
+              key={f.id}
+              className="flex items-center justify-between gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px]"
+            >
+              <div className="min-w-0">
+                <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{f.file_name}</div>
+                <div className="text-slate-400">
+                  {f.mime} · {fmtBytes(f.size_bytes)} · {f.uploaded_by_name || f.uploaded_by} ·{' '}
+                  {new Date(f.created_at).toLocaleString()}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => doDownload(f)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>{t.attachments.downloadBtn}</span>
+                </button>
+                <button
+                  onClick={() => doDelete(f)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>{t.attachments.deleteBtn}</span>
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {usage && (
+        <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40 text-[11px] text-slate-600 dark:text-slate-300">
+          {t.attachments.usageLabel}: <span className="font-bold">{usage.formatted}</span> · {usage.files}{' '}
+          {t.storage.filesLabel}
+          {usage.warn && <span className="ms-1 font-bold text-amber-600 dark:text-amber-400">· {t.storage.warnMsg}</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void }> = ({ item, onChanged }) => {
   const { t } = useLanguage();
   const { user, token } = useAuth();
@@ -88,6 +399,10 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
   const [correcting, setCorrecting] = useState(false);
   const [correctMsg, setCorrectMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
+  // B9-C (A-15): optimistic-locking version + mine-vs-theirs conflict state.
+  const pairVersion = item.evaluation_version ?? item.answer_version ?? null;
+  const [conflict, setConflict] = useState<VersionConflictPayload | null>(null);
+
   // Reset local form whenever a different queue item is selected.
   useEffect(() => {
     setMode(initialMode);
@@ -97,6 +412,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     setFormMsg(null);
     setDecisionMsg(null);
     setCorrectMsg(null);
+    setConflict(null);
     setComment('');
     setCorrectReason('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,12 +463,24 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       body.notApplicable = true;
       body.naReason = naReason;
     }
+    // B9-C: an existing draft requires the caller's version.
+    if (pairVersion !== null) body.version = pairVersion;
     return body;
+  };
+
+  /** Surfaces a 409-with-diff as the mine-vs-theirs box; returns true when handled. */
+  const handleConflictResponse = (data: any): boolean => {
+    if (data && (data.code === 'version.conflict' || data.code === 'version.required') && data.conflict) {
+      setConflict(data.conflict as VersionConflictPayload);
+      return true;
+    }
+    return false;
   };
 
   const saveDraft = async (): Promise<boolean> => {
     setSaving(true);
     setFormMsg(null);
+    setConflict(null);
     try {
       const res = await fetch('/api/evaluations', {
         method: 'POST',
@@ -160,7 +488,10 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         body: JSON.stringify(buildDraftBody()),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save draft');
+      if (!res.ok) {
+        if (handleConflictResponse(data)) return false;
+        throw new Error(data.error || 'Failed to save draft');
+      }
       setFormMsg({ kind: 'ok', text: t.common.success });
       onChanged();
       return true;
@@ -175,6 +506,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
   const submitForApproval = async () => {
     setSubmitting(true);
     setFormMsg(null);
+    setConflict(null);
     try {
       // Persist the current form as a draft first (idempotent for draft/returned),
       // then submit. Submitted rows are never edited here — corrections use A5.
@@ -187,9 +519,17 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       );
       const evalId: string | null = fresh?.evaluation_id || item.evaluation_id;
       if (!evalId) throw new Error('Draft was not created.');
-      const res = await fetch(`/api/evaluations/${evalId}/submit`, { method: 'POST', headers: authHeaders });
+      const freshVersion = fresh?.evaluation_version ?? fresh?.answer_version ?? pairVersion;
+      const res = await fetch(`/api/evaluations/${evalId}/submit`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(freshVersion !== null ? { version: freshVersion } : {}),
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to submit');
+      if (!res.ok) {
+        if (handleConflictResponse(data)) return;
+        throw new Error(data.error || 'Failed to submit');
+      }
       setFormMsg({ kind: 'ok', text: t.common.success });
       onChanged();
     } catch (err: any) {
@@ -203,14 +543,18 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     if (!item.evaluation_id) return;
     setDeciding(decision);
     setDecisionMsg(null);
+    setConflict(null);
     try {
       const res = await fetch(`/api/evaluations/${item.evaluation_id}/${decision}`, {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify({ comment }),
+        body: JSON.stringify({ comment, ...(pairVersion !== null ? { version: pairVersion } : {}) }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Decision failed');
+      if (!res.ok) {
+        if (data && data.conflict) setConflict(data.conflict as VersionConflictPayload);
+        throw new Error(data.error || 'Decision failed');
+      }
       setDecisionMsg({ kind: 'ok', text: decision === 'approve' ? t.gapAnalysis.decidedApproved : t.gapAnalysis.decidedReturned });
       setComment('');
       onChanged();
@@ -225,6 +569,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     if (!item.evaluation_id) return;
     setCorrecting(true);
     setCorrectMsg(null);
+    setConflict(null);
     try {
       const body: Record<string, unknown> = { reason: correctReason };
       if (mode === 'score') body.newScore = score;
@@ -233,13 +578,18 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         body.notApplicable = true;
         body.naReason = naReason;
       }
+      // B9-C: corrections require the caller's version.
+      if (pairVersion !== null) body.version = pairVersion;
       const res = await fetch(`/api/evaluations/${item.evaluation_id}/correct`, {
         method: 'PUT',
         headers: authHeaders,
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Correction failed');
+      if (!res.ok) {
+        if (handleConflictResponse(data)) return;
+        throw new Error(data.error || 'Correction failed');
+      }
       setCorrectMsg({ kind: 'ok', text: t.common.success });
       setCorrectReason('');
       onChanged();
@@ -250,10 +600,16 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     }
   };
 
+  const reloadAndRetry = () => {
+    setConflict(null);
+    onChanged();
+  };
+
   const isAdmin = user?.role === 'client_admin' || user?.role === 'ge_admin';
   const isSubmitted = item.answer_status === 'submitted';
-  const isDecided = item.answer_status === 'approved' || item.answer_status === 'returned';
-  const isPostSubmit = isSubmitted || item.answer_status === 'approved';
+  const isClientApproved = item.answer_status === 'client_approved';
+  const isDecided = item.answer_status === 'approved' || isClientApproved || item.answer_status === 'returned';
+  const isPostSubmit = isSubmitted || item.answer_status === 'approved' || isClientApproved;
   const isOwn = !!user && (user.id === item.evaluator_id || user.id === item.answer_submitted_by);
   const showApproval = isAdmin && isSubmitted && !isOwn;
   const showSelfNote = isAdmin && isSubmitted && isOwn;
@@ -536,9 +892,19 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       )}
       {isDecided && (
         <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-          {item.answer_status === 'approved' ? t.gapAnalysis.decidedApproved : t.gapAnalysis.decidedReturned}
+          {isClientApproved
+            ? t.gapAnalysis.stClientApproved
+            : item.answer_status === 'approved'
+              ? t.gapAnalysis.decidedApproved
+              : t.gapAnalysis.decidedReturned}
         </div>
       )}
+
+      {/* B9-C: mine-vs-theirs conflict surface */}
+      {conflict && <ConflictBox conflict={conflict} t={t} onReload={reloadAndRetry} />}
+
+      {/* B9-D: evidence attachments (per answer) */}
+      {item.answer_id && <AttachmentsSection answerId={item.answer_id} token={token} t={t} />}
 
       {/* Revision history */}
       <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">

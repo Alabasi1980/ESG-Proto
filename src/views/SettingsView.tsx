@@ -13,6 +13,7 @@ import {
   UserPlus,
   UserX,
   UserCheck,
+  HardDrive,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -170,6 +171,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       setUserMessage({ type: 'error', text: err.message || 'Error occurred' });
     }
   };
+
+  // B9-D3: evidence storage monitor (per-tenant usage readout).
+  const [storageUsage, setStorageUsage] = useState<{
+    tenantId: string;
+    bytes: number;
+    files: number;
+    formatted: string;
+    warnThresholdBytes: number;
+    warn: boolean;
+    capNote: string;
+  } | null>(null);
+  const [loadingStorage, setLoadingStorage] = useState(false);
+
+  const fetchStorageUsage = async () => {
+    setLoadingStorage(true);
+    try {
+      const res = await fetch('/api/storage/usage', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
+      if (res.ok) {
+        setStorageUsage(await res.json());
+      } else {
+        setStorageUsage(null);
+      }
+    } catch (err) {
+      console.error('Error querying storage usage:', err);
+    } finally {
+      setLoadingStorage(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStorageUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const checkDb = async () => {
     setLoadingDb(true);
@@ -353,6 +387,75 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
           )}
           <span>{migrating ? t.settings.migrating : t.settings.runMigrations}</span>
         </button>
+      </div>
+
+      {/* B9-D3: evidence storage monitor */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+              <HardDrive className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                {t.storage.title}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t.storage.subtitle}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={fetchStorageUsage}
+            disabled={loadingStorage}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors"
+            title={t.common.refresh}
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingStorage ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {!storageUsage && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {loadingStorage ? t.common.loading : t.attachments.emptyText}
+          </p>
+        )}
+        {storageUsage && (
+          <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                  {t.storage.bytesLabel}
+                </span>
+                <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  {storageUsage.formatted}
+                </span>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                  {t.storage.filesLabel}
+                </span>
+                <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  {storageUsage.files}
+                </span>
+              </div>
+            </div>
+            <div
+              className={`mt-3 p-3 rounded-xl text-xs flex items-center gap-2 ${
+                storageUsage.warn
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              }`}
+            >
+              {storageUsage.warn ? (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              )}
+              <span>{storageUsage.warn ? t.storage.warnMsg : t.storage.okMsg}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Language & RTL Settings Card */}

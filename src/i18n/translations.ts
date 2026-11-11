@@ -186,6 +186,7 @@ export interface Translations {
     stDraft: string;
     stSubmitted: string;
     stApproved: string;
+    stClientApproved: string;
     stReturned: string;
     stNotApplicable: string;
     evaluateTitle: string;
@@ -342,6 +343,93 @@ export interface Translations {
     emptyTitle: string;
     emptyDesc: string;
     groupNote: string;
+  };
+
+  clientReview: {
+    title: string;
+    subtitle: string;
+    emptyTitle: string;
+    emptyDesc: string;
+    completeness: string;
+    readyBadge: string;
+    blockedBadge: string;
+    frozenBadge: string;
+    pendingClient: string;
+    approveGroupHint: string;
+    clientApproveBtn: string;
+    clientReturnBtn: string;
+    approving: string;
+    commentRequired: string;
+  };
+
+  geFinal: {
+    title: string;
+    subtitle: string;
+    scopeLabel: string;
+    scopeDisclosure: string;
+    scopeTenant: string;
+    disclosureLabel: string;
+    selectDisclosure: string;
+    runCheck: string;
+    checking: string;
+    checklistTitle: string;
+    allClear: string;
+    blockedItems: string;
+    freezeBtn: string;
+    freezing: string;
+    confirmTitle: string;
+    confirmDesc: string;
+    confirmCheck: string;
+    frozenBadge: string;
+    snapshotTitle: string;
+    snapshotEmpty: string;
+    hashLabel: string;
+    actorLabel: string;
+    timeLabel: string;
+    aggregateLabel: string;
+    coverageLabel: string;
+    noteLabel: string;
+    notePh: string;
+    addNote: string;
+    addingNote: string;
+    viewerTitle: string;
+    alreadyFrozen: string;
+  };
+
+  conflict: {
+    title: string;
+    desc: string;
+    mineLabel: string;
+    theirsLabel: string;
+    reloadRetry: string;
+    versionLabel: string;
+    actorLabel: string;
+    timeLabel: string;
+  };
+
+  attachments: {
+    title: string;
+    attachBtn: string;
+    uploading: string;
+    emptyText: string;
+    downloadBtn: string;
+    deleteBtn: string;
+    deleteConfirm: string;
+    oversize: string;
+    mime: string;
+    missing: string;
+    uploadFailed: string;
+    typesNote: string;
+    usageLabel: string;
+  };
+
+  storage: {
+    title: string;
+    subtitle: string;
+    bytesLabel: string;
+    filesLabel: string;
+    warnMsg: string;
+    okMsg: string;
   };
 
   weights: {
@@ -569,6 +657,7 @@ export const translations: Record<Language, Translations> = {
       stDraft: 'Draft',
       stSubmitted: 'Submitted',
       stApproved: 'Approved',
+      stClientApproved: 'Client approved',
       stReturned: 'Returned',
       stNotApplicable: 'N/A',
       evaluateTitle: 'Evaluate Item',
@@ -771,6 +860,93 @@ export const translations: Record<Language, Translations> = {
       groupNote: 'RATING / MAX RATING are shown on group rows exactly as in the workbook; the score aggregates all 1–3 ratings.',
     },
 
+    clientReview: {
+      title: 'Client review queue',
+      subtitle: 'Dept-approved items grouped by disclosure — approve the whole disclosure at client scope',
+      emptyTitle: 'No disclosures pending client review',
+      emptyDesc: 'When departments approve their evaluations, the disclosure groups appear here.',
+      completeness: 'Completeness',
+      readyBadge: 'Ready for client approval',
+      blockedBadge: 'Blocked — departments pending',
+      frozenBadge: 'Frozen (GE final)',
+      pendingClient: 'dept-approved, awaiting client decision',
+      approveGroupHint: 'Client approval applies per item but requires the whole disclosure to be dept-approved.',
+      clientApproveBtn: 'Client-approve',
+      clientReturnBtn: 'Return to dept',
+      approving: 'Working...',
+      commentRequired: 'A comment is required when returning to the department.',
+    },
+
+    geFinal: {
+      title: 'GE final review & freeze',
+      subtitle: 'Verify the completeness checklist, then freeze an immutable snapshot (ge_admin only)',
+      scopeLabel: 'Freeze scope',
+      scopeDisclosure: 'Disclosure',
+      scopeTenant: 'Whole tenant',
+      disclosureLabel: 'Disclosure',
+      selectDisclosure: 'Copy a disclosure id from the client-review queue…',
+      runCheck: 'Run checklist',
+      checking: 'Checking...',
+      checklistTitle: 'Completeness checklist',
+      allClear: 'All in-scope items are client-approved (or N/A with reason). Ready to freeze.',
+      blockedItems: 'Blocked items',
+      freezeBtn: 'Freeze snapshot',
+      freezing: 'Freezing...',
+      confirmTitle: 'Confirm freeze',
+      confirmDesc: 'Freezing is irreversible. Editing, corrections and imports touching this scope will be refused afterwards; only append-only snapshot notes stay allowed.',
+      confirmCheck: 'I understand — freeze this scope now',
+      frozenBadge: 'Frozen',
+      snapshotTitle: 'Frozen snapshots',
+      snapshotEmpty: 'No snapshots frozen for this tenant yet.',
+      hashLabel: 'Content hash',
+      actorLabel: 'Frozen by',
+      timeLabel: 'Frozen at',
+      aggregateLabel: 'Frozen score',
+      coverageLabel: 'Frozen coverage',
+      noteLabel: 'Post-freeze note (append-only)',
+      notePh: 'Add an audit note linked to this snapshot...',
+      addNote: 'Add note',
+      addingNote: 'Adding...',
+      viewerTitle: 'Snapshot detail',
+      alreadyFrozen: 'This scope is already frozen.',
+    },
+
+    conflict: {
+      title: 'Version conflict — someone else saved first',
+      desc: 'Your version is stale. Compare the current server values below, reload, then retry.',
+      mineLabel: 'You attempted',
+      theirsLabel: 'Current on server',
+      reloadRetry: 'Reload & retry',
+      versionLabel: 'Version',
+      actorLabel: 'Actor',
+      timeLabel: 'Time',
+    },
+
+    attachments: {
+      title: 'Evidence attachments (max 5 MB each)',
+      attachBtn: 'Attach file',
+      uploading: 'Uploading...',
+      emptyText: 'No evidence files attached yet.',
+      downloadBtn: 'Download',
+      deleteBtn: 'Delete',
+      deleteConfirm: 'Delete this attachment?',
+      oversize: 'File is too large. Evidence attachments are limited to 5 MB per file.',
+      mime: 'File type not allowed. Accepted types: PDF, PNG, JPEG, XLSX, CSV, TXT.',
+      missing: 'Choose a file first.',
+      uploadFailed: 'Upload failed.',
+      typesNote: 'PDF, PNG, JPEG, XLSX, CSV, TXT — 5 MB max, stored in-demo (OD-06).',
+      usageLabel: 'Attachment storage',
+    },
+
+    storage: {
+      title: 'Evidence storage',
+      subtitle: 'Per-tenant attachment usage (demo DB capacity is 1 GB)',
+      bytesLabel: 'Used',
+      filesLabel: 'Files',
+      warnMsg: 'Storage is above the 800 MB demo warning threshold.',
+      okMsg: 'Storage is within the demo budget.',
+    },
+
     weights: {
       title: 'Priority weights',
       subtitle: 'Display-only reference used by every score in this demo',
@@ -967,6 +1143,7 @@ export const translations: Record<Language, Translations> = {
       stDraft: 'مسودة',
       stSubmitted: 'مُرسَل',
       stApproved: 'معتمَد',
+      stClientApproved: 'معتمَد من العميل',
       stReturned: 'مُعاد',
       stNotApplicable: 'غير مطبق',
       evaluateTitle: 'تقييم البند',
@@ -1167,6 +1344,93 @@ export const translations: Record<Language, Translations> = {
       emptyTitle: 'لم يُستورد ملف ESG بعد',
       emptyDesc: 'استورد ورقة ESG Profile الخاصة بهذا المستأجر لعرض الدرجة والتغطية.',
       groupNote: 'تظهر RATING / MAX RATING على صفوف المجموعات كما في الورقة تماماً؛ والدرجة تجمع كل تقييمات 1–3.',
+    },
+
+    clientReview: {
+      title: 'قائمة مراجعة العميل',
+      subtitle: 'بنود معتمدة من الأقسام مجمعة حسب الإفصاح — اعتمد الإفصاح كاملاً على مستوى العميل',
+      emptyTitle: 'لا توجد إفصاحات بانتظار مراجعة العميل',
+      emptyDesc: 'عندما تعتمد الأقسام تقييماتها تظهر مجموعات الإفصاحات هنا.',
+      completeness: 'الاكتمال',
+      readyBadge: 'جاهز لاعتماد العميل',
+      blockedBadge: 'محظور — أقسام معلقة',
+      frozenBadge: 'مجمّد (اعتماد GE النهائي)',
+      pendingClient: 'معتمد من القسم، بانتظار قرار العميل',
+      approveGroupHint: 'اعتماد العميل يتم لكل بند لكنه يتطلب اكتمال الإفصاح كله على مستوى الأقسام.',
+      clientApproveBtn: 'اعتماد العميل',
+      clientReturnBtn: 'إعادة للقسم',
+      approving: 'جارٍ التنفيذ...',
+      commentRequired: 'التعليق مطلوب عند الإعادة إلى القسم.',
+    },
+
+    geFinal: {
+      title: 'مراجعة GE النهائية والتجميد',
+      subtitle: 'تحقق من قائمة الاكتمال ثم جمّد لقطة غير قابلة للتعديل (مدير المنصة فقط)',
+      scopeLabel: 'نطاق التجميد',
+      scopeDisclosure: 'إفصاح',
+      scopeTenant: 'المستأجر كاملاً',
+      disclosureLabel: 'الإفصاح',
+      selectDisclosure: 'انسخ معرف الإفصاح من قائمة مراجعة العميل…',
+      runCheck: 'تشغيل الفحص',
+      checking: 'جارٍ الفحص...',
+      checklistTitle: 'قائمة الاكتمال',
+      allClear: 'جميع البنود ضمن النطاق معتمدة من العميل (أو غير مطبقة مع سبب). جاهز للتجميد.',
+      blockedItems: 'البنود المحظورة',
+      freezeBtn: 'تجميد لقطة',
+      freezing: 'جارٍ التجميد...',
+      confirmTitle: 'تأكيد التجميد',
+      confirmDesc: 'التجميد لا رجعة فيه. سيُرفض أي تعديل أو تصحيح أو استيراد يمس هذا النطاق بعد ذلك؛ وتبقى ملاحظات اللقطة الإلحاقية مسموحة فقط.',
+      confirmCheck: 'أفهم — جمّد هذا النطاق الآن',
+      frozenBadge: 'مجمّد',
+      snapshotTitle: 'اللقطات المجمّدة',
+      snapshotEmpty: 'لا توجد لقطات مجمّدة لهذا المستأجر بعد.',
+      hashLabel: 'بصمة المحتوى',
+      actorLabel: 'جمّدها',
+      timeLabel: 'وقت التجميد',
+      aggregateLabel: 'الدرجة المجمّدة',
+      coverageLabel: 'التغطية المجمّدة',
+      noteLabel: 'ملاحظة بعد التجميد (إلحاقية فقط)',
+      notePh: 'أضف ملاحظة تدقيق مرتبطة بهذه اللقطة...',
+      addNote: 'إضافة ملاحظة',
+      addingNote: 'جارٍ الإضافة...',
+      viewerTitle: 'تفاصيل اللقطة',
+      alreadyFrozen: 'هذا النطاق مجمّد مسبقاً.',
+    },
+
+    conflict: {
+      title: 'تعارض نسخ — سبقك شخص آخر بالحفظ',
+      desc: 'نسختك قديمة. قارن القيم الحالية على الخادم أدناه، ثم أعد التحميل وحاول مجدداً.',
+      mineLabel: 'ما حاولت حفظه',
+      theirsLabel: 'الحالي على الخادم',
+      reloadRetry: 'إعادة تحميل ومحاولة',
+      versionLabel: 'النسخة',
+      actorLabel: 'الفاعل',
+      timeLabel: 'الوقت',
+    },
+
+    attachments: {
+      title: 'مرفقات الأدلة (5 م.ب كحد أقصى لكل ملف)',
+      attachBtn: 'إرفاق ملف',
+      uploading: 'جارٍ الرفع...',
+      emptyText: 'لا توجد ملفات أدلة مرفقة بعد.',
+      downloadBtn: 'تنزيل',
+      deleteBtn: 'حذف',
+      deleteConfirm: 'حذف هذا المرفق؟',
+      oversize: 'الملف كبير جداً. حد مرفقات الأدلة 5 م.ب لكل ملف.',
+      mime: 'نوع الملف غير مسموح. الأنواع المقبولة: PDF, PNG, JPEG, XLSX, CSV, TXT.',
+      missing: 'اختر ملفاً أولاً.',
+      uploadFailed: 'فشل الرفع.',
+      typesNote: 'PDF وPNG وJPEG وXLSX وCSV وTXT — بحد 5 م.ب، مخزنة تجريبياً (OD-06).',
+      usageLabel: 'تخزين المرفقات',
+    },
+
+    storage: {
+      title: 'تخزين الأدلة',
+      subtitle: 'استهلاك المرفقات لكل مستأجر (سعة نسخة العرض 1 غ.ب)',
+      bytesLabel: 'المستخدم',
+      filesLabel: 'الملفات',
+      warnMsg: 'التخزين تجاوز عتبة التحذير (800 م.ب) لنسخة العرض.',
+      okMsg: 'التخزين ضمن ميزانية العرض.',
     },
 
     weights: {

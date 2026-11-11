@@ -1,6 +1,18 @@
 import express, { type Request, type Response } from 'express';
 import multer from 'multer';
 import {
+  clientApproveGate,
+  clientApproveRefusalMessage,
+  geFinalGate,
+  isGeFinalScope,
+  checkVersion,
+  validateAttachment,
+  MAX_ATTACHMENT_BYTES,
+  STORAGE_WARN_BYTES,
+  formatBytes,
+  snapshotContentHash,
+} from '../lib/approvalChain.ts';
+import {
   isDatabaseConfigured,
   withTenantContext,
   recordAuditLog,
@@ -34,6 +46,15 @@ import { esgProfileTextToRating, initiativeNaturalKey } from '../lib/initiatives
 const router = express.Router();
 const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  storage: multer.memoryStorage(),
+});
+
+// OD-06 (demo-scale): evidence attachments stay in DB bytea with a 5 MB cap.
+// Production object-storage migration is explicitly out of scope. The limit is
+// enforced twice: multer rejects oversize streams early, and the route
+// re-checks size + mime via validateAttachment() (never trust the client).
+const attachmentUpload = multer({
+  limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
   storage: multer.memoryStorage(),
 });
 
@@ -462,10 +483,22 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
         let inserted = 0;
         let updated = 0;
         let skipped = 0;
+        // B9-B3: frozen rows are skipped with reason, never touched.
+        let skippedFrozen = 0;
         const seenItemKeys = new Set<string>();
         const importBatchId = `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
         // normCode -> { display name from payload, item ids needing assignment }
         const deptToItemIds = new Map<string, { name: string; itemIds: string[] }>();
+
+        // B9-B3: snapshot-derived frozen scopes for the effective tenant.
+        const frozenSnapRes = await client.query(
+          'SELECT scope_type, scope_ref FROM review_snapshots WHERE client_id = $1',
+          [effectiveClientId]
+        );
+        const tenantFrozen = frozenSnapRes.rows.some((r) => r.scope_type === 'tenant');
+        const frozenDisclosureIds = new Set(
+          frozenSnapRes.rows.filter((r) => r.scope_type === 'disclosure').map((r) => String(r.scope_ref))
+        );
 
         for (const std of standards) {
           // Upsert standard
@@ -506,6 +539,16 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
                 continue;
               }
               seenItemKeys.add(dedupeKey);
+
+              // B9-B3 (WF-05): re-imports must NEVER touch frozen rows. Frozen
+              // items skip tenant provisioning (departments/assignments) and
+              // are counted as skipped with reason. The shared catalog upsert
+              // below stays descriptive-only (never touches tenant rows).
+              if (tenantFrozen || frozenDisclosureIds.has(disclosureId)) {
+                skipped++;
+                skippedFrozen++;
+                continue;
+              }
 
               // Upsert on the natural key (disclosure_id, code). The UPDATE
               // branch touches descriptive columns ONLY — answers, approvals,
@@ -615,6 +658,8 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
             inserted,
             updated,
             skipped,
+            skippedFrozen,
+            skippedFrozenReason: skippedFrozen > 0 ? 'frozen-scope (GE final snapshot): rows skipped, never touched' : null,
             importBatchId,
             departmentsUpserted,
             assignmentsCreated,
@@ -628,6 +673,8 @@ router.post('/gri/commit', authMiddleware, async (req: AuthenticatedRequest, res
           inserted,
           updated,
           skipped,
+          skippedFrozen,
+          skippedFrozenReason: skippedFrozen > 0 ? 'frozen-scope (GE final snapshot): rows skipped, never touched' : null,
           importBatchId,
           departmentsUpserted,
           assignmentsCreated,
@@ -814,7 +861,7 @@ const NA_REASONS = [
   'information-unavailable-incomplete',
 ] as const;
 
-type QueueStatus = 'not_evaluated' | 'draft' | 'submitted' | 'approved' | 'returned' | 'not_applicable';
+type QueueStatus = 'not_evaluated' | 'draft' | 'submitted' | 'approved' | 'client_approved' | 'returned' | 'not_applicable';
 
 function queueStatusFor(row: {
   not_applicable?: boolean | null;
@@ -825,6 +872,7 @@ function queueStatusFor(row: {
   if (row.not_applicable) return 'not_applicable';
   if (row.not_evaluated || !row.evaluation_id) return 'not_evaluated';
   const s = row.answer_status;
+  if (s === 'client_approved') return 'client_approved';
   if (s === 'submitted' || s === 'approved' || s === 'returned') return s;
   return 'draft';
 }
@@ -881,6 +929,142 @@ async function loadEvaluationWithAnswer(
   return { evaluation, answer, evaluatorDepartmentId: answer?.department_id ?? null };
 }
 
+// ----------------------------------------------------------------------
+// FIX BATCH 9 helpers: freeze pre-checks + optimistic-locking conflict payloads.
+//
+// Freeze rule (WF-05): any evaluation/answer/correction/profile write touching
+// a snapshotted scope is refused with a human 409/403 — EXCEPT append-only
+// snapshot notes. The API pre-checks below return the human message; the
+// is_scope_frozen triggers in schema.sql are the second line of defence.
+// Version rule (A-15): the evaluations+answers pair carries lockstep versions;
+// every mutation requires the caller's version and bumps both rows.
+// ----------------------------------------------------------------------
+
+type DbClient = {
+  query: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount: number | null }>;
+};
+
+async function isFrozenScope(db: DbClient, clientId: string, itemId?: string | null): Promise<boolean> {
+  const res = await db.query('SELECT is_scope_frozen($1, $2) AS frozen', [clientId, itemId ?? null]);
+  return res.rows[0]?.frozen === true;
+}
+
+function frozenWriteError(): Error & { statusCode?: number } {
+  return Object.assign(
+    new Error(
+      'This scope is frozen by GE final approval. Editing is disabled; only append-only snapshot notes are allowed.'
+    ),
+    { statusCode: 409 }
+  );
+}
+
+function isFrozenDbError(err: any): boolean {
+  return typeof err?.message === 'string' && err.message.includes('FROZEN_SCOPE');
+}
+
+function toFrozenError(err: any): Error & { statusCode?: number } {
+  return isFrozenDbError(err) ? frozenWriteError() : err;
+}
+
+/** Best-effort actor names for the mine-vs-theirs conflict payload. */
+async function versionedSnapshots(
+  db: DbClient,
+  evaluation: any | null,
+  answer: any | null
+): Promise<{ evaluation: any | null; answer: any | null }> {
+  let evaluatorName: string | null = null;
+  let submitterName: string | null = null;
+  try {
+    if (evaluation?.evaluator_id) {
+      const r = await db.query('SELECT name FROM users WHERE id = $1', [evaluation.evaluator_id]);
+      evaluatorName = r.rows[0]?.name ?? null;
+    }
+    if (answer?.submitted_by) {
+      const r = await db.query('SELECT name FROM users WHERE id = $1', [answer.submitted_by]);
+      submitterName = r.rows[0]?.name ?? null;
+    }
+  } catch {
+    // Names are best-effort; ids + timestamps are always present.
+  }
+  return {
+    evaluation: evaluation
+      ? {
+          version: evaluation.version ?? 1,
+          score: evaluation.score ?? null,
+          notEvaluated: evaluation.not_evaluated ?? null,
+          notApplicable: evaluation.not_applicable ?? null,
+          naReason: evaluation.na_reason ?? null,
+          evidenceNote: evaluation.justification ?? null,
+          actorId: evaluation.evaluator_id ?? null,
+          actorName: evaluatorName,
+          updatedAt: evaluation.updated_at ?? null,
+        }
+      : null,
+    answer: answer
+      ? {
+          version: answer.version ?? 1,
+          status: answer.status ?? null,
+          evidenceNote: answer.value ?? null,
+          actorId: answer.submitted_by ?? null,
+          actorName: submitterName,
+          updatedAt: answer.updated_at ?? null,
+        }
+      : null,
+  };
+}
+
+/**
+ * Enforces the caller's version against the lockstep pair. Returns null when
+ * the caller may proceed; otherwise sends the 400/409 response (with BOTH
+ * versions' {score, flags, evidence note, actor, time}) and returns the
+ * snapshot for logging. Missing version → 400 (reload); mismatch → 409 (diff).
+ */
+async function enforcePairVersion(
+  res: Response,
+  db: DbClient,
+  evaluation: any | null,
+  answer: any | null,
+  provided: unknown,
+  attempted: Record<string, unknown>
+): Promise<{ expectedVersion: number } | null> {
+  const expected = evaluation?.version ?? 1;
+  const answerVersion = answer?.version ?? 1;
+  const snaps = await versionedSnapshots(db, evaluation, answer);
+  const outcome = {
+    version: expected,
+    score: evaluation?.score ?? null,
+    notEvaluated: evaluation?.not_evaluated ?? null,
+    notApplicable: evaluation?.not_applicable ?? null,
+    naReason: evaluation?.na_reason ?? null,
+    evidenceNote: evaluation?.justification ?? answer?.value ?? null,
+    actorId: evaluation?.evaluator_id ?? null,
+    actorName: (snaps.evaluation as any)?.actorName ?? null,
+    updatedAt: evaluation?.updated_at ?? null,
+  };
+  // Lockstep invariant: both rows bump together. A divergence is fail-closed.
+  if (expected !== answerVersion) {
+    return void res.status(409).json({
+      error:
+        'This evaluation changed on the server (version drift). Reload the item to see the latest values, then retry.',
+      code: 'version.conflict',
+      conflict: { expectedVersion: expected, providedVersion: typeof provided === 'number' ? provided : null, ...snaps, attempted },
+    }) as unknown as null;
+  }
+  const check = checkVersion(outcome, provided, attempted);
+  if (!check.ok) {
+    const status = check.status;
+    return void res.status(status).json({
+      error:
+        status === 409
+          ? 'Someone else updated this evaluation while you were editing (version conflict). Compare your values with the current ones below, reload, then retry.'
+          : 'A version is required to save (optimistic locking). Reload the item and retry.',
+      code: status === 409 ? 'version.conflict' : 'version.required',
+      conflict: { expectedVersion: expected, providedVersion: check.conflict.providedVersion, ...snaps, attempted },
+    }) as unknown as null;
+  }
+  return { expectedVersion: expected };
+}
+
 // A1. Department queue: items assigned to the caller's department with
 // current evaluation + answer state. Employees are pinned to their own
 // department; client_admin sees the tenant queue (optional departmentId
@@ -929,9 +1113,10 @@ router.get('/queue', authMiddleware, async (req: AuthenticatedRequest, res: Resp
                 s.code AS standard_code, s.category AS pillar,
                 dep.id AS department_id, dep.code AS department_code, dep.name AS department_name,
                 e.id AS evaluation_id, e.score, e.not_evaluated, e.not_applicable, e.na_reason,
-                e.justification, e.evaluator_id, e.previous_score, e.updated_at AS evaluation_updated_at,
+                e.justification, e.evaluator_id, e.previous_score, e.version AS evaluation_version,
+                e.updated_at AS evaluation_updated_at,
                 ans.id AS answer_id, ans.status AS answer_status, ans.submitted_by AS answer_submitted_by,
-                ans.updated_at AS answer_updated_at
+                ans.version AS answer_version, ans.updated_at AS answer_updated_at
          FROM assignments a
          JOIN items i ON i.id = a.item_id
          JOIN disclosures d ON d.id = i.disclosure_id
@@ -1020,30 +1205,58 @@ router.post('/evaluations', authMiddleware, async (req: AuthenticatedRequest, re
         throw Object.assign(new Error('This item is not assigned to the department.'), { statusCode: 403 });
       }
 
+      // B9-B (WF-05): frozen scope refuses evaluation writes.
+      if (await isFrozenScope(client, clientId, itemId)) {
+        throw frozenWriteError();
+      }
+
       const existingAnswer = await client.query(
-        'SELECT id, status FROM answers WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
+        'SELECT id, status, version FROM answers WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
         [clientId, itemId, departmentId]
       );
       const currentStatus: string | undefined = existingAnswer.rows[0]?.status;
-      if (currentStatus === 'submitted' || currentStatus === 'approved') {
+      if (currentStatus === 'submitted' || currentStatus === 'approved' || currentStatus === 'client_approved') {
         throw Object.assign(
           new Error('This evaluation is already submitted. Post-submit changes must go through PUT /api/evaluations/:id/correct with a reason.'),
           { statusCode: 409 }
         );
       }
 
+      // B9-C (A-15): an existing draft requires the caller's version.
+      const existingEval = await client.query(
+        'SELECT * FROM evaluations WHERE client_id = $1 AND item_id = $2',
+        [clientId, itemId]
+      );
+      if (existingEval.rows[0]) {
+        const existingAnsRes = existingAnswer.rows[0]
+          ? await client.query('SELECT * FROM answers WHERE id = $1', [existingAnswer.rows[0].id])
+          : { rows: [] };
+        const gate = await enforcePairVersion(
+          res,
+          client,
+          existingEval.rows[0],
+          existingAnsRes.rows[0] ?? null,
+          body.version,
+          { score, notEvaluated: finalNotEvaluated, notApplicable: finalNotApplicable, evidenceNote: note }
+        );
+        if (!gate) {
+          throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
+        }
+      }
+
       const evalRes = await client.query(
         `INSERT INTO evaluations (client_id, item_id, evaluator_id, score, not_evaluated, not_applicable, na_reason, justification)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (client_id, item_id) DO UPDATE SET
-           evaluator_id = EXCLUDED.evaluator_id,
-           score = EXCLUDED.score,
-           not_evaluated = EXCLUDED.not_evaluated,
-           not_applicable = EXCLUDED.not_applicable,
-           na_reason = EXCLUDED.na_reason,
-           justification = EXCLUDED.justification,
-           updated_at = NOW()
-         RETURNING *`,
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (client_id, item_id) DO UPDATE SET
+            evaluator_id = EXCLUDED.evaluator_id,
+            score = EXCLUDED.score,
+            not_evaluated = EXCLUDED.not_evaluated,
+            not_applicable = EXCLUDED.not_applicable,
+            na_reason = EXCLUDED.na_reason,
+            justification = EXCLUDED.justification,
+            version = evaluations.version + 1,
+            updated_at = NOW()
+          RETURNING *`,
         [clientId, itemId, user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null]
       );
 
@@ -1051,13 +1264,14 @@ router.post('/evaluations', authMiddleware, async (req: AuthenticatedRequest, re
       // trigger guards submitted rows and history only ever grows via A5.
       const ansRes = await client.query(
         `INSERT INTO answers (client_id, item_id, department_id, submitted_by, status, value, correction_history)
-         VALUES ($1, $2, $3, $4, 'draft', $5, '[]'::jsonb)
-         ON CONFLICT (client_id, item_id, department_id) DO UPDATE SET
-           value = EXCLUDED.value,
-           status = 'draft',
-           submitted_by = EXCLUDED.submitted_by,
-           updated_at = NOW()
-         RETURNING *`,
+          VALUES ($1, $2, $3, $4, 'draft', $5, '[]'::jsonb)
+          ON CONFLICT (client_id, item_id, department_id) DO UPDATE SET
+            value = EXCLUDED.value,
+            status = 'draft',
+            submitted_by = EXCLUDED.submitted_by,
+            version = answers.version + 1,
+            updated_at = NOW()
+          RETURNING *`,
         [clientId, itemId, departmentId, user.id, note]
       );
 
@@ -1082,8 +1296,11 @@ router.post('/evaluations', authMiddleware, async (req: AuthenticatedRequest, re
 
     res.status(201).json(result);
   } catch (err: any) {
+    // B9-C: the version gate already sent the 400/409 response with the diff.
+    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
     console.error('Evaluation save error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to save evaluation draft' });
+    const mapped = toFrozenError(err);
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to save evaluation draft' });
   }
 });
 
@@ -1106,14 +1323,45 @@ router.post('/evaluations/:id/submit', authMiddleware, async (req: Authenticated
           statusCode: 400,
         });
       }
-      if (answer.status === 'submitted' || answer.status === 'approved') {
+      if (answer.status === 'submitted' || answer.status === 'approved' || answer.status === 'client_approved') {
         throw Object.assign(new Error('This evaluation has already been submitted.'), { statusCode: 409 });
       }
 
-      const updRes = await client.query(
-        `UPDATE answers SET status = 'submitted', updated_at = NOW() WHERE id = $1 RETURNING *`,
-        [answer.id]
+      // B9-B (WF-05): frozen scope refuses evaluation writes.
+      if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
+        throw frozenWriteError();
+      }
+
+      // B9-C (A-15): submit requires the caller's answer version.
+      const gate = await enforcePairVersion(
+        res,
+        client,
+        evaluation,
+        answer,
+        req.body?.version,
+        { action: 'submit' }
       );
+      if (!gate) {
+        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
+      }
+
+      const updRes = await client.query(
+        `UPDATE answers SET status = 'submitted', version = version + 1, updated_at = NOW()
+          WHERE id = $1 AND version = $2 RETURNING *`,
+        [answer.id, gate.expectedVersion]
+      );
+      if ((updRes.rowCount ?? 0) === 0) {
+        const fresh = await loadEvaluationWithAnswer(client, evaluationId).catch(() => null);
+        const snaps = await versionedSnapshots(client, fresh?.evaluation ?? evaluation, fresh?.answer ?? answer);
+        throw Object.assign(
+          new Error('Someone else updated this evaluation while you were editing (version conflict). Reload, then retry.'),
+          { statusCode: 409, conflictPayload: { code: 'version.conflict', conflict: { ...snaps, attempted: { action: 'submit' } } } }
+        );
+      }
+      // Lockstep bump: the pair versions move together.
+      await client.query('UPDATE evaluations SET version = version + 1, updated_at = NOW() WHERE id = $1', [
+        evaluation.id,
+      ]);
 
       await recordAuditLog(client, {
         clientId: evaluation.client_id,
@@ -1127,12 +1375,18 @@ router.post('/evaluations/:id/submit', authMiddleware, async (req: Authenticated
       return { evaluation, answer: updRes.rows[0] };
     });
 
-    res.json(result);
-  } catch (err: any) {
-    console.error('Evaluation submit error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to submit evaluation' });
-  }
-});
+      res.json(result);
+    } catch (err: any) {
+      // B9-C: the version gate already sent the 400/409 response with the diff.
+      if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+      console.error('Evaluation submit error:', err);
+      if (err?.statusCode === 409 && err?.conflictPayload) {
+        return res.status(409).json({ error: err.message, ...err.conflictPayload });
+      }
+      const mappedSubmit = toFrozenError(err);
+      res.status(mappedSubmit.statusCode || 500).json({ error: mappedSubmit.message || 'Failed to submit evaluation' });
+    }
+  });
 
 // A4. Approve / return a submitted evaluation (admins only, never self).
 async function handleEvaluationDecision(
@@ -1163,14 +1417,45 @@ async function handleEvaluationDecision(
         throw Object.assign(new Error('Only a submitted evaluation can be approved or returned.'), { statusCode: 409 });
       }
 
+      // B9-B (WF-05): frozen scope refuses evaluation writes.
+      if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
+        throw frozenWriteError();
+      }
+
+      // B9-C (A-15): approve/return requires the caller's answer version.
+      const gate = await enforcePairVersion(
+        res,
+        client,
+        evaluation,
+        answer,
+        req.body?.version,
+        { decision, comment: comment || null }
+      );
+      if (!gate) {
+        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
+      }
+
       const nextStatus = decision === 'approve' ? 'approved' : 'returned';
       const approvalStatus = decision === 'approve' ? 'approved' : 'rejected';
       const level = user.role === 'ge_admin' ? 'ge' : 'client';
 
       const updRes = await client.query(
-        `UPDATE answers SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-        [nextStatus, answer.id]
+        `UPDATE answers SET status = $1, version = version + 1, updated_at = NOW()
+          WHERE id = $2 AND version = $3 RETURNING *`,
+        [nextStatus, answer.id, gate.expectedVersion]
       );
+      if ((updRes.rowCount ?? 0) === 0) {
+        const fresh = await loadEvaluationWithAnswer(client, evaluationId).catch(() => null);
+        const snaps = await versionedSnapshots(client, fresh?.evaluation ?? evaluation, fresh?.answer ?? answer);
+        throw Object.assign(
+          new Error('Someone else updated this evaluation while you were editing (version conflict). Reload, then retry.'),
+          { statusCode: 409, conflictPayload: { code: 'version.conflict', conflict: { ...snaps, attempted: { decision } } } }
+        );
+      }
+      // Lockstep bump: the pair versions move together.
+      await client.query('UPDATE evaluations SET version = version + 1, updated_at = NOW() WHERE id = $1', [
+        evaluation.id,
+      ]);
       const apprRes = await client.query(
         `INSERT INTO approvals (client_id, answer_id, approver_id, level, status, comments)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -1189,12 +1474,18 @@ async function handleEvaluationDecision(
       return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
     });
 
-    res.json(result);
-  } catch (err: any) {
-    console.error('Evaluation decision error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to record evaluation decision' });
+      res.json(result);
+    } catch (err: any) {
+      // B9-C: the version gate already sent the 400/409 response with the diff.
+      if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+      console.error('Evaluation decision error:', err);
+      if (err?.statusCode === 409 && err?.conflictPayload) {
+        return res.status(409).json({ error: err.message, ...err.conflictPayload });
+      }
+      const mappedDecision = toFrozenError(err);
+      res.status(mappedDecision.statusCode || 500).json({ error: mappedDecision.message || 'Failed to record evaluation decision' });
+    }
   }
-}
 
 router.post('/evaluations/:id/approve', authMiddleware, (req: AuthenticatedRequest, res: Response) =>
   handleEvaluationDecision(req, res, 'approve')
@@ -1259,11 +1550,29 @@ router.put('/evaluations/:id/correct', authMiddleware, async (req: Authenticated
           statusCode: 403,
         });
       }
-      if (!answer || (answer.status !== 'submitted' && answer.status !== 'approved')) {
+      if (!answer || (answer.status !== 'submitted' && answer.status !== 'approved' && answer.status !== 'client_approved')) {
         throw Object.assign(
           new Error('Only a submitted or approved evaluation can be corrected. Edit the draft instead.'),
           { statusCode: 409 }
         );
+      }
+
+      // B9-B (WF-05): frozen scope refuses corrections (use snapshot notes).
+      if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
+        throw frozenWriteError();
+      }
+
+      // B9-C (A-15): correction requires the caller's version.
+      const gate = await enforcePairVersion(
+        res,
+        client,
+        evaluation,
+        answer,
+        body.version,
+        { newScore, notEvaluated, notApplicable, naReason, reason: reason.trim() }
+      );
+      if (!gate) {
+        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
       }
 
       const before = {
@@ -1281,18 +1590,26 @@ router.put('/evaluations/:id/correct', authMiddleware, async (req: Authenticated
 
       const evalRes = await client.query(
         `UPDATE evaluations
-         SET score = $1, not_evaluated = $2, not_applicable = $3, na_reason = $4,
-             previous_score = score, updated_at = NOW()
-         WHERE id = $5 RETURNING *`,
-        [afterScore, afterNotEvaluated, afterNotApplicable, afterNaReason, evaluation.id]
+          SET score = $1, not_evaluated = $2, not_applicable = $3, na_reason = $4,
+              previous_score = score, version = version + 1, updated_at = NOW()
+          WHERE id = $5 AND version = $6 RETURNING *`,
+        [afterScore, afterNotEvaluated, afterNotApplicable, afterNaReason, evaluation.id, gate.expectedVersion]
       );
+      if ((evalRes.rowCount ?? 0) === 0) {
+        const fresh = await loadEvaluationWithAnswer(client, evaluationId).catch(() => null);
+        const snaps = await versionedSnapshots(client, fresh?.evaluation ?? evaluation, fresh?.answer ?? answer);
+        throw Object.assign(
+          new Error('Someone else updated this evaluation while you were editing (version conflict). Reload, then retry.'),
+          { statusCode: 409, conflictPayload: { code: 'version.conflict', conflict: { ...snaps, attempted: { action: 'correct' } } } }
+        );
+      }
 
       const historyEntry = [{ before, after, actor: user.id, reason: reason.trim(), at: new Date().toISOString() }];
       const ansRes = await client.query(
         `UPDATE answers
-         SET correction_history = COALESCE(correction_history, '[]'::jsonb) || $1::jsonb,
-             updated_at = NOW()
-         WHERE id = $2 RETURNING *`,
+          SET correction_history = COALESCE(correction_history, '[]'::jsonb) || $1::jsonb,
+              version = version + 1, updated_at = NOW()
+          WHERE id = $2 RETURNING *`,
         [JSON.stringify(historyEntry), answer.id]
       );
 
@@ -1310,8 +1627,13 @@ router.put('/evaluations/:id/correct', authMiddleware, async (req: Authenticated
 
     res.json(result);
   } catch (err: any) {
+    // B9-C: the version gate already sent the 400/409 response with the diff.
+    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
     console.error('Evaluation correction error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to correct evaluation' });
+    if (err?.statusCode === 409 && err?.conflictPayload) {
+      return res.status(409).json({ error: err.message, ...err.conflictPayload });
+    }
+    res.status(err.statusCode || 500).json({ error: toFrozenError(err).message || 'Failed to correct evaluation' });
   }
 });
 
@@ -1397,6 +1719,975 @@ router.get('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res
   } catch (err: any) {
     console.error('Evaluation history error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch evaluation history' });
+  }
+});
+
+// ----------------------------------------------------------------------
+// 6C. Client approval + GE final freeze + attachments (FIX BATCH 9)
+//
+// WF-02 chain: draft → submitted → dept-approved ('approved') →
+// client-approved ('client_approved') → ready-for-review (GE FinalApproval +
+// immutable snapshot freezes the tenant copy, WF-03/WF-05). Client approval
+// is disclosure-scoped: every department in the disclosure must be at least
+// dept-approved (or N/A with reason) or the 409 names the incomplete ones.
+// ----------------------------------------------------------------------
+
+// B9-A1. Client approve: client_admin (own tenant) or ge_admin (any tenant).
+// Allowed ONLY when every assignment/department evaluation for the SAME
+// DISCLOSURE is at least dept-approved; otherwise 409 naming departments.
+router.post('/evaluations/:id/client-approve', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
+      return res.status(403).json({ error: 'Only tenant or platform administrators may client-approve evaluations.' });
+    }
+    const evaluationId = req.params.id;
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+
+      if (user.role === 'client_admin' && evaluation.client_id !== user.clientId) {
+        throw Object.assign(new Error('Client administrators may only client-approve their own tenant.'), {
+          statusCode: 403,
+        });
+      }
+      if (user.id === evaluation.evaluator_id || (answer && user.id === answer.submitted_by)) {
+        throw Object.assign(new Error('Self-approval is forbidden: the approver must differ from the evaluator and the submitter.'), {
+          statusCode: 403,
+        });
+      }
+      if (!answer || answer.status !== 'approved') {
+        throw Object.assign(
+          new Error('Only a dept-approved evaluation can be client-approved. It must be approved at department scope first.'),
+          { statusCode: 409 }
+        );
+      }
+
+      // B9-B (WF-05): frozen scope refuses evaluation writes.
+      if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
+        throw frozenWriteError();
+      }
+
+      // B9-C (A-15): client approval requires the caller's version.
+      const gate = await enforcePairVersion(
+        res,
+        client,
+        evaluation,
+        answer,
+        req.body?.version,
+        { action: 'client-approve' }
+      );
+      if (!gate) {
+        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
+      }
+
+      // Disclosure scope: every department assignment under the same disclosure.
+      const itemRes = await client.query('SELECT disclosure_id FROM items WHERE id = $1', [evaluation.item_id]);
+      const disclosureId = itemRes.rows[0]?.disclosure_id;
+      if (!disclosureId) {
+        throw Object.assign(new Error('Item disclosure not found.'), { statusCode: 404 });
+      }
+      const scopeRes = await client.query(
+        `SELECT dep.id AS department_id, dep.name AS department_name,
+                ans.status AS answer_status, e.not_applicable AS not_applicable
+          FROM assignments a
+          JOIN departments dep ON dep.id = a.department_id
+          JOIN items i ON i.id = a.item_id
+          LEFT JOIN answers ans ON ans.client_id = a.client_id AND ans.item_id = a.item_id AND ans.department_id = a.department_id
+          LEFT JOIN evaluations e ON e.client_id = a.client_id AND e.item_id = a.item_id
+          WHERE a.client_id = $1 AND i.disclosure_id = $2`,
+        [evaluation.client_id, disclosureId]
+      );
+      const decision = clientApproveGate(
+        scopeRes.rows.map((r) => ({
+          departmentId: r.department_id,
+          departmentName: r.department_name,
+          answerStatus: r.answer_status,
+          notApplicable: r.not_applicable === true,
+        }))
+      );
+      if (!decision.ok) {
+        throw Object.assign(new Error(clientApproveRefusalMessage(decision.incomplete)), { statusCode: 409 });
+      }
+
+      const updRes = await client.query(
+        `UPDATE answers SET status = 'client_approved', version = version + 1, updated_at = NOW()
+          WHERE id = $1 AND version = $2 RETURNING *`,
+        [answer.id, gate.expectedVersion]
+      );
+      if ((updRes.rowCount ?? 0) === 0) {
+        const fresh = await loadEvaluationWithAnswer(client, evaluationId).catch(() => null);
+        const snaps = await versionedSnapshots(client, fresh?.evaluation ?? evaluation, fresh?.answer ?? answer);
+        throw Object.assign(
+          new Error('Someone else updated this evaluation while you were editing (version conflict). Reload, then retry.'),
+          { statusCode: 409, conflictPayload: { code: 'version.conflict', conflict: { ...snaps, attempted: { action: 'client-approve' } } } }
+        );
+      }
+      await client.query('UPDATE evaluations SET version = version + 1, updated_at = NOW() WHERE id = $1', [
+        evaluation.id,
+      ]);
+
+      const apprRes = await client.query(
+        `INSERT INTO approvals (client_id, answer_id, approver_id, level, status, comments)
+          VALUES ($1, $2, $3, 'client', 'approved', $4) RETURNING *`,
+        [evaluation.client_id, answer.id, user.id, typeof req.body?.comment === 'string' ? req.body.comment.trim() || null : null]
+      );
+
+      await recordAuditLog(client, {
+        clientId: evaluation.client_id,
+        userId: user.id,
+        action: 'EVALUATION_CLIENT_APPROVED',
+        entityType: 'evaluations',
+        entityId: evaluation.id,
+        payload: { itemId: evaluation.item_id, answerId: answer.id, disclosureId },
+      });
+
+      return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+    console.error('Client approval error:', err);
+    if (err?.statusCode === 409 && err?.conflictPayload) {
+      return res.status(409).json({ error: err.message, ...err.conflictPayload });
+    }
+    const mapped = toFrozenError(err);
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to client-approve evaluation' });
+  }
+});
+
+// B9-A2. Client return: client_admin (own tenant) or ge_admin (any tenant).
+// Comment is required; the item goes back to dept scope with reason preserved.
+router.post('/evaluations/:id/client-return', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
+      return res.status(403).json({ error: 'Only tenant or platform administrators may return evaluations from client scope.' });
+    }
+    const evaluationId = req.params.id;
+    const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+    if (!comment) {
+      return res.status(400).json({ error: 'A return comment is required so the department knows what to rework.' });
+    }
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+
+      if (user.role === 'client_admin' && evaluation.client_id !== user.clientId) {
+        throw Object.assign(new Error('Client administrators may only return evaluations in their own tenant.'), {
+          statusCode: 403,
+        });
+      }
+      if (user.id === evaluation.evaluator_id || (answer && user.id === answer.submitted_by)) {
+        throw Object.assign(new Error('Self-approval is forbidden: the approver must differ from the evaluator and the submitter.'), {
+          statusCode: 403,
+        });
+      }
+      if (!answer || (answer.status !== 'approved' && answer.status !== 'client_approved')) {
+        throw Object.assign(
+          new Error('Only a dept-approved or client-approved evaluation can be returned from client scope.'),
+          { statusCode: 409 }
+        );
+      }
+
+      if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
+        throw frozenWriteError();
+      }
+
+      const gate = await enforcePairVersion(
+        res,
+        client,
+        evaluation,
+        answer,
+        req.body?.version,
+        { action: 'client-return', comment }
+      );
+      if (!gate) {
+        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
+      }
+
+      const updRes = await client.query(
+        `UPDATE answers SET status = 'returned', version = version + 1, updated_at = NOW()
+          WHERE id = $1 AND version = $2 RETURNING *`,
+        [answer.id, gate.expectedVersion]
+      );
+      if ((updRes.rowCount ?? 0) === 0) {
+        const fresh = await loadEvaluationWithAnswer(client, evaluationId).catch(() => null);
+        const snaps = await versionedSnapshots(client, fresh?.evaluation ?? evaluation, fresh?.answer ?? answer);
+        throw Object.assign(
+          new Error('Someone else updated this evaluation while you were editing (version conflict). Reload, then retry.'),
+          { statusCode: 409, conflictPayload: { code: 'version.conflict', conflict: { ...snaps, attempted: { action: 'client-return' } } } }
+        );
+      }
+      await client.query('UPDATE evaluations SET version = version + 1, updated_at = NOW() WHERE id = $1', [
+        evaluation.id,
+      ]);
+
+      const apprRes = await client.query(
+        `INSERT INTO approvals (client_id, answer_id, approver_id, level, status, comments)
+          VALUES ($1, $2, $3, 'client', 'rejected', $4) RETURNING *`,
+        [evaluation.client_id, answer.id, user.id, comment]
+      );
+
+      await recordAuditLog(client, {
+        clientId: evaluation.client_id,
+        userId: user.id,
+        action: 'EVALUATION_CLIENT_RETURNED',
+        entityType: 'evaluations',
+        entityId: evaluation.id,
+        payload: { itemId: evaluation.item_id, answerId: answer.id, comment },
+      });
+
+      return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+    console.error('Client return error:', err);
+    if (err?.statusCode === 409 && err?.conflictPayload) {
+      return res.status(409).json({ error: err.message, ...err.conflictPayload });
+    }
+    const mapped = toFrozenError(err);
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to return evaluation from client scope' });
+  }
+});
+
+// B9-A3. Client-review queue: pending client approval grouped by disclosure,
+// with a completeness bar per group. client_admin sees own tenant; ge_admin
+// may name any tenant explicitly.
+router.get('/client-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
+      return res.status(403).json({ error: 'Only tenant or platform administrators may view the client-review queue.' });
+    }
+    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
+    if (user.role === 'client_admin' && namedClient && namedClient !== user.clientId) {
+      return res.status(403).json({ error: 'Client administrators may only access their own tenant queue.' });
+    }
+    const tenantId = user.role === 'ge_admin' ? namedClient ?? user.clientId ?? null : user.clientId ?? null;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
+    }
+
+    const groups = await withTenantContext(contextFromUser(user), async (client) => {
+      const rowsRes = await client.query(
+        `SELECT d.id AS disclosure_id, d.code AS disclosure_code, d.title AS disclosure_title,
+                s.code AS standard_code,
+                dep.id AS department_id, dep.name AS department_name,
+                ans.id AS answer_id, ans.status AS answer_status, ans.version AS answer_version,
+                e.id AS evaluation_id, e.version AS evaluation_version,
+                e.score, e.not_evaluated, e.not_applicable, e.na_reason
+          FROM assignments a
+          JOIN items i ON i.id = a.item_id
+          JOIN disclosures d ON d.id = i.disclosure_id
+          JOIN standards s ON s.id = d.standard_id
+          JOIN departments dep ON dep.id = a.department_id
+          LEFT JOIN answers ans ON ans.client_id = a.client_id AND ans.item_id = a.item_id AND ans.department_id = a.department_id
+          LEFT JOIN evaluations e ON e.client_id = a.client_id AND e.item_id = a.item_id
+          WHERE a.client_id = $1
+          ORDER BY s.code ASC, d.code ASC, dep.name ASC`,
+        [tenantId]
+      );
+      const byDisclosure = new Map<string, any>();
+      for (const r of rowsRes.rows) {
+        let g = byDisclosure.get(r.disclosure_id);
+        if (!g) {
+          g = {
+            disclosureId: r.disclosure_id,
+            disclosureCode: r.disclosure_code,
+            disclosureTitle: r.disclosure_title,
+            standardCode: r.standard_code,
+            departments: [],
+          };
+          byDisclosure.set(r.disclosure_id, g);
+        }
+        g.departments.push({
+          departmentId: r.department_id,
+          departmentName: r.department_name,
+          answerId: r.answer_id,
+          answerStatus: r.answer_status,
+          answerVersion: r.answer_version,
+          evaluationId: r.evaluation_id,
+          evaluationVersion: r.evaluation_version,
+          score: r.score,
+          notEvaluated: r.not_evaluated,
+          notApplicable: r.not_applicable,
+          naReason: r.na_reason,
+        });
+      }
+      return [...byDisclosure.values()].map((g) => {
+        const total = g.departments.length;
+        const approved = g.departments.filter((x: any) => x.answerStatus === 'approved' || x.answerStatus === 'client_approved').length;
+        const clientApproved = g.departments.filter((x: any) => x.answerStatus === 'client_approved').length;
+        const na = g.departments.filter((x: any) => x.notApplicable === true).length;
+        const gate = clientApproveGate(
+          g.departments.map((x: any) => ({
+            departmentId: x.departmentId,
+            departmentName: x.departmentName,
+            answerStatus: x.answerStatus,
+            notApplicable: x.notApplicable === true,
+          }))
+        );
+        return {
+          ...g,
+          total,
+          approved,
+          clientApproved,
+          notApplicable: na,
+          completeness: total === 0 ? 0 : Math.round(((approved + na) / total) * 100),
+          readyForClient: gate.ok && g.departments.some((x: any) => x.answerStatus === 'approved'),
+          fullyClientApproved: total > 0 && g.departments.every((x: any) => x.answerStatus === 'client_approved' || x.notApplicable === true),
+          incompleteDepartments: gate.ok ? [] : (gate as { ok: false; incomplete: string[] }).incomplete,
+        };
+      });
+    });
+
+    res.json({ tenantId, groups, count: groups.length });
+  } catch (err: any) {
+    console.error('Client-review queue error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch client-review queue' });
+  }
+});
+
+// ----------------------------------------------------------------------
+// 6D. GE final + freeze (MP-45, S-18/M-10, WF-03/WF-05)
+// ----------------------------------------------------------------------
+
+/** Shared scope-row loader for ge-check and ge-final. */
+async function loadGeScopeRows(
+  client: DbClient,
+  tenantId: string,
+  scope: 'disclosure' | 'tenant',
+  scopeRef: string
+): Promise<{ items: any[]; disclosureCode?: string }> {
+  const params: any[] = [tenantId];
+  let disclosureFilter = '';
+  if (scope === 'disclosure') {
+    params.push(scopeRef);
+    disclosureFilter = 'AND i.disclosure_id = $2';
+  }
+  const rowsRes = await client.query(
+    `SELECT i.id AS item_id, i.code AS item_code, i.weight::float AS weight,
+            i.disclosure_id, d.code AS disclosure_code, d.title AS disclosure_title,
+            ans.id AS answer_id, ans.status AS answer_status,
+            e.id AS evaluation_id, e.score, e.not_evaluated, e.not_applicable, e.na_reason,
+            e.justification, e.evaluator_id, e.updated_at AS evaluation_updated_at
+      FROM assignments a
+      JOIN items i ON i.id = a.item_id
+      JOIN disclosures d ON d.id = i.disclosure_id
+      LEFT JOIN answers ans ON ans.client_id = a.client_id AND ans.item_id = a.item_id AND ans.department_id = a.department_id
+      LEFT JOIN evaluations e ON e.client_id = a.client_id AND e.item_id = a.item_id
+      WHERE a.client_id = $1 ${disclosureFilter}
+      ORDER BY d.code ASC, i.code ASC`,
+    params
+  );
+  // One row per (item, department): collapse to one row per item, keeping the
+  // weakest client-approval state across departments.
+  const byItem = new Map<string, any>();
+  for (const r of rowsRes.rows) {
+    let entry = byItem.get(r.item_id);
+    if (!entry) {
+      entry = {
+        itemId: r.item_id,
+        code: r.item_code,
+        weight: r.weight,
+        disclosureId: r.disclosure_id,
+        disclosureCode: r.disclosure_code,
+        disclosureTitle: r.disclosure_title,
+        statuses: [] as string[],
+        evaluation: null as any,
+      };
+      byItem.set(r.item_id, entry);
+    }
+    entry.statuses.push(r.answer_status);
+    if (!entry.evaluation && r.evaluation_id) {
+      entry.evaluation = {
+        id: r.evaluation_id,
+        score: r.score,
+        notEvaluated: r.not_evaluated,
+        notApplicable: r.not_applicable,
+        naReason: r.na_reason,
+        justification: r.justification,
+      };
+    }
+  }
+  const items = [...byItem.values()].map((entry) => {
+    const statuses: (string | null)[] = entry.statuses;
+    const notApplicable = entry.evaluation?.notApplicable === true;
+    // Item counts as client-approved only when EVERY department answer is.
+    const allClientApproved = statuses.length > 0 && statuses.every((s) => s === 'client_approved');
+    return {
+      itemId: entry.itemId,
+      code: entry.code,
+      weight: entry.weight,
+      disclosureCode: entry.disclosureCode,
+      answerStatus: allClientApproved ? 'client_approved' : statuses.includes('client_approved') ? 'mixed' : statuses.find((s) => s) ?? null,
+      notApplicable,
+      naReason: entry.evaluation?.naReason ?? null,
+      score: entry.evaluation?.score ?? null,
+      notEvaluated: entry.evaluation?.notEvaluated ?? null,
+      evaluation: entry.evaluation,
+    };
+  });
+  return { items };
+}
+
+// B9-B4. GE final-review completeness checklist (read-only).
+router.get('/reviews/ge-check', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: 'Only platform administrators may run the GE final review.' });
+    }
+    const scopeRaw = req.query.scope;
+    if (!isGeFinalScope(scopeRaw)) {
+      return res.status(400).json({ error: 'scope must be disclosure or tenant.' });
+    }
+    const clientId = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
+    if (!clientId) {
+      return res.status(400).json({ error: 'No tenant selected. Choose a tenant (clientId) to review.' });
+    }
+    const scopeRef =
+      scopeRaw === 'tenant'
+        ? clientId
+        : typeof req.query.scopeRef === 'string' && req.query.scopeRef.trim()
+          ? req.query.scopeRef.trim()
+          : null;
+    if (!scopeRef) {
+      return res.status(400).json({ error: 'scopeRef (disclosure id) is required for disclosure scope.' });
+    }
+
+    const data = await withTenantContext(contextFromUser(user), async (client) => {
+      const { items } = await loadGeScopeRows(client, clientId, scopeRaw, scopeRef);
+      const gate = geFinalGate(
+        items.map((it) => ({
+          itemId: it.itemId,
+          code: it.code,
+          answerStatus: it.answerStatus,
+          notApplicable: it.notApplicable,
+          naReason: it.naReason,
+        }))
+      );
+      const snapRes = await client.query(
+        'SELECT id, scope_type, scope_ref, created_at FROM review_snapshots WHERE client_id = $1 AND scope_type = $2 AND scope_ref = $3',
+        [clientId, scopeRaw, scopeRef]
+      );
+      return {
+        clientId,
+        scope: scopeRaw,
+        scopeRef,
+        items,
+        total: items.length,
+        gate,
+        alreadyFrozen: (snapRes.rowCount ?? 0) > 0,
+        snapshot: snapRes.rows[0] ?? null,
+      };
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('GE check error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to run GE final checklist' });
+  }
+});
+
+// B9-B1. GE final + freeze (ge_admin only): requires all in-scope evaluations
+// client-approved (or N/A with reason); stamps FinalApproval (approvals
+// level='ge') and creates an immutable snapshot row.
+router.post('/reviews/ge-final', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: 'Only platform administrators may freeze a GE final review.' });
+    }
+    const body = req.body ?? {};
+    if (!isGeFinalScope(body.scope)) {
+      return res.status(400).json({ error: 'scope must be disclosure or tenant.' });
+    }
+    const scope = body.scope;
+    const clientId = typeof body.clientId === 'string' && body.clientId.trim() ? body.clientId.trim() : null;
+    if (!clientId) {
+      return res.status(400).json({ error: 'No tenant selected. Choose a tenant (clientId) to freeze.' });
+    }
+    const scopeRef =
+      scope === 'tenant'
+        ? clientId
+        : typeof body.scopeRef === 'string' && body.scopeRef.trim()
+          ? body.scopeRef.trim()
+          : null;
+    if (!scopeRef) {
+      return res.status(400).json({ error: 'scopeRef (disclosure id) is required for disclosure scope.' });
+    }
+    if (typeof body.confirm !== 'boolean' || body.confirm !== true) {
+      return res.status(400).json({ error: 'Explicit confirmation is required: pass { confirm: true } to freeze.' });
+    }
+
+    const result = await withTenantContext(contextFromUser(user), async (client) => {
+      const tenantRes = await client.query('SELECT id FROM clients WHERE id = $1', [clientId]);
+      if (!tenantRes.rows[0]) {
+        throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
+      }
+
+      const existing = await client.query(
+        'SELECT id FROM review_snapshots WHERE client_id = $1 AND scope_type = $2 AND scope_ref = $3',
+        [clientId, scope, scopeRef]
+      );
+      if ((existing.rowCount ?? 0) > 0) {
+        throw Object.assign(new Error('This scope is already frozen (a snapshot exists). Post-freeze notes are append-only.'), {
+          statusCode: 409,
+        });
+      }
+
+      const { items } = await loadGeScopeRows(client, clientId, scope, scopeRef);
+      if (items.length === 0) {
+        throw Object.assign(new Error('Nothing to freeze: this scope has no assigned items.'), { statusCode: 400 });
+      }
+      const gate = geFinalGate(
+        items.map((it) => ({
+          itemId: it.itemId,
+          code: it.code,
+          answerStatus: it.answerStatus,
+          notApplicable: it.notApplicable,
+          naReason: it.naReason,
+        }))
+      );
+      if (!gate.ok) {
+        throw Object.assign(
+          new Error(
+            `GE final approval is blocked: ${gate.incomplete.length} item(s) are not client-approved yet: ` +
+              gate.incomplete.join(', ') +
+              `. Every in-scope item must be client-approved (or N/A with a reason) first.`
+          ),
+          { statusCode: 409 }
+        );
+      }
+
+      // Aggregate over the frozen numbers (same weighted rule as the dashboard).
+      const scoreRows = items.map((it) => ({
+        itemId: it.itemId,
+        weight: it.weight || 2,
+        score: it.score as 0 | 50 | 100 | null,
+        notEvaluated: Boolean(it.notEvaluated),
+        notApplicable: Boolean(it.notApplicable),
+        justification: it.evaluation?.justification,
+        hasEvaluation: it.evaluation !== null,
+        hasSubmittedAnswer: true,
+      }));
+      const aggregate = calculateAggregateScore(gateDraftEvaluations(scoreRows));
+
+      // Stamp FinalApproval (approvals level='ge') on every client-approved answer.
+      const finalApprovals: any[] = [];
+      for (const it of items) {
+        if (it.notApplicable) continue;
+        const ansRes = await client.query(
+          `SELECT id FROM answers
+            WHERE client_id = $1 AND item_id = $2 AND status = 'client_approved'`,
+          [clientId, it.itemId]
+        );
+        for (const a of ansRes.rows) {
+          const apprRes = await client.query(
+            `INSERT INTO approvals (client_id, answer_id, approver_id, level, status, comments)
+              VALUES ($1, $2, $3, 'ge', 'approved', 'GE FinalApproval (freeze)') RETURNING *`,
+            [clientId, a.id, user.id]
+          );
+          finalApprovals.push(apprRes.rows[0]);
+        }
+      }
+
+      const now = new Date().toISOString();
+      const payload = {
+        scope,
+        scopeRef,
+        clientId,
+        frozenBy: user.id,
+        frozenAt: now,
+        items: items.map((it) => ({
+          itemId: it.itemId,
+          code: it.code,
+          score: it.score,
+          notEvaluated: it.notEvaluated,
+          notApplicable: it.notApplicable,
+          naReason: it.naReason,
+          weight: it.weight,
+        })),
+        aggregate: aggregate.aggregateScore,
+        coveragePercentage: aggregate.coveragePercentage,
+        counts: {
+          total: aggregate.totalCount,
+          evaluated: aggregate.evaluatedCount,
+          applicable: aggregate.applicableCount,
+          notApplicable: aggregate.notApplicableCount,
+          notEvaluated: aggregate.notEvaluatedCount,
+          fullGap: aggregate.fullGapCount,
+          partialGap: aggregate.partialGapCount,
+          noGap: aggregate.noGapCount,
+        },
+      };
+      const contentHash = snapshotContentHash(payload);
+      const snapRes = await client.query(
+        `INSERT INTO review_snapshots (client_id, scope_type, scope_ref, payload, content_hash, created_by)
+          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [clientId, scope, scopeRef, JSON.stringify(payload), contentHash, user.id]
+      );
+
+      await recordAuditLog(client, {
+        clientId,
+        userId: user.id,
+        action: 'GE_FINAL_FROZEN',
+        entityType: 'review_snapshots',
+        entityId: snapRes.rows[0].id,
+        payload: { scope, scopeRef, contentHash, aggregate: aggregate.aggregateScore, coverage: aggregate.coveragePercentage },
+      });
+
+      return { snapshot: snapRes.rows[0], aggregate, finalApprovals: finalApprovals.length };
+    });
+
+    res.status(201).json(result);
+  } catch (err: any) {
+    console.error('GE final error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to freeze GE final review' });
+  }
+});
+
+// B9-B4. Snapshot list + viewer (frozen numbers + hash + actor + time).
+router.get('/reviews/snapshots', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
+    if (user.role !== 'ge_admin' && namedClient && namedClient !== user.clientId) {
+      return res.status(403).json({ error: 'Cross-tenant snapshot access is forbidden.' });
+    }
+    const tenantId = user.role === 'ge_admin' ? namedClient ?? user.clientId ?? null : user.clientId ?? null;
+    if (!tenantId && user.role === 'ge_admin') {
+      return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
+    }
+    if (!tenantId) {
+      return res.status(400).json({ error: 'No tenant context for this user.' });
+    }
+
+    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+      const result = await client.query(
+        `SELECT s.id, s.client_id, s.scope_type, s.scope_ref, s.payload, s.content_hash,
+                s.created_by, u.name AS created_by_name, s.created_at,
+                (SELECT COUNT(*)::int FROM snapshot_notes n WHERE n.snapshot_id = s.id) AS notes_count
+          FROM review_snapshots s
+          LEFT JOIN users u ON u.id = s.created_by
+          WHERE s.client_id = $1
+          ORDER BY s.created_at DESC`,
+        [tenantId]
+      );
+      return result.rows;
+    });
+
+    res.json({ tenantId, items: rows, count: rows.length });
+  } catch (err: any) {
+    console.error('Snapshots list error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch snapshots' });
+  }
+});
+
+router.get('/reviews/snapshots/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const data = await withTenantContext(contextFromUser(user), async (client) => {
+      const snapRes = await client.query(
+        `SELECT s.id, s.client_id, s.scope_type, s.scope_ref, s.payload, s.content_hash,
+                s.created_by, u.name AS created_by_name, s.created_at
+          FROM review_snapshots s
+          LEFT JOIN users u ON u.id = s.created_by
+          WHERE s.id = $1`,
+        [req.params.id]
+      );
+      const snapshot = snapRes.rows[0];
+      if (!snapshot) {
+        throw Object.assign(new Error('Snapshot not found.'), { statusCode: 404 });
+      }
+      if (user.role !== 'ge_admin' && snapshot.client_id !== user.clientId) {
+        throw Object.assign(new Error('Cross-tenant snapshot access is forbidden.'), { statusCode: 403 });
+      }
+      const notesRes = await client.query(
+        `SELECT n.id, n.note, n.created_by, u.name AS created_by_name, n.created_at
+          FROM snapshot_notes n
+          LEFT JOIN users u ON u.id = n.created_by
+          WHERE n.snapshot_id = $1
+          ORDER BY n.created_at ASC`,
+        [snapshot.id]
+      );
+      return { snapshot, notes: notesRes.rows };
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    console.error('Snapshot view error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch snapshot' });
+  }
+});
+
+// B9-B2. Post-freeze append-only note: the ONLY write allowed on frozen scope.
+router.post('/reviews/snapshots/:id/notes', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+    if (!note) {
+      return res.status(400).json({ error: 'note is required.' });
+    }
+    if (note.length > 2000) {
+      return res.status(400).json({ error: 'note must be at most 2000 characters.' });
+    }
+
+    const created = await withTenantContext(contextFromUser(user), async (client) => {
+      const snapRes = await client.query('SELECT id, client_id FROM review_snapshots WHERE id = $1', [req.params.id]);
+      const snapshot = snapRes.rows[0];
+      if (!snapshot) {
+        throw Object.assign(new Error('Snapshot not found.'), { statusCode: 404 });
+      }
+      if (user.role !== 'ge_admin' && snapshot.client_id !== user.clientId) {
+        throw Object.assign(new Error('Cross-tenant snapshot access is forbidden.'), { statusCode: 403 });
+      }
+      const insRes = await client.query(
+        `INSERT INTO snapshot_notes (snapshot_id, client_id, note, created_by)
+          VALUES ($1, $2, $3, $4) RETURNING *`,
+        [snapshot.id, snapshot.client_id, note, user.id]
+      );
+
+      await recordAuditLog(client, {
+        clientId: snapshot.client_id,
+        userId: user.id,
+        action: 'SNAPSHOT_NOTE_ADDED',
+        entityType: 'review_snapshots',
+        entityId: snapshot.id,
+        payload: { noteLength: note.length },
+      });
+
+      return insRes.rows[0];
+    });
+
+    res.status(201).json(created);
+  } catch (err: any) {
+    console.error('Snapshot note error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to add snapshot note' });
+  }
+});
+
+// ----------------------------------------------------------------------
+// 6E. Evidence attachments, 5 MB cap (MP-47, S-15, OD-06)
+// ----------------------------------------------------------------------
+
+/** Loads an answer the caller may see (RLS applies); employees: own dept only. */
+async function loadVisibleAnswer(client: DbClient, user: AuthUser, answerId: string): Promise<any> {
+  const ansRes = await client.query('SELECT * FROM answers WHERE id = $1', [answerId]);
+  const answer = ansRes.rows[0];
+  if (!answer) {
+    throw Object.assign(new Error('Answer not found.'), { statusCode: 404 });
+  }
+  if (user.role === 'employee') {
+    if (!user.departmentId || answer.department_id !== user.departmentId) {
+      throw Object.assign(new Error('Employees may only manage attachments for their own department.'), {
+        statusCode: 403,
+      });
+    }
+  }
+  return answer;
+}
+
+// B9-D2. Upload (multipart). Multer enforces the 5 MB stream cap first; the
+// route re-checks size + allowlist via validateAttachment (never trust client).
+router.post('/answers/:id/attachments', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  attachmentUpload.single('file')(req, res, async (multerErr: any) => {
+    try {
+      if (multerErr) {
+        if (multerErr.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({
+            error: 'File is too large. Evidence attachments are limited to 5 MB per file.',
+            code: 'attachments.oversize',
+          });
+        }
+        return res.status(400).json({ error: multerErr.message || 'Upload failed.', code: 'attachments.upload' });
+      }
+      const user = req.user!;
+      const file = (req as any).file;
+      if (!file) {
+        return res.status(400).json({ error: 'A file field named "file" is required.', code: 'attachments.missing' });
+      }
+      const check = validateAttachment({ mime: file.mimetype, sizeBytes: file.size });
+      if (!check.ok) {
+        return res.status(400).json({
+          error:
+            check.code === 'attachments.oversize'
+              ? 'File is too large. Evidence attachments are limited to 5 MB per file.'
+              : 'File type not allowed. Accepted types: PDF, PNG, JPEG, XLSX, CSV, TXT.',
+          code: check.code,
+        });
+      }
+
+      const created = await withTenantContext(contextFromUser(user), async (client) => {
+        const answer = await loadVisibleAnswer(client, user, req.params.id);
+        if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
+          throw frozenWriteError();
+        }
+        const insRes = await client.query(
+          `INSERT INTO evidence_attachments (answer_id, file_name, mime, size_bytes, data, uploaded_by)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id, answer_id, file_name, mime, size_bytes, uploaded_by, created_at`,
+          [answer.id, String(file.originalname).slice(0, 255), file.mimetype, file.size, file.buffer, user.id]
+        );
+
+        await recordAuditLog(client, {
+          clientId: answer.client_id,
+          userId: user.id,
+          action: 'ATTACHMENT_UPLOADED',
+          entityType: 'evidence_attachments',
+          entityId: insRes.rows[0].id,
+          payload: { answerId: answer.id, fileName: insRes.rows[0].file_name, mime: insRes.rows[0].mime, sizeBytes: file.size },
+        });
+
+        return insRes.rows[0];
+      });
+
+      res.status(201).json(created);
+    } catch (err: any) {
+      console.error('Attachment upload error:', err);
+      const mapped = toFrozenError(err);
+      res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to upload attachment' });
+    }
+  });
+});
+
+// B9-D2. List metadata (never bulk bytes).
+router.get('/answers/:id/attachments', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+      await loadVisibleAnswer(client, user, req.params.id);
+      const result = await client.query(
+        `SELECT ea.id, ea.answer_id, ea.file_name, ea.mime, ea.size_bytes,
+                ea.uploaded_by, u.name AS uploaded_by_name, ea.created_at
+          FROM evidence_attachments ea
+          LEFT JOIN users u ON u.id = ea.uploaded_by
+          WHERE ea.answer_id = $1
+          ORDER BY ea.created_at ASC`,
+        [req.params.id]
+      );
+      return result.rows;
+    });
+
+    res.json({ items: rows, count: rows.length });
+  } catch (err: any) {
+    console.error('Attachments list error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attachments' });
+  }
+});
+
+// B9-D2. Single-file download stream.
+router.get('/answers/:id/attachments/:attachId/download', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const file = await withTenantContext(contextFromUser(user), async (client) => {
+      const answer = await loadVisibleAnswer(client, user, req.params.id);
+      const fileRes = await client.query('SELECT * FROM evidence_attachments WHERE id = $1 AND answer_id = $2', [
+        req.params.attachId,
+        answer.id,
+      ]);
+      if (!fileRes.rows[0]) {
+        throw Object.assign(new Error('Attachment not found.'), { statusCode: 404 });
+      }
+      return fileRes.rows[0];
+    });
+
+    res.setHeader('Content-Type', file.mime);
+    res.setHeader('Content-Length', String(file.size_bytes));
+    res.setHeader('Content-Disposition', `attachment; filename="${String(file.file_name).replace(/"/g, '')}"`);
+    res.send(file.data);
+  } catch (err: any) {
+    console.error('Attachment download error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to download attachment' });
+  }
+});
+
+// B9-D2. Delete (uploader or admin; audited).
+router.delete('/answers/:id/attachments/:attachId', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    await withTenantContext(contextFromUser(user), async (client) => {
+      const answer = await loadVisibleAnswer(client, user, req.params.id);
+      if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
+        throw frozenWriteError();
+      }
+      const fileRes = await client.query('SELECT * FROM evidence_attachments WHERE id = $1 AND answer_id = $2', [
+        req.params.attachId,
+        answer.id,
+      ]);
+      const file = fileRes.rows[0];
+      if (!file) {
+        throw Object.assign(new Error('Attachment not found.'), { statusCode: 404 });
+      }
+      const isAdmin = user.role === 'client_admin' || user.role === 'ge_admin';
+      if (!isAdmin && file.uploaded_by !== user.id) {
+        throw Object.assign(new Error('Only the uploader or an administrator may delete this attachment.'), {
+          statusCode: 403,
+        });
+      }
+      await client.query('DELETE FROM evidence_attachments WHERE id = $1', [file.id]);
+
+      await recordAuditLog(client, {
+        clientId: answer.client_id,
+        userId: user.id,
+        action: 'ATTACHMENT_DELETED',
+        entityType: 'evidence_attachments',
+        entityId: file.id,
+        payload: { answerId: answer.id, fileName: file.file_name, sizeBytes: file.size_bytes },
+      });
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Attachment delete error:', err);
+    const mapped = toFrozenError(err);
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to delete attachment' });
+  }
+});
+
+// B9-D3. Storage monitor readout (bytes + files + cap note), shown in Settings.
+router.get('/storage/usage', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
+    if (user.role !== 'ge_admin' && namedClient && namedClient !== user.clientId) {
+      return res.status(403).json({ error: 'Cross-tenant storage access is forbidden.' });
+    }
+    const tenantId = user.role === 'ge_admin' ? namedClient ?? user.clientId ?? null : user.clientId ?? null;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
+    }
+
+    const usage = await withTenantContext(contextFromUser(user), async (client) => {
+      const result = await client.query(
+        `SELECT COUNT(*)::int AS files, COALESCE(SUM(ea.size_bytes), 0)::int AS bytes
+          FROM evidence_attachments ea
+          JOIN answers a ON a.id = ea.answer_id
+          WHERE a.client_id = $1`,
+        [tenantId]
+      );
+      const row = result.rows[0] ?? { files: 0, bytes: 0 };
+      const bytes = Number(row.bytes) || 0;
+      return {
+        tenantId,
+        bytes,
+        files: Number(row.files) || 0,
+        formatted: formatBytes(bytes),
+        warnThresholdBytes: STORAGE_WARN_BYTES,
+        warn: bytes >= STORAGE_WARN_BYTES,
+        capNote: 'Demo database capacity is 1 GB. Attachments warn at 800 MB; production object-storage migration is out of scope (OD-06).',
+      };
+    });
+
+    res.json(usage);
+  } catch (err: any) {
+    console.error('Storage usage error:', err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch storage usage' });
   }
 });
 
@@ -2206,11 +3497,18 @@ router.post('/initiatives/select', authMiddleware, async (req: AuthenticatedRequ
       if (!tenantRes.rows[0]) {
         throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
       }
+      // B9-B3: frozen tenants keep their selection links untouched.
+      if (await isFrozenScope(client, effectiveClientId, null)) {
+        throw Object.assign(
+          new Error('This tenant is frozen by GE final approval. Initiative selection is disabled; only append-only snapshot notes are allowed.'),
+          { statusCode: 409 }
+        );
+      }
       const linkRes = await client.query(
         `INSERT INTO client_initiatives (client_id, initiative_id, selected_by)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (client_id, initiative_id) DO NOTHING
-         RETURNING *`,
+          VALUES ($1, $2, $3)
+          ON CONFLICT (client_id, initiative_id) DO NOTHING
+          RETURNING *`,
         [effectiveClientId, initiativeId, user.id]
       );
       const alreadySelected = (linkRes.rowCount ?? 0) === 0;
@@ -2250,6 +3548,13 @@ router.delete('/initiatives/select/:id', authMiddleware, async (req: Authenticat
     const effectiveClientId = scope.effectiveClientId;
 
     await withTenantContext(contextFromUser(user), async (client) => {
+      // B9-B3: frozen tenants keep their selection links untouched.
+      if (await isFrozenScope(client, effectiveClientId, null)) {
+        throw Object.assign(
+          new Error('This tenant is frozen by GE final approval. Initiative selection is disabled; only append-only snapshot notes are allowed.'),
+          { statusCode: 409 }
+        );
+      }
       const delRes = await client.query(
         'DELETE FROM client_initiatives WHERE client_id = $1 AND initiative_id = $2',
         [effectiveClientId, initiativeId]
@@ -2315,8 +3620,16 @@ router.post('/esg-profile/import', authMiddleware, async (req: AuthenticatedRequ
       let inserted = 0;
       let updated = 0;
       let skipped = 0;
+      // B9-B3 (WF-05): a tenant-frozen scope skips profile rows with reason.
+      let skippedFrozen = 0;
+      const tenantFrozen = await isFrozenScope(client, effectiveClientId, null);
+      if (tenantFrozen) {
+        skippedFrozen = rows.length;
+        skipped = rows.length;
+      }
       const seen = new Set<string>();
       for (const [index, row] of rows.entries()) {
+        if (tenantFrozen) continue;
         const pillar = typeof row.pillar === 'string' ? row.pillar.trim() : '';
         const department = typeof row.department === 'string' ? row.department.trim() : '';
         const topic = typeof row.topic === 'string' ? row.topic.trim() : '';
@@ -2408,6 +3721,8 @@ router.post('/esg-profile/import', authMiddleware, async (req: AuthenticatedRequ
           inserted,
           updated,
           skipped,
+          skippedFrozen,
+          skippedFrozenReason: skippedFrozen > 0 ? 'frozen-scope (GE final tenant snapshot): rows skipped, never touched' : null,
           importBatchId,
         },
       });
@@ -2418,7 +3733,16 @@ router.post('/esg-profile/import', authMiddleware, async (req: AuthenticatedRequ
       );
       const score = calculateEsgProfileScore(allRes.rows);
 
-      return { inserted, updated, skipped, count: inserted + updated, importBatchId, ...score };
+      return {
+        inserted,
+        updated,
+        skipped,
+        skippedFrozen,
+        skippedFrozenReason: skippedFrozen > 0 ? 'frozen-scope (GE final tenant snapshot): rows skipped, never touched' : null,
+        count: inserted + updated,
+        importBatchId,
+        ...score,
+      };
     });
 
     res.json({ success: true, ...result });

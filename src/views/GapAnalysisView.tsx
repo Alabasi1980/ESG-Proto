@@ -4,6 +4,8 @@ import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { ActiveTab } from '../components/Sidebar.tsx';
 import { EvaluationPanel, QueueItem } from './EvaluationPanel.tsx';
+import { ClientReviewView } from './ClientReviewView.tsx';
+import { GeFinalView } from './GeFinalView.tsx';
 
 interface GapAnalysisViewProps {
   setActiveTab: (tab: ActiveTab) => void;
@@ -14,13 +16,14 @@ const STATUS_STYLES: Record<string, string> = {
   draft: 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300',
   submitted: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300',
   approved: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300',
+  client_approved: 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300',
   returned: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300',
   not_applicable: 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300',
 };
 
 export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }) => {
   const { t } = useLanguage();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +63,8 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
         return t.gapAnalysis.stSubmitted;
       case 'approved':
         return t.gapAnalysis.stApproved;
+      case 'client_approved':
+        return t.gapAnalysis.stClientApproved;
       case 'returned':
         return t.gapAnalysis.stReturned;
       case 'not_applicable':
@@ -189,7 +194,7 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
         <div className="lg:col-span-3">
           {selected ? (
             <EvaluationPanel
-              key={`${selected.item_id}::${selected.department_id}::${selected.answer_status}::${selected.evaluation_id}`}
+              key={`${selected.item_id}::${selected.department_id}::${selected.answer_status}::${selected.evaluation_id}::${selected.evaluation_version}::${selected.answer_version}`}
               item={selected}
               onChanged={onChanged}
             />
@@ -201,6 +206,14 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
           )}
         </div>
       </div>
+
+      {/* B9-A3: client-review queue (admins only) */}
+      {(user?.role === 'client_admin' || user?.role === 'ge_admin') && (
+        <ClientReviewView onChanged={onChanged} />
+      )}
+
+      {/* B9-B4: GE final review + freeze (ge_admin only) */}
+      {user?.role === 'ge_admin' && <GeFinalView />}
     </div>
   );
 };

@@ -708,3 +708,252 @@ CREATE POLICY esg_profile_isolation_policy ON esg_profile
 
 ALTER TABLE client_initiatives FORCE ROW LEVEL SECURITY;
 ALTER TABLE esg_profile FORCE ROW LEVEL SECURITY;
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 9 (demo) — approval chain, freeze snapshots, optimistic locking,
+-- evidence attachments. Same idempotency contract as FIX BATCH 1/8: safe to
+-- re-apply wholesale (DO-blocks, CREATE ... IF NOT EXISTS, DROP ... IF EXISTS).
+--------------------------------------------------------------------------------
+
+-- B9-A. answers.status gains 'client_approved' (WF-02: draft → submitted →
+-- dept-approved → client-approved → ready-for-review; returned loops back).
+ALTER TABLE answers DROP CONSTRAINT IF EXISTS answers_status_valid;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'answers_status_valid') THEN
+    ALTER TABLE answers ADD CONSTRAINT answers_status_valid
+      CHECK (status IN ('draft', 'submitted', 'approved', 'client_approved', 'reopened', 'returned'));
+  END IF;
+END $$;
+
+-- B9-C. Optimistic locking (A-15): version counters on both rows of the pair.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'answers' AND column_name = 'version') THEN
+    ALTER TABLE answers ADD COLUMN version INT NOT NULL DEFAULT 1;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'evaluations' AND column_name = 'version') THEN
+    ALTER TABLE evaluations ADD COLUMN version INT NOT NULL DEFAULT 1;
+  END IF;
+END $$;
+
+-- B9-B. review_snapshots: immutable GE-final snapshots (WF-03/WF-05). NO
+-- UPDATE/DELETE — enforced by trigger, exactly like audit_log. Tenant freeze
+-- is derived from these rows (no separate flag to drift out of sync).
+CREATE TABLE IF NOT EXISTS review_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('disclosure', 'tenant')),
+  scope_ref TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  content_hash TEXT NOT NULL,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+CREATE OR REPLACE FUNCTION block_review_snapshot_modification()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'review_snapshots are immutable; UPDATE and DELETE operations are forbidden. Post-freeze notes must use snapshot_notes.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_block_snapshot_mod ON review_snapshots;
+CREATE TRIGGER trg_block_snapshot_mod
+BEFORE UPDATE OR DELETE ON review_snapshots
+FOR EACH ROW EXECUTE FUNCTION block_review_snapshot_modification();
+
+-- B9-B. snapshot_notes: the ONLY post-freeze write path (append-only log
+-- linked to a snapshot). Snapshot rows themselves stay immutable.
+CREATE TABLE IF NOT EXISTS snapshot_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_id UUID NOT NULL REFERENCES review_snapshots(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  note TEXT NOT NULL,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+CREATE OR REPLACE FUNCTION block_snapshot_note_modification()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'snapshot_notes are append-only; UPDATE and DELETE operations are forbidden.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_block_snapshot_note_mod ON snapshot_notes;
+CREATE TRIGGER trg_block_snapshot_note_mod
+BEFORE UPDATE OR DELETE ON snapshot_notes
+FOR EACH ROW EXECUTE FUNCTION block_snapshot_note_modification();
+
+-- B9-D. evidence_attachments (OD-06, demo-scale): files stay in DB bytea with
+-- a 5 MB cap (CHECK). Production object-storage migration is explicitly out
+-- of scope — see the comment on the API upload path in routes.ts.
+CREATE TABLE IF NOT EXISTS evidence_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  answer_id UUID NOT NULL REFERENCES answers(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size_bytes INT NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+  data BYTEA NOT NULL,
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- B9 freeze helper: true when a GE-final snapshot covers (client, item).
+-- Tenant scope freezes the whole tenant (evaluations, answers, corrections,
+-- profile). Disclosure scope freezes only items under that disclosure.
+CREATE OR REPLACE FUNCTION is_scope_frozen(p_client_id UUID, p_item_id UUID DEFAULT NULL)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_disclosure_id UUID;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM review_snapshots
+    WHERE client_id = p_client_id AND scope_type = 'tenant'
+  ) THEN
+    RETURN TRUE;
+  END IF;
+  IF p_item_id IS NOT NULL THEN
+    SELECT disclosure_id INTO v_disclosure_id FROM items WHERE id = p_item_id;
+    IF v_disclosure_id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM review_snapshots
+      WHERE client_id = p_client_id
+        AND scope_type = 'disclosure'
+        AND scope_ref = v_disclosure_id::text
+    ) THEN
+      RETURN TRUE;
+    END IF;
+  END IF;
+  RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- B9 freeze backstop (WF-05): no evaluation/answer write may touch frozen
+-- scope; the API pre-checks and returns a human 409, this trigger is the
+-- second line of defence for direct SQL.
+CREATE OR REPLACE FUNCTION block_frozen_scope_write()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_client_id UUID;
+  v_item_id UUID;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_client_id := OLD.client_id;
+    v_item_id := OLD.item_id;
+  ELSE
+    v_client_id := NEW.client_id;
+    v_item_id := NEW.item_id;
+  END IF;
+  IF is_scope_frozen(v_client_id, v_item_id) THEN
+    RAISE EXCEPTION 'FROZEN_SCOPE: this scope is GE-final frozen; only append-only snapshot notes are allowed.';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_block_frozen_answers ON answers;
+CREATE TRIGGER trg_block_frozen_answers
+BEFORE INSERT OR UPDATE OR DELETE ON answers
+FOR EACH ROW EXECUTE FUNCTION block_frozen_scope_write();
+
+DROP TRIGGER IF EXISTS trg_block_frozen_evaluations ON evaluations;
+CREATE TRIGGER trg_block_frozen_evaluations
+BEFORE INSERT OR UPDATE OR DELETE ON evaluations
+FOR EACH ROW EXECUTE FUNCTION block_frozen_scope_write();
+
+-- B9-B. esg_profile freeze backstop: tenant-level snapshots freeze profile writes.
+CREATE OR REPLACE FUNCTION block_frozen_profile_write()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_client_id UUID;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_client_id := OLD.client_id;
+  ELSE
+    v_client_id := NEW.client_id;
+  END IF;
+  IF is_scope_frozen(v_client_id, NULL) THEN
+    RAISE EXCEPTION 'FROZEN_SCOPE: this tenant is GE-final frozen; profile imports must skip frozen rows.';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_block_frozen_esg_profile ON esg_profile;
+CREATE TRIGGER trg_block_frozen_esg_profile
+BEFORE INSERT OR UPDATE OR DELETE ON esg_profile
+FOR EACH ROW EXECUTE FUNCTION block_frozen_profile_write();
+
+-- B9-D: attachments inherit the freeze of their parent answer's scope
+-- (defence in depth; the API pre-checks and returns the human 409 first).
+CREATE OR REPLACE FUNCTION block_frozen_attachment_write()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_answer RECORD;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    SELECT client_id, item_id INTO v_answer FROM answers WHERE id = OLD.answer_id;
+  ELSE
+    SELECT client_id, item_id INTO v_answer FROM answers WHERE id = NEW.answer_id;
+  END IF;
+  IF FOUND AND is_scope_frozen(v_answer.client_id, v_answer.item_id) THEN
+    RAISE EXCEPTION 'FROZEN_SCOPE: this scope is GE-final frozen; evidence attachments are refused.';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_block_frozen_attachments ON evidence_attachments;
+CREATE TRIGGER trg_block_frozen_attachments
+BEFORE INSERT OR UPDATE OR DELETE ON evidence_attachments
+FOR EACH ROW EXECUTE FUNCTION block_frozen_attachment_write();
+
+-- B9 RLS: snapshots/notes/attachments follow the tenant pattern (ge_admin sees
+-- all; same-tenant roles read; write scoping is enforced in routes). The
+-- attachments policy resolves the tenant through the parent answer.
+ALTER TABLE review_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE snapshot_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE evidence_attachments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS review_snapshots_isolation_policy ON review_snapshots;
+CREATE POLICY review_snapshots_isolation_policy ON review_snapshots
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR client_id::text = current_setting('app.current_tenant_id', true)
+  );
+
+DROP POLICY IF EXISTS snapshot_notes_isolation_policy ON snapshot_notes;
+CREATE POLICY snapshot_notes_isolation_policy ON snapshot_notes
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR client_id::text = current_setting('app.current_tenant_id', true)
+  );
+
+DROP POLICY IF EXISTS evidence_attachments_isolation_policy ON evidence_attachments;
+CREATE POLICY evidence_attachments_isolation_policy ON evidence_attachments
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR EXISTS (
+      SELECT 1 FROM answers a
+      WHERE a.id = evidence_attachments.answer_id
+        AND a.client_id::text = current_setting('app.current_tenant_id', true)
+    )
+  );
+
+ALTER TABLE review_snapshots FORCE ROW LEVEL SECURITY;
+ALTER TABLE snapshot_notes FORCE ROW LEVEL SECURITY;
+ALTER TABLE evidence_attachments FORCE ROW LEVEL SECURITY;
