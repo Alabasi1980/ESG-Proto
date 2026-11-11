@@ -685,7 +685,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                       >
                         {u.is_active ? t.users.activeLabel : t.users.inactiveLabel}
                       </span>
-                      {u.id !== user?.id && (
+                      {isGeAdmin && u.id !== user?.id && (
                         <button
                           onClick={() => handleToggleActive(u)}
                           title={u.is_active ? t.users.deactivateButton : t.users.reactivateButton}
@@ -705,7 +705,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
             )}
           </div>
 
-          {/* Create form */}
+          {/* Create form — GE ONLY (04 matrix + WF-01: العميل لا ينشئ حسابات).
+              Non-GE admins see a pointer to the staff-list flow instead. */}
+          {isGeAdmin ? (
           <form onSubmit={handleCreateUser} className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700/60 space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
               <UserPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -810,6 +812,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
               {creatingUser ? t.users.creating : t.users.createButton}
             </button>
           </form>
+          ) : (
+            <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700/60">
+              <p className="p-3 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-200 dark:border-slate-700/40 text-xs text-slate-600 dark:text-slate-300">
+                {t.users.geOnlyNote}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

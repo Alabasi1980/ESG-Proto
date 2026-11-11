@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveImportTenant, validateNewUser } from './tenantAccess';
+import { GE_ONLY_PROVISION_REFUSAL, resolveImportTenant, validateNewUser } from './tenantAccess';
 
 const GE = { id: 'ge1', role: 'ge_admin' as const, clientId: null };
 const CA = { id: 'ca1', role: 'client_admin' as const, clientId: 'tenant-A' };
@@ -60,21 +60,29 @@ test('C: ge_admin can create tenant-less ge_admin', () => {
   if (r.ok) assert.equal(r.user.effectiveClientId, null);
 });
 
-test('C: client_admin creates employee in own tenant (implicit)', () => {
+test('C: client_admin direct-create is forbidden (WF-01: العميل لا ينشئ حسابات)', () => {
   const r = validateNewUser(CA, {
     email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee', departmentId: 'd1',
   });
-  assert.equal(r.ok, true);
-  if (r.ok) assert.equal(r.user.effectiveClientId, 'tenant-A');
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.status, 403);
+    assert.equal(r.error, GE_ONLY_PROVISION_REFUSAL);
+    assert.match(r.error, /staff list/i);
+    assert.match(r.error, /قائمة/);
+  }
 });
 
-test('C3: client_admin creating ge_admin → 403', () => {
+test('C3: client_admin creating ge_admin → 403 with the staff-list pointer', () => {
   const r = validateNewUser(CA, { email: 'g@x.com', password: 'Str0ng!Pass', name: 'G', role: 'ge_admin' });
   assert.equal(r.ok, false);
-  if (!r.ok) assert.equal(r.status, 403);
+  if (!r.ok) {
+    assert.equal(r.status, 403);
+    assert.match(r.error, /staff list/i);
+  }
 });
 
-test('C3: client_admin creating user in another tenant → 403', () => {
+test('C3: client_admin creating user in another tenant → 403 (role gate fires first)', () => {
   const r = validateNewUser(CA, {
     email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee',
     departmentId: 'd1', clientId: 'tenant-B',
@@ -83,15 +91,15 @@ test('C3: client_admin creating user in another tenant → 403', () => {
   if (!r.ok) assert.equal(r.status, 403);
 });
 
-test('C3: employee without department → 400', () => {
-  const r = validateNewUser(CA, { email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee' });
+test('C3: ge_admin creating employee without department → 400 (shape still enforced)', () => {
+  const r = validateNewUser(GE, { email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee', clientId: 'tenant-A' });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 400);
 });
 
-test('C: non-employee with departmentId → 400', () => {
-  const r = validateNewUser(CA, {
-    email: 'c@x.com', password: 'Str0ng!Pass', name: 'C', role: 'client_admin', departmentId: 'd1',
+test('C: non-employee with departmentId → 400 (ge_admin shape check)', () => {
+  const r = validateNewUser(GE, {
+    email: 'c@x.com', password: 'Str0ng!Pass', name: 'C', role: 'client_admin', departmentId: 'd1', clientId: 'tenant-A',
   });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 400);
@@ -120,7 +128,10 @@ test('B12: weak self-chosen passwords → 400 (S-02: 10 chars + complexity)', ()
 test('C: employee creator cannot create users → 403; short password → 400', () => {
   const r1 = validateNewUser(EMP, { email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee', departmentId: 'd' });
   assert.equal(r1.ok, false);
-  if (!r1.ok) assert.equal(r1.status, 403);
+  if (!r1.ok) {
+    assert.equal(r1.status, 403);
+    assert.match(r1.error, /staff list/i);
+  }
   const r2 = validateNewUser(GE, { email: 'e@x.com', password: '123', name: 'E', role: 'employee', departmentId: 'd', clientId: 't' });
   assert.equal(r2.ok, false);
   if (!r2.ok) assert.equal(r2.status, 400);

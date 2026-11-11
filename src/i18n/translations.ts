@@ -282,6 +282,7 @@ export interface Translations {
     createdSuccess: string;
     tenantPlaceholder: string;
     noTenantOption: string;
+    geOnlyNote: string;
   };
 
   actions: {
@@ -922,7 +923,7 @@ export const translations: Record<Language, Translations> = {
 
     users: {
       title: 'User Management',
-      subtitle: 'Create tenant users and deactivate accounts (accounts are never deleted)',
+      subtitle: 'Accounts are provisioned by GE only, after staff-list approval (accounts are never deleted)',
       listTitle: 'Users',
       emptyList: 'No users found.',
       emailLabel: 'Email',
@@ -941,6 +942,7 @@ export const translations: Record<Language, Translations> = {
       createdSuccess: 'User created successfully.',
       tenantPlaceholder: 'Select a tenant…',
       noTenantOption: 'No tenant (platform admin only)',
+      geOnlyNote: 'Account creation and activation are managed by GE only. Client admins: submit a Staff List for GE approval — see Staff Lists.',
     },
 
     common: {
@@ -1663,7 +1665,7 @@ export const translations: Record<Language, Translations> = {
 
     users: {
       title: 'إدارة المستخدمين',
-      subtitle: 'إنشاء مستخدمي المستأجرين وإلغاء تنشيط الحسابات (لا تُحذف الحسابات أبداً)',
+      subtitle: 'الحسابات تُنشأ من GE فقط بعد اعتماد قائمة الموظفين (لا تُحذف الحسابات أبداً)',
       listTitle: 'المستخدمون',
       emptyList: 'لا يوجد مستخدمون.',
       emailLabel: 'البريد الإلكتروني',
@@ -1682,6 +1684,7 @@ export const translations: Record<Language, Translations> = {
       createdSuccess: 'تم إنشاء المستخدم بنجاح.',
       tenantPlaceholder: 'اختر مستأجراً…',
       noTenantOption: 'بدون مستأجر (مدير المنصة فقط)',
+      geOnlyNote: 'إنشاء الحسابات وتفعيلها من GE فقط. لمديري العميل: قدّم قائمة موظفين لاعتماد GE — راجع قوائم الموظفين.',
     },
 
     common: {

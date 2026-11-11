@@ -16,7 +16,7 @@ import {
   type AuthenticatedRequest,
   type AuthUser,
 } from '../auth.ts';
-import { validateNewUser } from '../../lib/tenantAccess.ts';
+import { GE_ONLY_DEACTIVATE_REFUSAL, GE_ONLY_PROVISION_REFUSAL, validateNewUser } from '../../lib/tenantAccess.ts';
 import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../../lib/scoring.ts';
 import {
   assignUnassignRefusal,
@@ -142,7 +142,9 @@ router.get('/departments', authMiddleware, async (req: AuthenticatedRequest, res
 // 8. Minimal User Management (FIX BATCH 4, demo only)
 //
 // The demo ships exactly one bootstrap account (/setup/admin is once-only),
-// so admins need list + create + deactivate. Accounts are never deleted;
+// so admins need list (admins) + create/deactivate (GE ONLY: 04 matrix +
+// WF-01 — the client NEVER creates accounts; provisioning flows through GE
+// approval of a submitted staff list). Accounts are never deleted;
 // deactivated logins fail closed with a human 401 (see /auth/login).
 // Every write is audit-logged under the effective tenant.
 // ----------------------------------------------------------------------
@@ -155,6 +157,18 @@ const SAFE_USER_COLUMNS = `
 function requireUserAdmin(user: AuthUser, res: Response): boolean {
   if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
     res.status(403).json({ error: 'Only administrators can manage users.' });
+    return false;
+  }
+  return true;
+}
+
+// 04 matrix (تحديد أسماء الدخول + إنشاء/تعطيل حسابات = GE) + WF-01
+// (العميل لا ينشئ حسابات): account WRITES are ge_admin-only. Client reads
+// (GET /users) stay admin-scoped above. The staff-list reject path stays the
+// client's voice; provisioning stays GE's.
+function requireGeOnlyAccounts(user: AuthUser, res: Response, what: 'create' | 'activate'): boolean {
+  if (user.role !== 'ge_admin') {
+    res.status(403).json({ error: what === 'create' ? GE_ONLY_PROVISION_REFUSAL : GE_ONLY_DEACTIVATE_REFUSAL });
     return false;
   }
   return true;
@@ -187,12 +201,13 @@ router.get('/users', authMiddleware, async (req: AuthenticatedRequest, res: Resp
   }
 });
 
-// C1. Create user — ge_admin: any tenant (explicit clientId); client_admin:
-// own tenant only. Duplicate e-mail → 409. Audit-logged.
+// C1. Create user — ge_admin ONLY (04 matrix + WF-01). client_admin /
+// employee → 403 pointing at the staff-list flow. Duplicate e-mail → 409.
+// Audit-logged.
 router.post('/users', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const creator = req.user!;
-    if (!requireUserAdmin(creator, res)) return;
+    if (!requireGeOnlyAccounts(creator, res, 'create')) return;
 
     const validation = validateNewUser(
       { id: creator.id, role: creator.role, clientId: creator.clientId ?? null },
@@ -276,11 +291,12 @@ router.post('/users', authMiddleware, requireFreshPassword, async (req: Authenti
   }
 });
 
-// C1. Deactivate (or reactivate) — never delete. Self-deactivation is refused.
+// C1. Deactivate (or reactivate) — ge_admin ONLY (04 matrix: تعطيل = GE),
+// never delete. Self-deactivation is refused.
 router.patch('/users/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = req.user!;
-    if (!requireUserAdmin(actor, res)) return;
+    if (!requireGeOnlyAccounts(actor, res, 'activate')) return;
 
     const { isActive } = req.body ?? {};
     if (typeof isActive !== 'boolean') {
@@ -303,11 +319,6 @@ router.patch('/users/:id', authMiddleware, requireFreshPassword, async (req: Aut
       // Outside the caller's tenant scope the row is simply not visible.
       if (!target) {
         throw Object.assign(new Error('User not found.'), { statusCode: 404 });
-      }
-      if (actor.role === 'client_admin' && target.role === 'ge_admin') {
-        throw Object.assign(new Error('Client administrators cannot change platform administrator accounts.'), {
-          statusCode: 403,
-        });
       }
 
       const updRes = await client.query(

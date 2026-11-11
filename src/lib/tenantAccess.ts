@@ -78,18 +78,31 @@ export type NewUserValidation =
   | { ok: true; user: NormalizedNewUser }
   | { ok: false; status: 400 | 403; error: string };
 
-const CREATABLE_BY_CLIENT_ADMIN = ['client_admin', 'employee'] as const;
+/**
+ * GE-only account provisioning (04 matrix: تحديد أسماء الدخول +
+ * إنشاء/تعطيل حسابات = GE; WF-01: العميل لا ينشئ حسابات).
+ * Client accounts are provisioned only through GE approval of a submitted
+ * staff list — direct creation is a bypass and is refused here AND in-route.
+ */
+export const GE_ONLY_PROVISION_REFUSAL =
+  'Only platform administrators (GE) may create accounts. Client accounts are provisioned only through GE approval of a submitted staff list — submit a Staff List instead. / لا يجوز للعميل إنشاء حسابات — تُنشأ الحسابات من GE فقط بعد اعتماد قائمة موظفين مقدَّمة. استخدم قوائم الموظفين (Staff Lists).';
+
+/** GE-only activate/deactivate (same 04-matrix cell as creation). */
+export const GE_ONLY_DEACTIVATE_REFUSAL =
+  'Only platform administrators (GE) may activate or deactivate accounts. Creating, enabling or disabling logins is GE-only. / إنشاء الحسابات وتفعيلها أو تعطيلها من GE فقط.';
 
 /**
  * C1: validates POST /api/users payloads (shape + permission, no DB).
  * - ge_admin: any tenant (explicit clientId), may create ge_admin (tenant-less).
- * - client_admin: own tenant only (other tenant → 403), never ge_admin (→ 403).
+ * - client_admin / employee: ALWAYS 403 with the staff-list pointer (WF-01:
+ *   the client NEVER creates accounts; the staff-list reject path stays the
+ *   client's voice, provisioning stays GE's).
  * - departmentId required iff role=employee (missing → 400, present for
  *   non-employee → 400). Department existence/tenant-match is checked in-route.
  */
 export function validateNewUser(creator: ActorSummary, input: NewUserInput): NewUserValidation {
-  if (creator.role !== 'ge_admin' && creator.role !== 'client_admin') {
-    return { ok: false, status: 403, error: 'Only administrators can create users.' };
+  if (creator.role !== 'ge_admin') {
+    return { ok: false, status: 403, error: GE_ONLY_PROVISION_REFUSAL };
   }
 
   const email = typeof input.email === 'string' ? input.email.toLowerCase().trim() : '';
@@ -108,20 +121,11 @@ export function validateNewUser(creator: ActorSummary, input: NewUserInput): New
   }
 
   const role = typeof input.role === 'string' ? input.role : '';
-  if (role === 'ge_admin' && creator.role !== 'ge_admin') {
-    return { ok: false, status: 403, error: 'Only platform administrators can create a platform administrator.' };
-  }
   if (role !== 'ge_admin' && role !== 'client_admin' && role !== 'employee') {
-    if (creator.role === 'client_admin' && !(CREATABLE_BY_CLIENT_ADMIN as readonly string[]).includes(role)) {
-      return { ok: false, status: 400, error: 'Role must be client_admin or employee.' };
-    }
     return { ok: false, status: 400, error: 'Role must be ge_admin, client_admin, or employee.' };
   }
 
   const namedClientId = normalizeId(input.clientId);
-  if (namedClientId && creator.role !== 'ge_admin' && namedClientId !== creator.clientId) {
-    return { ok: false, status: 403, error: 'Client administrators may only create users in their own tenant.' };
-  }
 
   if (role === 'ge_admin') {
     if (namedClientId) {
@@ -137,8 +141,7 @@ export function validateNewUser(creator: ActorSummary, input: NewUserInput): New
     };
   }
 
-  const effectiveClientId =
-    creator.role === 'ge_admin' ? namedClientId : creator.clientId ?? null;
+  const effectiveClientId = namedClientId;
   if (!effectiveClientId) {
     return {
       ok: false,
@@ -164,7 +167,7 @@ export function validateNewUser(creator: ActorSummary, input: NewUserInput): New
       role: role as 'client_admin' | 'employee',
       departmentId: departmentId ?? null,
       effectiveClientId,
-      explicit: creator.role === 'ge_admin',
+      explicit: true,
     },
   };
 }
