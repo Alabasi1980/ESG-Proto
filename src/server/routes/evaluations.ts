@@ -514,6 +514,38 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
 });
 
 // A3. Submit a draft evaluation. Double submit is refused (409).
+//
+// MICRO-FIX (OD-08 s3 + WF-02): submitting is a department act. Allowed
+// actors = (1) the evaluation's author (evaluator_id), or (2) the designated
+// head of the evaluation's department (departments.head_user_id; null head →
+// author only). Everyone else — client_admin, ge_admin, non-author employees,
+// cross-dept head — gets the bilingual 403 below. The guards after the gate
+// (draft-exists 400, double-submit 409, frozen 409, version 409/499) stay
+// exactly as-is.
+export const SUBMIT_REFUSAL =
+  'Only the evaluator or the department head may submit this evaluation. / لا يجوز تقديم هذا التقييم إلا من قِبل المقيّم أو رئيس القسم.';
+
+export interface SubmitActorGateInput {
+  callerId: string;
+  evaluatorId: string | null;
+  headUserId?: string | null;
+}
+
+export type SubmitActorGate =
+  | { ok: true }
+  | { ok: false; status: 403; error: string };
+
+/**
+ * Pure submit actor gate (OD-08 s3 + WF-02): the author always passes; any
+ * other caller passes ONLY when they are the designated head of the
+ * evaluation's department. A null head means author-only.
+ */
+export function submitActorGate(input: SubmitActorGateInput): SubmitActorGate {
+  if (input.callerId === input.evaluatorId) return { ok: true };
+  if (input.headUserId && input.callerId === input.headUserId) return { ok: true };
+  return { ok: false, status: 403, error: SUBMIT_REFUSAL };
+}
+
 router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
@@ -522,10 +554,24 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, asy
     const result = await withTenantContext(contextFromUser(user), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
-      if (user.role === 'employee' && user.id !== evaluation.evaluator_id) {
-        throw Object.assign(new Error('Only the evaluator or a tenant administrator may submit this evaluation.'), {
-          statusCode: 403,
+      if (user.id !== evaluation.evaluator_id) {
+        // Non-author: only the designated head of the answer's department may
+        // submit. Without a draft there is no department to head — fail closed.
+        let headUserId: string | null = null;
+        if (answer?.department_id) {
+          const headRes = await client.query('SELECT head_user_id FROM departments WHERE id = $1', [
+            answer.department_id,
+          ]);
+          headUserId = headRes.rows[0]?.head_user_id ?? null;
+        }
+        const gate = submitActorGate({
+          callerId: user.id,
+          evaluatorId: evaluation.evaluator_id,
+          headUserId,
         });
+        if (!gate.ok) {
+          throw Object.assign(new Error(gate.error), { statusCode: gate.status });
+        }
       }
       if (!answer) {
         throw Object.assign(new Error('No draft answer exists for this evaluation yet. Save a draft first.'), {
