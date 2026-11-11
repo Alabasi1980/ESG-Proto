@@ -406,8 +406,9 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
       }
 
       // Fetch evaluations if tenant is present.
-      // F-01 (binding OD-03 follow-up): aggregates AND coverage count only
-      // evaluations whose linked answers.status IN ('submitted','approved').
+      // F-01 (binding OD-03 follow-up) + B9 WF-02: aggregates AND coverage
+      // count only evaluations whose linked answers.status
+      // IN ('submitted','approved','client_approved').
       // Drafts stay visible in the queue/history but are gated out here via
       // gateDraftEvaluations (treated exactly as not-yet-evaluated).
       let evalQuery = `
@@ -418,7 +419,7 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
                  SELECT 1 FROM answers a2
                  WHERE a2.item_id = i.id
                    AND a2.client_id = e.client_id
-                   AND a2.status IN ('submitted', 'approved')
+                    AND a2.status IN ('submitted', 'approved', 'client_approved')
                ) AS has_submitted
         FROM items i
         LEFT JOIN evaluations e ON e.item_id = i.id

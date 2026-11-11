@@ -140,3 +140,51 @@ test('F-01: submitted N/A keeps excluding the item from the denominator', () => 
   assert.equal(result.notApplicableCount, 1);
   assert.equal(result.coveragePercentage, 100);
 });
+
+// B11c MICRO-FIX gate matrix (diagnosed 2026-11-11: client_approved rows
+// silently dropped out of dashboard aggregates because the dashboard query
+// filtered answers.status IN ('submitted','approved') — written before the
+// B9 `client_approved` status existed). Final states must always count;
+// only drafts/returned/not-evaluated/N-A are excluded per F-01 + BR-01.
+import { readFileSync } from 'node:fs';
+
+const COUNTED_STATUSES = ['submitted', 'approved', 'client_approved'] as const;
+const EXCLUDED_STATUSES = ['draft', 'returned', 'reopened'] as const;
+
+function gateRow(status: string): DashboardSourceRow {
+  return {
+    itemId: `m-${status}`, weight: 1, score: 100,
+    notEvaluated: false, notApplicable: false,
+    hasEvaluation: true,
+    // Mirrors the dashboard aggregate predicate (gri.ts dashboard/stats):
+    // counted iff linked answers.status is a final state.
+    hasSubmittedAnswer: (COUNTED_STATUSES as readonly string[]).includes(status),
+  };
+}
+
+test('B11c gate matrix: submitted+approved+client_approved count; draft/returned/reopened do not', () => {
+  for (const status of COUNTED_STATUSES) {
+    const result = calculateAggregateScore(gateDraftEvaluations([gateRow(status)]));
+    assert.equal(result.evaluatedCount, 1, `${status} must count toward aggregates`);
+    assert.equal(result.coveragePercentage, 100, `${status} must count toward coverage`);
+  }
+  for (const status of EXCLUDED_STATUSES) {
+    const result = calculateAggregateScore(gateDraftEvaluations([gateRow(status)]));
+    assert.equal(result.evaluatedCount, 0, `${status} must NOT count toward aggregates`);
+    assert.equal(result.coveragePercentage, 0, `${status} must NOT count toward coverage`);
+    assert.equal(result.notEvaluatedCount, 1, `${status} surfaces as not-evaluated`);
+  }
+});
+
+test('B11c: dashboard aggregate predicate in gri.ts carries the three-value gate', () => {
+  const src = readFileSync('src/server/routes/gri.ts', 'utf8');
+  const m = src.match(/a2\.status IN \(([^)]*)\)/);
+  assert.ok(m, 'dashboard/stats must filter on a linked-answers status IN list');
+  const list = m[1];
+  for (const s of COUNTED_STATUSES) assert.ok(list.includes(`'${s}'`), `gate must include '${s}'`);
+  // Guard the exact diagnosed regression: a bare two-value list.
+  assert.ok(
+    !/IN \(\s*'submitted'\s*,\s*'approved'\s*\)/.test(src),
+    'stale two-value gate IN (submitted,approved) must not remain in gri.ts'
+  );
+});

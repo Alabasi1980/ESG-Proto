@@ -33,11 +33,12 @@ export interface AggregateScoreResult {
 
 /**
  * One joined dashboard source row: an item plus its tenant evaluation (if any)
- * plus whether a linked answer is submitted/approved.
+ * plus whether a linked answer is submitted/approved/client-approved.
  *
- * F-01 (FIX-BATCH-4, binding OD-03 follow-up): drafts remain visible in the
- * queue/history but are invisible to dashboard numbers — only evaluations
- * whose linked answers.status IN ('submitted','approved') count toward
+ * F-01 (FIX-BATCH-4, binding OD-03 follow-up) + B9 WF-02: drafts remain
+ * visible in the queue/history but are invisible to dashboard numbers — only
+ * evaluations whose linked answers.status
+ * IN ('submitted','approved','client_approved') count toward
  * aggregates and coverage.
  */
 export interface DashboardSourceRow {
@@ -50,13 +51,13 @@ export interface DashboardSourceRow {
   note?: string;
   /** True when an evaluations row exists for (client, item). */
   hasEvaluation: boolean;
-  /** True when a linked answers row is submitted or approved. */
+  /** True when a linked answers row is submitted, approved, or client-approved. */
   hasSubmittedAnswer: boolean;
 }
 
 /**
- * Applies the F-01 drafts-excluded gate: rows without a submitted/approved
- * linked answer are returned as applicable-but-not-evaluated, i.e. exactly as
+ * Applies the F-01 drafts-excluded gate: rows without a submitted/approved/
+ * client-approved linked answer are returned as applicable-but-not-evaluated, i.e. exactly as
  * if no evaluation existed (denominator keeps the item, numerator skips it).
  */
 export function gateDraftEvaluations(rows: DashboardSourceRow[]): EvaluationRecord[] {
