@@ -1096,3 +1096,101 @@ CREATE TABLE IF NOT EXISTS item_links (
   CHECK (item_a <> item_b),
   UNIQUE(item_a, item_b)
 );
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 11b (demo) — GE ops, client×service completion, manual assign,
+-- staff-list flow with OTP + forced change, client dashboard (S-03/S-09/
+-- S-10/S-11/S-12/S-13, WF-01). Same idempotency contract as FIX BATCH 1/8/9/
+-- 10/11a: safe to re-apply wholesale (DO-blocks, CREATE ... IF NOT EXISTS,
+-- DROP ... IF EXISTS, idempotent seed INSERTs).
+--------------------------------------------------------------------------------
+
+-- B11b-0. clients.suspended (S-09): suspended tenants fail closed at login
+-- with 200 {suspended:true} and no data; GE-only suspend/unsuspend.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'clients' AND column_name = 'suspended') THEN
+    ALTER TABLE clients ADD COLUMN suspended BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+END $$;
+
+-- B11b-0. users.must_change_password (S-12): provisioned accounts start true;
+-- login forces change before any other action (fail-closed 403 gate).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'must_change_password') THEN
+    ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+END $$;
+
+-- B11b-D. staff_lists: CLIENT_MGR (client_admin) submits staff as DRAFTS;
+-- GE approves (provisions users, OTP once) or rejects with reason (S-11/S-12).
+-- FORBIDDEN: client creates accounts directly — only GE approval provisions.
+CREATE TABLE IF NOT EXISTS staff_lists (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  submitted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'approved', 'rejected')),
+  note TEXT,
+  reject_reason TEXT,
+  decided_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  decided_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- B11b-D. staff_list_rows: one row per proposed staff member (demo PII is
+-- owner-supplied sample addresses only; never log OTPs).
+CREATE TABLE IF NOT EXISTS staff_list_rows (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  list_id UUID NOT NULL REFERENCES staff_lists(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+  department_name TEXT,
+  role TEXT NOT NULL DEFAULT 'employee' CHECK (role IN ('employee', 'client_admin')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(list_id, email)
+);
+
+-- B11b RLS: tenant pattern (ge_admin sees all; same-tenant roles read;
+-- write scoping enforced in routes: client_admin submits own lists only,
+-- ge_admin approves/rejects any list).
+ALTER TABLE staff_lists ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff_list_rows ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS staff_lists_isolation_policy ON staff_lists;
+CREATE POLICY staff_lists_isolation_policy ON staff_lists
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR client_id::text = current_setting('app.current_tenant_id', true)
+  );
+
+DROP POLICY IF EXISTS staff_list_rows_isolation_policy ON staff_list_rows;
+CREATE POLICY staff_list_rows_isolation_policy ON staff_list_rows
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR EXISTS (
+      SELECT 1 FROM staff_lists sl
+      WHERE sl.id = staff_list_rows.list_id
+        AND sl.client_id::text = current_setting('app.current_tenant_id', true)
+    )
+  );
+
+ALTER TABLE staff_lists FORCE ROW LEVEL SECURITY;
+ALTER TABLE staff_list_rows FORCE ROW LEVEL SECURITY;
+
+-- B11b-B. Pre-approved GRI seed (idempotent, by code): the ONLY seeded
+-- service. Linked to every existing tenant with visible flags.
+-- Runs on every migration re-apply; INSERT ... ON CONFLICT DO NOTHING keeps
+-- it a no-op after the first run (proof-friendly, demo-safe).
+INSERT INTO services (code, name, description)
+VALUES ('GRI', 'GRI Reporting', 'GRI sustainability disclosure service')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO client_services (client_id, service_id, show_gap, show_corrective)
+SELECT c.id, s.id, true, true
+FROM clients c
+CROSS JOIN services s
+WHERE s.code = 'GRI'
+ON CONFLICT (client_id, service_id) DO NOTHING;

@@ -21,6 +21,10 @@ export interface Translations {
     setup: string;
     tenantBadge: string;
     reports: string;
+    geOverview: string;
+    clientDetail: string;
+    staffLists: string;
+    clientDashboard: string;
   };
 
   auth: {
@@ -596,6 +600,12 @@ export interface Translations {
     file: string;
     demoBanner: string;
   };
+
+  geOverview: Record<string, string>;
+  clientDetail: Record<string, string>;
+  staffLists: Record<string, any>;
+  clientDashboard: Record<string, string>;
+  assignments: Record<string, string>;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -620,6 +630,10 @@ export const translations: Record<Language, Translations> = {
       setup: 'Initial Setup',
       tenantBadge: 'Tenant',
       reports: 'Reports',
+      geOverview: 'GE Operations',
+      clientDetail: 'Client Detail',
+      staffLists: 'Staff Lists',
+      clientDashboard: 'Client Dashboard',
     },
 
     auth: {
@@ -1217,6 +1231,77 @@ export const translations: Record<Language, Translations> = {
       deleteDiscConfirm: 'Delete this disclosure? Refused while items exist.',
       deleteItemConfirm: 'Delete this item? Refused while answers, evaluations or assignments reference it.',
     },
+
+    geOverview: {
+      title: 'GE Operations',
+      subtitle: 'Clients, services, collection status, review progress, gaps, actions (platform admins only)',
+      totalsClients: 'Clients',
+      totalsSuspended: 'Suspended',
+      totalsServices: 'Services',
+      suspendBtn: 'Suspend',
+      unsuspendBtn: 'Unsuspend',
+      linkAllBtn: 'Link GRI to all tenants',
+      frozenBadge: 'Frozen',
+      suspendedBadge: 'Suspended',
+      servicesLabel: 'Services',
+      reviewLabel: 'Review',
+      actionsLabel: 'Actions',
+      staffLabel: 'Staff lists',
+      coverageLabel: 'Coverage',
+      scoreLabel: 'Score',
+    },
+    clientDetail: {
+      title: 'Client detail',
+      subtitle: 'Tenant services, flags, departments, users, assignments (GE ops; client sees own only)',
+      selectTenant: 'Select a tenant…',
+      servicesTitle: 'Linked services',
+      linkService: 'Link service',
+      unlinkBtn: 'Unlink',
+      showGap: 'Show gaps',
+      showCorrective: 'Show corrective',
+      saveFlags: 'Save flags',
+      suspendTitle: 'Suspend / unsuspend',
+      departmentsTitle: 'Departments',
+      usersTitle: 'Users',
+      mustChangeBadge: 'Must change password',
+      suspendedNote: 'Suspended tenants cannot sign in (login returns suspended with no data).',
+    },
+    staffLists: {
+      title: 'Staff lists',
+      subtitle: 'Client submits drafts; GE approves (provisions accounts, OTP once) or rejects with reason',
+      createTitle: 'New staff list (draft)',
+      emailPh: 'staff@client.test',
+      namePh: 'Full name',
+      addRow: 'Add row',
+      submitList: 'Submit for GE approval',
+      approveBtn: 'Approve & provision',
+      rejectBtn: 'Reject',
+      rejectReasonPh: 'Rejection reason (required)…',
+      otpTitle: 'One-time passwords — shown ONCE (copy now, never stored)',
+      otpWarning: 'Passwords are bcrypt-hashed; plaintext never stored or logged. Accounts start with forced password change.',
+      emptyText: 'No staff lists yet.',
+      statusLabels: { draft: 'Draft', submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected' },
+    },
+    clientDashboard: {
+      title: 'Client dashboard',
+      subtitle: 'Own tenant only — same scoring math (drafts excluded, N/A excluded, coverage beside every score)',
+      suspendedTitle: 'Tenant suspended',
+      suspendedDesc: 'This tenant is suspended. Contact the platform administrator. No data is shown.',
+      aggregateTitle: 'Review aggregate',
+      coverageLabel: 'Coverage',
+      departmentsTitle: 'Scores by department',
+      servicesTitle: 'Linked services',
+      hiddenNote: 'Hidden by service flags (excluded from reports/exports).',
+    },
+    assignments: {
+      title: 'Manual assignments',
+      assignBtn: 'Assign',
+      unassignBtn: 'Unassign',
+      naBtn: 'Mark N/A',
+      naReasonLabel: 'N/A reason',
+      itemLabel: 'Item',
+      deptLabel: 'Department',
+    },
   },
 
   ar: {
@@ -1240,6 +1325,10 @@ export const translations: Record<Language, Translations> = {
       setup: 'التهيئة الأولية',
       tenantBadge: 'المستأجر',
       reports: 'التقارير',
+      geOverview: 'عمليات GE',
+      clientDetail: 'تفاصيل العميل',
+      staffLists: 'قوائم الموظفين',
+      clientDashboard: 'لوحة العميل',
     },
 
     auth: {
@@ -1836,6 +1925,77 @@ export const translations: Record<Language, Translations> = {
       deleteStdConfirm: 'حذف هذا المعيار؟ يُرفض ما دامت إفصاحات موجودة تحته.',
       deleteDiscConfirm: 'حذف هذا الإفصاح؟ يُرفض ما دامت بنود موجودة تحته.',
       deleteItemConfirm: 'حذف هذا البند؟ يُرفض ما دامت إجابات أو تقييمات أو إسنادات تشير إليه.',
+    },
+
+    geOverview: {
+      title: 'عمليات GE',
+      subtitle: 'العملاء والخدمات وحالة الجمع وتقدم المراجعة والفجوات والإجراءات (لمديري المنصة فقط)',
+      totalsClients: 'العملاء',
+      totalsSuspended: 'الموقوفون',
+      totalsServices: 'الخدمات',
+      suspendBtn: 'إيقاف',
+      unsuspendBtn: 'إعادة تفعيل',
+      linkAllBtn: 'ربط GRI بكل المستأجرين',
+      frozenBadge: 'مجمّد',
+      suspendedBadge: 'موقوف',
+      servicesLabel: 'الخدمات',
+      reviewLabel: 'المراجعة',
+      actionsLabel: 'الإجراءات',
+      staffLabel: 'قوائم الموظفين',
+      coverageLabel: 'التغطية',
+      scoreLabel: 'الدرجة',
+    },
+    clientDetail: {
+      title: 'تفاصيل العميل',
+      subtitle: 'خدمات المستأجر والأعلام والأقسام والمستخدمون والإسنادات (عمليات GE؛ العميل يرى خاصته فقط)',
+      selectTenant: 'اختر مستأجراً…',
+      servicesTitle: 'الخدمات المرتبطة',
+      linkService: 'ربط خدمة',
+      unlinkBtn: 'فك الربط',
+      showGap: 'إظهار الفجوات',
+      showCorrective: 'إظهار التصحيحية',
+      saveFlags: 'حفظ الأعلام',
+      suspendTitle: 'إيقاف / إعادة تفعيل',
+      departmentsTitle: 'الأقسام',
+      usersTitle: 'المستخدمون',
+      mustChangeBadge: 'يجب تغيير كلمة المرور',
+      suspendedNote: 'المستأجرون الموقوفون لا يستطيعون تسجيل الدخول (الدخول يعيد موقوفاً بلا بيانات).',
+    },
+    staffLists: {
+      title: 'قوائم الموظفين',
+      subtitle: 'العميل يرسل مسودات؛ GE يعتمد (ينشئ الحسابات بكلمة مرة واحدة) أو يرفض بسبب',
+      createTitle: 'قائمة موظفين جديدة (مسودة)',
+      emailPh: 'staff@client.test',
+      namePh: 'الاسم الكامل',
+      addRow: 'إضافة صف',
+      submitList: 'إرسال لاعتماد GE',
+      approveBtn: 'اعتماد وإنشاء الحسابات',
+      rejectBtn: 'رفض',
+      rejectReasonPh: 'سبب الرفض (مطلوب)…',
+      otpTitle: 'كلمات المرور لمرة واحدة — تظهر مرة واحدة (انسخ الآن، لا تُخزن)',
+      otpWarning: 'كلمات المرور مخزنة بتجزئة bcrypt؛ النص الصريح لا يُخزن ولا يُسجل. الحسابات تبدأ بتغيير إجباري.',
+      emptyText: 'لا توجد قوائم موظفين بعد.',
+      statusLabels: { draft: 'مسودة', submitted: 'مرسلة', approved: 'معتمدة', rejected: 'مرفوضة' },
+    },
+    clientDashboard: {
+      title: 'لوحة العميل',
+      subtitle: 'مستأجرك فقط — نفس حساب الدرجات (المسودات مستبعدة، غير المطبق مستبعد، التغطية بجانب كل درجة)',
+      suspendedTitle: 'المستأجر موقوف',
+      suspendedDesc: 'هذا المستأجر موقوف. تواصل مع مدير المنصة. لا تُعرض أي بيانات.',
+      aggregateTitle: 'إجمالي المراجعة',
+      coverageLabel: 'التغطية',
+      departmentsTitle: 'الدرجات حسب القسم',
+      servicesTitle: 'الخدمات المرتبطة',
+      hiddenNote: 'مخفي بأعلام الخدمة (مستبعد من التقارير/الصادرات).',
+    },
+    assignments: {
+      title: 'الإسنادات اليدوية',
+      assignBtn: 'إسناد',
+      unassignBtn: 'فك الإسناد',
+      naBtn: 'تعليم غير مطبق',
+      naReasonLabel: 'سبب عدم الانطباق',
+      itemLabel: 'البند',
+      deptLabel: 'القسم',
     },
   },
 };

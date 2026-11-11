@@ -14,14 +14,40 @@ import { ImportGRIView } from './views/ImportGRIView.tsx';
 import { SettingsView } from './views/SettingsView.tsx';
 import { LoginView } from './views/LoginView.tsx';
 import { SetupView } from './views/SetupView.tsx';
+import { GeOverviewView } from './views/GeOverviewView.tsx';
+import { ClientDetailView } from './views/ClientDetailView.tsx';
+import { StaffListsView } from './views/StaffListsView.tsx';
+import { ClientDashboardView } from './views/ClientDashboardView.tsx';
 import { RefreshCw } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, token, loading, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inSetupMode, setInSetupMode] = useState(false);
   const [dbConnected, setDbConnected] = useState(false);
+  // B11b (S-12): forced-change gate state (AuthContext type is frozen, so the
+  // flag travels via /api/auth/me without editing the context module).
+  const [mustChange, setMustChange] = useState(false);
+  const [suspended, setSuspended] = useState(false);
+  const [newPass, setNewPass] = useState('');
+  const [curPass, setCurPass] = useState('');
+  const [gateMsg, setGateMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) {
+      setMustChange(false);
+      setSuspended(false);
+      return;
+    }
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        setMustChange(Boolean((d.user as any)?.mustChangePassword));
+        setSuspended(Boolean((d.user as any)?.suspended));
+      })
+      .catch(() => {});
+  }, [token, user]);
 
   const checkDb = async () => {
     try {
@@ -58,6 +84,69 @@ const MainApp: React.FC = () => {
       return <SetupView onBackToLogin={() => setInSetupMode(false)} />;
     }
     return <LoginView onSwitchToSetup={() => setInSetupMode(true)} />;
+  }
+
+  // B11b (S-12/S-09): fail-closed gates. Forced change blocks every other
+  // action until the password is replaced; suspended tenants see no data.
+  if (suspended) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+        <div className="max-w-md w-full p-8 bg-white rounded-2xl border border-rose-200 text-center">
+          <h2 className="font-bold text-base">Tenant suspended</h2>
+          <p className="text-xs text-slate-500 mt-2">This tenant is suspended. Contact the platform administrator.</p>
+        </div>
+      </div>
+    );
+  }
+  if (mustChange) {
+    const submitChange = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setGateMsg(null);
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+          body: JSON.stringify({ currentPassword: curPass, newPassword: newPass }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to change password');
+        setCurPass('');
+        setNewPass('');
+        await refreshUser();
+        setMustChange(false);
+      } catch (err: any) {
+        setGateMsg(err.message);
+      }
+    };
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
+        <form onSubmit={submitChange} className="max-w-md w-full p-8 bg-white rounded-2xl border space-y-3">
+          <h2 className="font-bold text-base">Password change required</h2>
+          <p className="text-xs text-slate-500">Your account was provisioned with a one-time password. Set a new password to continue.</p>
+          {gateMsg && <p className="text-xs text-rose-600">{gateMsg}</p>}
+          <input
+            type="password"
+            required
+            value={curPass}
+            onChange={(e) => setCurPass(e.target.value)}
+            placeholder="One-time password"
+            className="w-full px-3 py-2 rounded-xl text-xs border"
+          />
+          <input
+            type="password"
+            required
+            minLength={6}
+            value={newPass}
+            onChange={(e) => setNewPass(e.target.value)}
+            placeholder="New password (min 6)"
+            className="w-full px-3 py-2 rounded-xl text-xs border"
+          />
+          <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">
+            Change password & continue
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (
@@ -108,6 +197,10 @@ const MainApp: React.FC = () => {
                 }}
               />
             )}
+            {activeTab === 'ge-overview' && <GeOverviewView />}
+            {activeTab === 'client-detail' && <ClientDetailView />}
+            {activeTab === 'staff-lists' && <StaffListsView />}
+            {activeTab === 'client-dashboard' && <ClientDashboardView />}
           </div>
         </main>
       </div>

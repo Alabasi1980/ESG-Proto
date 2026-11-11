@@ -16,7 +16,20 @@ import {
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 
-export type ActiveTab = 'dashboard' | 'standards' | 'gap-analysis' | 'actions' | 'initiatives' | 'esg-profile' | 'reports' | 'import-gri' | 'settings';
+export type ActiveTab =
+  | 'dashboard'
+  | 'standards'
+  | 'gap-analysis'
+  | 'actions'
+  | 'initiatives'
+  | 'esg-profile'
+  | 'reports'
+  | 'import-gri'
+  | 'settings'
+  | 'ge-overview'
+  | 'client-detail'
+  | 'staff-lists'
+  | 'client-dashboard';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -92,6 +105,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: t.nav.settings,
       icon: Settings,
       roles: ['ge_admin', 'client_admin', 'employee'],
+    },
+    {
+      id: 'ge-overview' as ActiveTab,
+      label: t.nav.geOverview,
+      icon: Building2,
+      roles: ['ge_admin'],
+    },
+    {
+      id: 'client-detail' as ActiveTab,
+      label: t.nav.clientDetail,
+      icon: Wrench,
+      roles: ['ge_admin', 'client_admin'],
+    },
+    {
+      id: 'staff-lists' as ActiveTab,
+      label: t.nav.staffLists,
+      icon: Lightbulb,
+      roles: ['ge_admin', 'client_admin'],
+    },
+    {
+      id: 'client-dashboard' as ActiveTab,
+      label: t.nav.clientDashboard,
+      icon: LayoutDashboard,
+      roles: ['ge_admin', 'client_admin'],
     },
   ];
 

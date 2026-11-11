@@ -61,6 +61,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
       });
 
       const data = await res.json();
+      // B11b (S-09): suspended tenants get 200 {suspended:true} with no data.
+      if (res.ok && (data as any).suspended === true) {
+        throw new Error((data as any).message || 'This tenant is suspended. Contact the platform administrator.');
+      }
       if (!res.ok) {
         throw new Error(data.error || t.auth.invalidCredentials);
       }
