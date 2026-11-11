@@ -3,6 +3,7 @@ import { ShieldCheck, User, Mail, Lock, Building, AlertTriangle, ArrowLeft, Refr
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth, AuthUser } from '../context/AuthContext.tsx';
 import { DemoBanner } from '../components/DemoBanner.tsx';
+import { validateSelfChosenPassword } from '../lib/password.ts';
 
 interface SetupViewProps {
   onBackToLogin: () => void;
@@ -26,8 +27,10 @@ export const SetupView: React.FC<SetupViewProps> = ({ onBackToLogin }) => {
     setLoading(true);
     setError(null);
 
-    if (password.length < 6) {
-      setError(t.auth.passwordTooShort);
+    // B12 (S-02): client mirrors the shared complexity rule (server re-validates).
+    const pwCheck = validateSelfChosenPassword(password);
+    if (!pwCheck.ok) {
+      setError(pwCheck.error ?? t.auth.passwordTooShort);
       setLoading(false);
       return;
     }

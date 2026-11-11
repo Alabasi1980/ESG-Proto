@@ -5,6 +5,7 @@ import {
   type AuthenticatedRequest,
   type AuthUser,
 } from './auth.ts';
+import { requireFreshPassword } from './routes/_shared.ts';
 import {
   canonicalLinkPair,
   isEsgClass,
@@ -154,7 +155,7 @@ router.get('/items', authMiddleware, async (req: AuthenticatedRequest, res: Resp
 // A. Services (S-04) — GE-only writes.
 // ----------------------------------------------------------------------
 
-router.post('/services', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage services')) return;
@@ -200,7 +201,7 @@ router.post('/services', authMiddleware, async (req: AuthenticatedRequest, res: 
   }
 });
 
-router.patch('/services/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/services/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage services')) return;
@@ -262,7 +263,7 @@ router.patch('/services/:id', authMiddleware, async (req: AuthenticatedRequest, 
 });
 
 // Duplicate a service with its standard links under a NEW code (S-04).
-router.post('/services/:id/duplicate', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'duplicate services')) return;
@@ -318,7 +319,7 @@ router.post('/services/:id/duplicate', authMiddleware, async (req: Authenticated
 });
 
 // Link / unlink a standard to a service (S-04).
-router.post('/services/:id/standards', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services/:id/standards', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'link standards to services')) return;
@@ -354,7 +355,7 @@ router.post('/services/:id/standards', authMiddleware, async (req: Authenticated
   }
 });
 
-router.delete('/services/:id/standards', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'unlink standards from services')) return;
@@ -395,7 +396,7 @@ router.delete('/services/:id/standards', authMiddleware, async (req: Authenticat
 // creation (see the /gri/commit upsert on the natural key).
 // ----------------------------------------------------------------------
 
-router.patch('/standards/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/standards/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'edit standards')) return;
@@ -447,7 +448,7 @@ router.patch('/standards/:id', authMiddleware, async (req: AuthenticatedRequest,
   }
 });
 
-router.delete('/standards/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/standards/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'delete standards')) return;
@@ -485,7 +486,7 @@ router.delete('/standards/:id', authMiddleware, async (req: AuthenticatedRequest
   }
 });
 
-router.patch('/disclosures/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'edit disclosures')) return;
@@ -544,7 +545,7 @@ router.patch('/disclosures/:id', authMiddleware, async (req: AuthenticatedReques
   }
 });
 
-router.delete('/disclosures/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'delete disclosures')) return;
@@ -589,7 +590,7 @@ router.delete('/disclosures/:id', authMiddleware, async (req: AuthenticatedReque
 // sort_order = max+1 within the disclosure when not provided.
 // ----------------------------------------------------------------------
 
-router.post('/items', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage items')) return;
@@ -668,7 +669,7 @@ router.post('/items', authMiddleware, async (req: AuthenticatedRequest, res: Res
   }
 });
 
-router.patch('/items/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/items/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage items')) return;
@@ -801,7 +802,7 @@ router.patch('/items/:id', authMiddleware, async (req: AuthenticatedRequest, res
   }
 });
 
-router.delete('/items/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/items/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage items')) return;
@@ -848,7 +849,7 @@ function linkRefusal(status: number, error: string): { status: number; error: st
   return { status, error };
 }
 
-router.post('/items/:id/links', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items/:id/links', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage equivalent-item links')) return;
@@ -909,7 +910,7 @@ router.post('/items/:id/links', authMiddleware, async (req: AuthenticatedRequest
   }
 });
 
-router.delete('/items/:id/links', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/items/:id/links', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!requireGeAdmin(user, res, 'manage equivalent-item links')) return;

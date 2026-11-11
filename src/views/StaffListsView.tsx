@@ -79,7 +79,7 @@ export const StaffListsView: React.FC = () => {
   }, [fetchAll]);
 
   if (user?.role !== 'ge_admin' && user?.role !== 'client_admin') {
-    return <p className="text-xs text-rose-600">Only administrators may view staff lists.</p>;
+    return <p className="text-xs text-rose-600">{t.staffLists.subtitle}</p>;
   }
 
   const handleCreate = async (e: React.FormEvent) => {

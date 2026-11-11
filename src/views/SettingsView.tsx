@@ -18,6 +18,7 @@ import {
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { ServicesManage } from './ServicesManage.tsx';
+import { validateSelfChosenPassword } from '../lib/password.ts';
 
 interface SettingsViewProps {
   onDbStatusChanged?: () => void;
@@ -120,6 +121,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserMessage(null);
+    // B12 (S-02): client mirrors the shared complexity rule (server re-validates).
+    const newUserPwCheck = validateSelfChosenPassword(newPasswordInput);
+    if (!newUserPwCheck.ok) {
+      setUserMessage({ type: 'error', text: newUserPwCheck.error ?? t.auth.passwordTooShort });
+      return;
+    }
     setCreatingUser(true);
     try {
       const body: Record<string, string> = {
@@ -251,8 +258,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     e.preventDefault();
     setPassMessage(null);
 
-    if (newPassword.length < 6) {
-      setPassMessage({ type: 'error', text: t.auth.passwordTooShort });
+    // B12 (S-02): client mirrors the shared complexity rule (server re-validates).
+    const pwCheck = validateSelfChosenPassword(newPassword);
+    if (!pwCheck.ok) {
+      setPassMessage({ type: 'error', text: pwCheck.error ?? t.auth.passwordTooShort });
       return;
     }
 
@@ -734,7 +743,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                 <input
                   type="password"
                   required
-                  minLength={6}
+                  minLength={10}
                   value={newPasswordInput}
                   onChange={(e) => setNewPasswordInput(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"

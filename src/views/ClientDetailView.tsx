@@ -405,7 +405,7 @@ export const ClientDetailView: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <input value={naForm.justification} onChange={(e) => setNaForm({ ...naForm, justification: e.target.value })} placeholder="justification…" className="px-3 py-2 rounded-xl text-xs border" />
+              <input value={naForm.justification} onChange={(e) => setNaForm({ ...naForm, justification: e.target.value })} placeholder={t.assignments.justificationPh} className="px-3 py-2 rounded-xl text-xs border" />
               <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-amber-600 text-white text-xs font-bold">
                 {t.assignments.naBtn}
               </button>

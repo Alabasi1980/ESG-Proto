@@ -21,11 +21,12 @@ export interface Translations {
     setup: string;
     tenantBadge: string;
     reports: string;
-    geOverview: string;
-    clientDetail: string;
-    staffLists: string;
-    clientDashboard: string;
-  };
+      geOverview: string;
+      clientDetail: string;
+      staffLists: string;
+      clientDashboard: string;
+      notifications: string;
+    };
 
   auth: {
     signInTitle: string;
@@ -45,8 +46,12 @@ export interface Translations {
     newPassword: string;
     confirmPassword: string;
     passwordChangedSuccess: string;
-    passwordMismatch: string;
-    passwordTooShort: string;
+      passwordMismatch: string;
+      passwordTooShort: string;
+      passwordComplexityHint: string;
+      forcedChangeTitle: string;
+      forcedChangeDesc: string;
+      changeAndContinue: string;
     role: string;
     roles: {
       ge_admin: string;
@@ -606,6 +611,46 @@ export interface Translations {
   staffLists: Record<string, any>;
   clientDashboard: Record<string, string>;
   assignments: Record<string, string>;
+
+  audit: {
+    title: string;
+    subtitle: string;
+    filterAction: string;
+    filterEntity: string;
+    filterUser: string;
+    filterFrom: string;
+    filterTo: string;
+    search: string;
+    clear: string;
+    who: string;
+    what: string;
+    entity: string;
+    when: string;
+    before: string;
+    after: string;
+    reason: string;
+    payload: string;
+    empty: string;
+    limit: string;
+  };
+
+  notifications: {
+    title: string;
+    subtitle: string;
+    markAllRead: string;
+    markRead: string;
+    empty: string;
+    allCaughtUp: string;
+    unread: string;
+  };
+
+  idle: {
+    warningTitle: string;
+    warningMessage: string;
+    secondsLeft: string;
+    staySignedIn: string;
+    signOutNow: string;
+  };
 }
 
 export const translations: Record<Language, Translations> = {
@@ -634,6 +679,7 @@ export const translations: Record<Language, Translations> = {
       clientDetail: 'Client Detail',
       staffLists: 'Staff Lists',
       clientDashboard: 'Client Dashboard',
+      notifications: 'Notifications',
     },
 
     auth: {
@@ -655,7 +701,11 @@ export const translations: Record<Language, Translations> = {
       confirmPassword: 'Confirm New Password',
       passwordChangedSuccess: 'Your password has been updated securely.',
       passwordMismatch: 'New password and confirmation do not match.',
-      passwordTooShort: 'New password must contain at least 6 characters.',
+      passwordTooShort: 'New password must be at least 10 characters with uppercase, lowercase, digit, and symbol.',
+      passwordComplexityHint: 'Minimum 10 characters: uppercase, lowercase, digit, symbol.',
+      forcedChangeTitle: 'Password change required',
+      forcedChangeDesc: 'Your account was provisioned with a one-time password. Set a new password to continue.',
+      changeAndContinue: 'Change password & continue',
       role: 'Role',
       roles: {
         ge_admin: 'Platform Administrator',
@@ -675,7 +725,7 @@ export const translations: Record<Language, Translations> = {
       adminName: 'Full Name',
       adminEmail: 'Administrator Email',
       adminPassword: 'Password',
-      adminPasswordHint: 'Minimum 6 characters, must be kept secure',
+      adminPasswordHint: 'Minimum 10 characters with uppercase, lowercase, digit, and symbol — keep it secure',
       clientSectionTitle: 'Client Tenant Details (Optional)',
       clientSectionDesc: 'Leave blank to initialize as a platform administrator, or enter company details to create the first client tenant.',
       clientName: 'Organization / Client Name',
@@ -1301,6 +1351,47 @@ export const translations: Record<Language, Translations> = {
       naReasonLabel: 'N/A reason',
       itemLabel: 'Item',
       deptLabel: 'Department',
+      justificationPh: 'justification…',
+    },
+
+    audit: {
+      title: 'Audit Log',
+      subtitle: 'Who did what, when — with before/after values and reasons. Platform administrators only.',
+      filterAction: 'Action contains',
+      filterEntity: 'Entity type',
+      filterUser: 'User ID',
+      filterFrom: 'From',
+      filterTo: 'To',
+      search: 'Search',
+      clear: 'Clear',
+      who: 'Who',
+      what: 'Action',
+      entity: 'Entity',
+      when: 'When',
+      before: 'Before',
+      after: 'After',
+      reason: 'Reason',
+      payload: 'Details',
+      empty: 'No audit entries match these filters.',
+      limit: 'Rows',
+    },
+
+    notifications: {
+      title: 'Notifications',
+      subtitle: 'Latest activity addressed to you — newest first. The inbox keeps the latest 50.',
+      markAllRead: 'Mark all read',
+      markRead: 'Mark read',
+      empty: 'No notifications yet.',
+      allCaughtUp: "You're all caught up.",
+      unread: 'unread',
+    },
+
+    idle: {
+      warningTitle: 'Session expiring soon',
+      warningMessage: 'You will be signed out automatically due to inactivity.',
+      secondsLeft: 'seconds left',
+      staySignedIn: 'Stay signed in',
+      signOutNow: 'Sign out now',
     },
   },
 
@@ -1329,6 +1420,7 @@ export const translations: Record<Language, Translations> = {
       clientDetail: 'تفاصيل العميل',
       staffLists: 'قوائم الموظفين',
       clientDashboard: 'لوحة العميل',
+      notifications: 'الإشعارات',
     },
 
     auth: {
@@ -1350,7 +1442,11 @@ export const translations: Record<Language, Translations> = {
       confirmPassword: 'تأكيد كلمة المرور الجديدة',
       passwordChangedSuccess: 'تم تحديث كلمة المرور الخاصة بك بنجاح وأمان.',
       passwordMismatch: 'كلمة المرور الجديدة وتأكيدها غير متطابقين.',
-      passwordTooShort: 'يجب أن تتكون كلمة المرور الجديدة من 6 أحرف على الأقل.',
+      passwordTooShort: 'يجب أن تتكون كلمة المرور الجديدة من 10 أحرف على الأقل وتشمل حرفاً كبيراً وصغيراً ورقماً ورمزاً.',
+      passwordComplexityHint: '10 أحرف على الأقل: حرف كبير وصغير ورقم ورمز.',
+      forcedChangeTitle: 'تغيير كلمة المرور مطلوب',
+      forcedChangeDesc: 'تم إنشاء حسابك بكلمة مرور لمرة واحدة. عيّن كلمة مرور جديدة للمتابعة.',
+      changeAndContinue: 'تغيير كلمة المرور والمتابعة',
       role: 'الدور الوظيفي',
       roles: {
         ge_admin: 'مدير المنصة',
@@ -1370,7 +1466,7 @@ export const translations: Record<Language, Translations> = {
       adminName: 'الاسم الكامل',
       adminEmail: 'بريد المسؤول الإلكتروني',
       adminPassword: 'كلمة المرور',
-      adminPasswordHint: '6 أحرف على الأقل، يجب الحفاظ على سريتها',
+      adminPasswordHint: '10 أحرف على الأقل تشمل حرفاً كبيراً وصغيراً ورقماً ورمزاً — حافظ على سريتها',
       clientSectionTitle: 'تفاصيل العميل المستأجر (اختياري)',
       clientSectionDesc: 'اتركه فارغاً للتهيئة كمدير للمنصة، أو أدخل بيانات المنشأة لإنشاء العميل الأول.',
       clientName: 'اسم المنشأة / العميل',
@@ -1996,6 +2092,47 @@ export const translations: Record<Language, Translations> = {
       naReasonLabel: 'سبب عدم الانطباق',
       itemLabel: 'البند',
       deptLabel: 'القسم',
+      justificationPh: 'المبرر…',
+    },
+
+    audit: {
+      title: 'سجل التدقيق',
+      subtitle: 'من فعل ماذا ومتى — مع القيم قبل/بعد والأسباب. لمسؤولي المنصة فقط.',
+      filterAction: 'يتضمن الإجراء',
+      filterEntity: 'نوع الكيان',
+      filterUser: 'معرّف المستخدم',
+      filterFrom: 'من',
+      filterTo: 'إلى',
+      search: 'بحث',
+      clear: 'مسح',
+      who: 'من',
+      what: 'الإجراء',
+      entity: 'الكيان',
+      when: 'متى',
+      before: 'قبل',
+      after: 'بعد',
+      reason: 'السبب',
+      payload: 'التفاصيل',
+      empty: 'لا توجد قيود تدقيق تطابق هذه المرشحات.',
+      limit: 'صفوف',
+    },
+
+    notifications: {
+      title: 'الإشعارات',
+      subtitle: 'أحدث النشاطات الموجهة إليك — الأحدث أولاً. يحتفظ البريد بآخر 50.',
+      markAllRead: 'تعيين الكل كمقروء',
+      markRead: 'تعيين كمقروء',
+      empty: 'لا توجد إشعارات بعد.',
+      allCaughtUp: 'لا جديد لديك.',
+      unread: 'غير مقروء',
+    },
+
+    idle: {
+      warningTitle: 'الجلسة على وشك الانتهاء',
+      warningMessage: 'سيتم تسجيل خروجك تلقائياً بسبب عدم النشاط.',
+      secondsLeft: 'ثانية متبقية',
+      staySignedIn: 'البقاء مسجلاً',
+      signOutNow: 'تسجيل الخروج الآن',
     },
   },
 };

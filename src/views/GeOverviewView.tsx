@@ -36,7 +36,7 @@ export const GeOverviewView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   if (user?.role !== 'ge_admin') {
-    return <p className="text-xs text-rose-600">Only platform administrators may view GE operations.</p>;
+    return <p className="text-xs text-rose-600">{t.geOverview.subtitle}</p>;
   }
 
   const headers = useCallback((): Record<string, string> => {

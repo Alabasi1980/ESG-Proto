@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   BookOpen,
@@ -12,6 +12,8 @@ import {
   Lightbulb,
   Sprout,
   FileText,
+  Bell,
+  ScrollText,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -29,7 +31,9 @@ export type ActiveTab =
   | 'ge-overview'
   | 'client-detail'
   | 'staff-lists'
-  | 'client-dashboard';
+  | 'client-dashboard'
+  | 'audit-log'
+  | 'notifications';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -45,11 +49,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
 }) => {
   const { t, lang, setLang } = useLanguage();
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
+  // B12 (S-23): unread badge next to the notifications tab (own inbox only).
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const toggleLanguage = () => {
     setLang(lang === 'en' ? 'ar' : 'en');
   };
+
+  const fetchUnread = useCallback(async () => {
+    if (!token) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const res = await fetch('/api/notifications/unread-count', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadCount(Number(data.unreadCount) || 0);
+      }
+    } catch {
+      // Badge is best-effort; the inbox view is the source of truth.
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchUnread();
+    const id = setInterval(fetchUnread, 30000);
+    return () => clearInterval(id);
+  }, [fetchUnread, activeTab]);
 
   const navItems = [
     {
@@ -130,6 +160,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: LayoutDashboard,
       roles: ['ge_admin', 'client_admin'],
     },
+    {
+      id: 'audit-log' as ActiveTab,
+      label: t.nav.auditLog,
+      icon: ScrollText,
+      roles: ['ge_admin'],
+    },
+    {
+      id: 'notifications' as ActiveTab,
+      label: t.nav.notifications,
+      icon: Bell,
+      roles: ['ge_admin', 'client_admin', 'employee'],
+    },
   ];
 
   return (
@@ -204,9 +246,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
                 }`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span className="truncate">{item.label}</span>
-              </button>
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+              <span className="truncate flex-1 text-start">{item.label}</span>
+              {item.id === 'notifications' && unreadCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                  {unreadCount > 50 ? '50+' : unreadCount}
+                </span>
+              )}
+            </button>
             );
           })}
         </nav>

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { LanguageProvider } from './i18n/LanguageContext.tsx';
+import React, { useState, useEffect, useRef } from 'react';
+import { LanguageProvider, useLanguage } from './i18n/LanguageContext.tsx';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Sidebar, ActiveTab } from './components/Sidebar.tsx';
 import { Header } from './components/Header.tsx';
+import { idleState, idleSecondsRemaining } from './lib/idleTimeout.ts';
+import { validateSelfChosenPassword } from './lib/password.ts';
 import { DashboardView } from './views/DashboardView.tsx';
 import { StandardsView } from './views/StandardsView.tsx';
 import { GapAnalysisView } from './views/GapAnalysisView.tsx';
@@ -18,10 +20,13 @@ import { GeOverviewView } from './views/GeOverviewView.tsx';
 import { ClientDetailView } from './views/ClientDetailView.tsx';
 import { StaffListsView } from './views/StaffListsView.tsx';
 import { ClientDashboardView } from './views/ClientDashboardView.tsx';
-import { RefreshCw } from 'lucide-react';
+import { AuditLogView } from './views/AuditLogView.tsx';
+import { NotificationsView } from './views/NotificationsView.tsx';
+import { RefreshCw, TimerOff } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { user, token, loading, refreshUser } = useAuth();
+  const { user, token, loading, refreshUser, logout } = useAuth();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inSetupMode, setInSetupMode] = useState(false);
@@ -33,6 +38,13 @@ const MainApp: React.FC = () => {
   const [newPass, setNewPass] = useState('');
   const [curPass, setCurPass] = useState('');
   const [gateMsg, setGateMsg] = useState<string | null>(null);
+
+  // B12 (S-01): client-side inactivity timer — 30 min → auto logout, warning
+  // at 28 min with a bilingual notice + countdown. Any pointer/key/touch
+  // activity resets the clock.
+  const lastActivityRef = useRef<number>(Date.now());
+  const [idleWarning, setIdleWarning] = useState(false);
+  const [idleSecsLeft, setIdleSecsLeft] = useState(0);
 
   useEffect(() => {
     if (!token) {
@@ -48,6 +60,36 @@ const MainApp: React.FC = () => {
       })
       .catch(() => {});
   }, [token, user]);
+
+  useEffect(() => {
+    if (!token) return;
+    const bump = () => {
+      lastActivityRef.current = Date.now();
+      setIdleWarning(false);
+    };
+    window.addEventListener('pointerdown', bump);
+    window.addEventListener('keydown', bump);
+    window.addEventListener('touchstart', bump);
+    const id = setInterval(() => {
+      const now = Date.now();
+      const state = idleState(lastActivityRef.current, now);
+      if (state === 'expired') {
+        clearInterval(id);
+        logout();
+      } else if (state === 'warning') {
+        setIdleWarning(true);
+        setIdleSecsLeft(idleSecondsRemaining(lastActivityRef.current, now));
+      } else {
+        setIdleWarning(false);
+      }
+    }, 1000);
+    return () => {
+      window.removeEventListener('pointerdown', bump);
+      window.removeEventListener('keydown', bump);
+      window.removeEventListener('touchstart', bump);
+      clearInterval(id);
+    };
+  }, [token, logout]);
 
   const checkDb = async () => {
     try {
@@ -102,6 +144,13 @@ const MainApp: React.FC = () => {
     const submitChange = async (e: React.FormEvent) => {
       e.preventDefault();
       setGateMsg(null);
+      // B12 (S-02): client mirrors the shared complexity rule (server is
+      // source of truth and re-validates).
+      const localCheck = validateSelfChosenPassword(newPass);
+      if (!localCheck.ok) {
+        setGateMsg(localCheck.error ?? t.auth.passwordTooShort);
+        return;
+      }
       try {
         const res = await fetch('/api/auth/change-password', {
           method: 'POST',
@@ -121,28 +170,29 @@ const MainApp: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
         <form onSubmit={submitChange} className="max-w-md w-full p-8 bg-white rounded-2xl border space-y-3">
-          <h2 className="font-bold text-base">Password change required</h2>
-          <p className="text-xs text-slate-500">Your account was provisioned with a one-time password. Set a new password to continue.</p>
+          <h2 className="font-bold text-base">{t.auth.forcedChangeTitle}</h2>
+          <p className="text-xs text-slate-500">{t.auth.forcedChangeDesc}</p>
+          <p className="text-[11px] text-slate-400">{t.auth.passwordComplexityHint}</p>
           {gateMsg && <p className="text-xs text-rose-600">{gateMsg}</p>}
           <input
             type="password"
             required
             value={curPass}
             onChange={(e) => setCurPass(e.target.value)}
-            placeholder="One-time password"
+            placeholder={t.auth.currentPassword}
             className="w-full px-3 py-2 rounded-xl text-xs border"
           />
           <input
             type="password"
             required
-            minLength={6}
+            minLength={10}
             value={newPass}
             onChange={(e) => setNewPass(e.target.value)}
-            placeholder="New password (min 6)"
+            placeholder={t.auth.newPassword}
             className="w-full px-3 py-2 rounded-xl text-xs border"
           />
           <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">
-            Change password & continue
+            {t.auth.changeAndContinue}
           </button>
         </form>
       </div>
@@ -166,6 +216,34 @@ const MainApp: React.FC = () => {
           onOpenMobileMenu={() => setSidebarOpen(true)}
           dbConnected={dbConnected}
         />
+
+        {/* B12 (S-01): inactivity warning — bilingual notice + countdown. */}
+        {idleWarning && user && (
+          <div className="mx-4 sm:mx-6 lg:mx-8 mt-4 p-4 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 text-xs flex items-center gap-3">
+            <TimerOff className="w-5 h-5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-bold">{t.idle.warningTitle}</p>
+              <p>
+                {t.idle.warningMessage} ({idleSecsLeft} {t.idle.secondsLeft})
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                lastActivityRef.current = Date.now();
+                setIdleWarning(false);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold"
+            >
+              {t.idle.staySignedIn}
+            </button>
+            <button
+              onClick={() => logout()}
+              className="px-3 py-1.5 rounded-xl border border-amber-400 font-bold"
+            >
+              {t.idle.signOutNow}
+            </button>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
@@ -201,6 +279,8 @@ const MainApp: React.FC = () => {
             {activeTab === 'client-detail' && <ClientDetailView />}
             {activeTab === 'staff-lists' && <StaffListsView />}
             {activeTab === 'client-dashboard' && <ClientDashboardView />}
+            {activeTab === 'audit-log' && <AuditLogView />}
+            {activeTab === 'notifications' && <NotificationsView />}
           </div>
         </main>
       </div>

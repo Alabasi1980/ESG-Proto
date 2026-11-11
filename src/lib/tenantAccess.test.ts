@@ -43,7 +43,7 @@ test('B3: employee naming another tenant → 403', () => {
 
 test('C: ge_admin can create employee in explicit tenant', () => {
   const r = validateNewUser(GE, {
-    email: 'EMP@x.com ', password: 'secret1', name: 'Emp', role: 'employee',
+    email: 'EMP@x.com ', password: 'Str0ng!Pass', name: 'Emp', role: 'employee',
     departmentId: 'dept-1', clientId: 'tenant-A',
   });
   assert.equal(r.ok, true);
@@ -55,28 +55,28 @@ test('C: ge_admin can create employee in explicit tenant', () => {
 });
 
 test('C: ge_admin can create tenant-less ge_admin', () => {
-  const r = validateNewUser(GE, { email: 'a@x.com', password: 'secret1', name: 'A', role: 'ge_admin' });
+  const r = validateNewUser(GE, { email: 'a@x.com', password: 'Str0ng!Pass', name: 'A', role: 'ge_admin' });
   assert.equal(r.ok, true);
   if (r.ok) assert.equal(r.user.effectiveClientId, null);
 });
 
 test('C: client_admin creates employee in own tenant (implicit)', () => {
   const r = validateNewUser(CA, {
-    email: 'e@x.com', password: 'secret1', name: 'E', role: 'employee', departmentId: 'd1',
+    email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee', departmentId: 'd1',
   });
   assert.equal(r.ok, true);
   if (r.ok) assert.equal(r.user.effectiveClientId, 'tenant-A');
 });
 
 test('C3: client_admin creating ge_admin → 403', () => {
-  const r = validateNewUser(CA, { email: 'g@x.com', password: 'secret1', name: 'G', role: 'ge_admin' });
+  const r = validateNewUser(CA, { email: 'g@x.com', password: 'Str0ng!Pass', name: 'G', role: 'ge_admin' });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 403);
 });
 
 test('C3: client_admin creating user in another tenant → 403', () => {
   const r = validateNewUser(CA, {
-    email: 'e@x.com', password: 'secret1', name: 'E', role: 'employee',
+    email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee',
     departmentId: 'd1', clientId: 'tenant-B',
   });
   assert.equal(r.ok, false);
@@ -84,21 +84,41 @@ test('C3: client_admin creating user in another tenant → 403', () => {
 });
 
 test('C3: employee without department → 400', () => {
-  const r = validateNewUser(CA, { email: 'e@x.com', password: 'secret1', name: 'E', role: 'employee' });
+  const r = validateNewUser(CA, { email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee' });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 400);
 });
 
 test('C: non-employee with departmentId → 400', () => {
   const r = validateNewUser(CA, {
-    email: 'c@x.com', password: 'secret1', name: 'C', role: 'client_admin', departmentId: 'd1',
+    email: 'c@x.com', password: 'Str0ng!Pass', name: 'C', role: 'client_admin', departmentId: 'd1',
   });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 400);
 });
 
+test('B12: weak self-chosen passwords → 400 (S-02: 10 chars + complexity)', () => {
+  // 9 chars with full complexity still refused (length boundary).
+  const r9 = validateNewUser(GE, {
+    email: 'e@x.com', password: 'Aa1!bcdef', name: 'E', role: 'employee', departmentId: 'd', clientId: 't',
+  });
+  assert.equal(r9.ok, false);
+  if (!r9.ok) assert.equal(r9.status, 400);
+  // 10+ chars but missing a symbol → 400.
+  const rNoSym = validateNewUser(GE, {
+    email: 'e@x.com', password: 'Aa1bcdefgh', name: 'E', role: 'employee', departmentId: 'd', clientId: 't',
+  });
+  assert.equal(rNoSym.ok, false);
+  if (!rNoSym.ok) assert.equal(rNoSym.status, 400);
+  // Compliant password passes shape validation.
+  const rOk = validateNewUser(GE, {
+    email: 'e@x.com', password: 'Aa1!bcdefg', name: 'E', role: 'employee', departmentId: 'd', clientId: 't',
+  });
+  assert.equal(rOk.ok, true);
+});
+
 test('C: employee creator cannot create users → 403; short password → 400', () => {
-  const r1 = validateNewUser(EMP, { email: 'e@x.com', password: 'secret1', name: 'E', role: 'employee', departmentId: 'd' });
+  const r1 = validateNewUser(EMP, { email: 'e@x.com', password: 'Str0ng!Pass', name: 'E', role: 'employee', departmentId: 'd' });
   assert.equal(r1.ok, false);
   if (!r1.ok) assert.equal(r1.status, 403);
   const r2 = validateNewUser(GE, { email: 'e@x.com', password: '123', name: 'E', role: 'employee', departmentId: 'd', clientId: 't' });

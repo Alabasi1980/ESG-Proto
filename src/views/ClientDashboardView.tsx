@@ -64,7 +64,7 @@ export const ClientDashboardView: React.FC = () => {
   }, [fetchData]);
 
   if (user?.role !== 'client_admin' && user?.role !== 'ge_admin') {
-    return <p className="text-xs text-rose-600">Only client administrators may view the client dashboard.</p>;
+    return <p className="text-xs text-rose-600">{t.clientDashboard.subtitle}</p>;
   }
   if (loading) return <p className="text-xs text-slate-500">{t.common.loading}</p>;
   if (error) return <p className="text-xs text-rose-600">{error}</p>;

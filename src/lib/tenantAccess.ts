@@ -7,6 +7,8 @@
  * tenant, e-mail uniqueness) inside the tenant RLS context.
  */
 
+import { validateSelfChosenPassword } from './password.ts';
+
 export interface ActorSummary {
   id: string;
   role: 'ge_admin' | 'client_admin' | 'employee' | string;
@@ -94,9 +96,11 @@ export function validateNewUser(creator: ActorSummary, input: NewUserInput): New
   if (!email || !email.includes('@')) {
     return { ok: false, status: 400, error: 'A valid email address is required.' };
   }
+  // B12 (S-02): self-chosen custom passwords use the shared complexity rule.
   const password = typeof input.password === 'string' ? input.password : '';
-  if (password.length < 6) {
-    return { ok: false, status: 400, error: 'Password must be at least 6 characters.' };
+  const pwCheck = validateSelfChosenPassword(password);
+  if (!pwCheck.ok) {
+    return { ok: false, status: 400, error: pwCheck.error ?? 'Password does not meet complexity requirements.' };
   }
   const name = typeof input.name === 'string' ? input.name.trim() : '';
   if (!name) {
