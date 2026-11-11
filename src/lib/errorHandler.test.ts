@@ -143,6 +143,50 @@ test('malformed JSON body yields 400 JSON (never an HTML page)', async () => {
   }
 });
 
+// App-level vector (server.ts): the top-level express.json() parser fails
+// BEFORE routing, so Express skips the apiRouter-level handlers entirely and
+// only app-level handlers can catch it. This builder mirrors server.ts
+// exactly: parser → /api router (with its own router-level mounts, belt) →
+// vite/static pass-through → app-level apiNotFound + globalJsonErrorHandler
+// LAST. Proves malformed POST to /api/* yields 400 JSON (never HTML).
+function buildAppLevelApp(): express.Express {
+  const app = express();
+  app.use(express.json());
+  const api = express.Router();
+  api.post('/echo', (req, res) => {
+    res.json({ seen: req.body });
+  });
+  // Belt: router-level mounts (as in src/server/routes.ts) — skipped on
+  // app-level parse failure, kept for in-router errors.
+  api.use(apiNotFoundHandler);
+  api.use(globalJsonErrorHandler);
+  app.use('/api', api);
+  // Suspenders placeholder: vite.middlewares / express.static pass-through.
+  app.use((_req, _res, next) => next());
+  // The fix: app-level safety net, LAST (as in server.ts).
+  app.use(apiNotFoundHandler);
+  app.use(globalJsonErrorHandler);
+  return app;
+}
+
+test('APP-level mount (server.ts order): malformed JSON to /api/* yields 400 JSON, never HTML', async () => {
+  const { base, close } = await listen(buildAppLevelApp());
+  try {
+    const r = await getRaw(base, '/api/echo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{oops',
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.contentType, /application\/json/);
+    assert.ok(typeof r.json?.error === 'string' && r.json.error.length > 0);
+    assert.ok(!r.text.toLowerCase().includes('<html'), 'app-level parse failure must not be the Express HTML page');
+    assert.ok(!('stack' in (r.json ?? {})), 'stack trace must never be sent');
+  } finally {
+    await close();
+  }
+});
+
 test('errorStatus: preserves statusCode/status in range, defaults 500 otherwise', () => {
   assert.equal(errorStatus(Object.assign(new Error('x'), { statusCode: 403 })), 403);
   assert.equal(errorStatus(Object.assign(new Error('x'), { status: 404 })), 404);

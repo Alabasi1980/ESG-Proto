@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRoutes from './src/server/routes.ts';
+import { apiNotFoundHandler, globalJsonErrorHandler } from './src/server/errorHandler.ts';
 import { runMigrations, isDatabaseConfigured } from './src/db/index.ts';
 
 dotenv.config();
@@ -67,6 +68,15 @@ async function startServer() {
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }
+
+  // App-level JSON safety net (malformed-body vector): failures in the
+  // top-level express.json() parser occur before routing, so they skip the
+  // apiRouter-level handlers (Express skips sub-routers in error flow).
+  // Mount the SAME shipped handlers at app level, LAST (after vite/static
+  // middleware): unknown routes → 404 JSON, any escaped error → JSON
+  // (never the Express-default HTML page). Router-level mounts stay as-is.
+  app.use(apiNotFoundHandler);
+  app.use(globalJsonErrorHandler);
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[ESG GRI Server] Full-stack ESG & GRI service running on http://0.0.0.0:${PORT}`);

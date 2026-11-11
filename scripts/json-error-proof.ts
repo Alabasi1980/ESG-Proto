@@ -10,6 +10,8 @@
 //   F1. Forced sync throw on a route of the live apiRouter → JSON with the
 //       thrown status (never the Express HTML error page).
 //   F2. Unknown /api route → 404 JSON (never the default HTML page).
+//   M1. Malformed JSON POST to an /api route (app-level body-parser failure,
+//       before routing) → 400 JSON (never the Express HTML page).
 // Every check asserts the Content-Type explicitly (must be application/json)
 // and asserts the body is NOT HTML. Exits non-zero on first failure.
 // Never logs secrets (no tokens/passwords/OTPs).
@@ -70,6 +72,13 @@ async function main() {
   const app = express();
   app.use(express.json());
   app.use('/api', apiRouter);
+  // Mirror server.ts: vite/static pass-through, then the app-level safety net
+  // LAST (apiNotFound → global error handler). Router-level mounts stay
+  // inside apiRouter (belt); these app-level mounts (suspenders) catch
+  // top-level express.json() parse failures that skip sub-routers.
+  app.use((_req, _res, next) => next());
+  app.use(apiNotFoundHandler);
+  app.use(globalJsonErrorHandler);
   const server = await new Promise<any>((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -143,12 +152,9 @@ async function main() {
   mustJson(r, 'F2 unknown /api route');
   must(r.json.error === 'Not found', 'F2 404 body is the JSON not-found shape');
 
-  // ---- Residual (informational, NOT a failure): malformed JSON at the APP
-  // body parser fails before routing, so it skips the apiRouter-level
-  // handlers (Express skips sub-routers in error flow) and reaches Express's
-  // default HTML page. Covering that vector needs a one-line mount in
-  // server.ts (app-level), which is OUTSIDE this task's Allowed Write
-  // Targets — reported as a decision item for Tera, not a gate failure.
+  // ---- M1: malformed JSON at the APP body parser → 400 JSON, never HTML ----
+  // The app-level express.json() fails before routing; the app-level mounts
+  // above (mirroring server.ts) must catch it. Hard gate, not informational.
   const badRes = await fetch(`${base}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -156,8 +162,14 @@ async function main() {
   });
   const badText = await badRes.text();
   const badCt = badRes.headers.get('content-type') ?? '';
-  console.log(`INFO residual probe: malformed app-level JSON -> ${badRes.status} '${badCt}' html=${/<html/i.test(badText)}`);
-  console.log(`INFO (out of scope): needs server.ts app-level mount; decision for Tera.`);
+  let badJson: any = null;
+  try { badJson = JSON.parse(badText); } catch { badJson = null; }
+  must(badRes.status === 400, 'M1 malformed app-level JSON -> 400 (safety net caught it)');
+  must(/application\/json/.test(badCt), `M1 malformed app-level JSON — content-type is application/json (got '${badCt}')`);
+  must(badJson !== null && typeof badJson.error === 'string' && badJson.error.length > 0, 'M1 malformed app-level JSON — body is JSON with an error field');
+  must(!/<html/i.test(badText), 'M1 malformed app-level JSON — body is NOT HTML');
+  must(!('stack' in (badJson ?? {})), 'M1 malformed app-level JSON — no stack trace leaked');
+  ok('M1 malformed JSON POST to /api route yields 400 JSON (never HTML)');
 
   // ---- cleanup ----
   const pool = getPool();
@@ -177,8 +189,7 @@ async function main() {
   console.log(`  - GET /ge/overview | client_admin | 403 | application/json | ge_admin-only gate (unchanged)`);
   console.log(`  - GET /__force-error | scratch (shipped handlers, routes.ts order) | 500 | application/json | forced boom + code (no HTML, no stack)`);
   console.log(`  - GET /no-such-route-xyz | client_admin | 404 | application/json | Not found (no HTML)`);
-  console.log(`  - Residual (out of scope, needs Tera decision): malformed JSON at the app-level body parser`);
-  console.log(`    still yields the Express HTML page (pre-existing; server.ts is outside Allowed Write Targets).`);
+  console.log(`  - POST /auth/login (malformed body) | no auth | 400 | application/json | JSON error (no HTML, no stack)`);
 }
 
 main().catch((err) => {
