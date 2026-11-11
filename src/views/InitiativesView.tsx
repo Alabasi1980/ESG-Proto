@@ -29,7 +29,9 @@ export const InitiativesView: React.FC = () => {
   const [department, setDepartment] = useState('');
   const [mutatingId, setMutatingId] = useState<string | null>(null);
 
-  const isAdmin = user?.role === 'client_admin' || user?.role === 'ge_admin';
+  // B16-B2: initiative select/unselect is GE-only; every role keeps the
+  // read-only library.
+  const canSelect = user?.role === 'ge_admin';
   const authHeaders: Record<string, string> = { Authorization: token ? `Bearer ${token}` : '' };
 
   const fetchItems = useCallback(async () => {
@@ -159,6 +161,13 @@ export const InitiativesView: React.FC = () => {
         </div>
       </div>
 
+      {!canSelect && (
+        <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs text-[11px] text-slate-600 dark:text-slate-300">
+          <span className="font-bold text-slate-800 dark:text-slate-100">{t.b16.initiativesGeOnlyTitle}. </span>
+          {t.b16.initiativesGeOnlyDesc}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex flex-col items-center justify-center p-12 space-y-4">
           <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
@@ -216,7 +225,7 @@ export const InitiativesView: React.FC = () => {
                     </span>
                   )}
                 </div>
-                {isAdmin && (
+                {canSelect && (
                   <button
                     onClick={() => toggleSelect(row)}
                     disabled={mutatingId === row.id}

@@ -229,6 +229,7 @@ export const NOTIFICATION_INBOX_LIMIT = 50;
 export const NOTIFICATION_TYPES = [
   'evaluation.submitted',
   'evaluation.approved',
+  'evaluation.dept_approved',
   'evaluation.returned',
   'evaluation.client_approved',
   'evaluation.client_returned',
@@ -328,4 +329,124 @@ export function auditDelegateEmails(): string[] {
 export function isAuditReader(user: AuthUser): boolean {
   if (user.role === 'ge_admin') return true;
   return auditDelegateEmails().includes(user.email.toLowerCase());
+}
+
+// ----------------------------------------------------------------------
+// B16 (OD-08) CLIENT ROLE REALIGNMENT — bilingual refusal messages +
+// department-approval actor gate (pure, unit-testable).
+//
+// Binding: the blanket approver≠evaluator≠submitter ban now applies ONLY at
+// client and GE levels. At department level the head (or sole dept member
+// when no head is assigned) MAY approve their own evaluation — the UI must
+// label it plainly as preliminary ("dept-approved — pending client
+// confirmation", AR+EN). Everywhere else the ban stays strict.
+// ----------------------------------------------------------------------
+
+/** B1: client_admin may never file evaluation drafts (employees own-dept only). */
+export const B16_CLIENT_CREATE_EVAL_REFUSAL =
+  'Only department employees may create evaluation drafts, in their own department. Client administrators confirm at client scope instead — use the client-review queue (client-approve / client-return). / يجوز لموظفي الأقسام فقط إنشاء مسودات التقييم في أقسامهم. يعتمد مدير العميل على نطاق العميل — استخدم قائمة مراجعة العميل (اعتماد العميل / الإعادة).';
+
+/** B1: ge_admin may never file fresh evaluations (GE rates via correction). */
+export const B16_GE_CREATE_EVAL_REFUSAL =
+  'Platform administrators never file fresh evaluations. GE rates via reasoned correction instead — use PUT /api/evaluations/:id/correct with a reason. / لا ينشئ مديرو المنصة تقييمات جديدة أبداً. يقيّم GE عبر تصحيح مسبب — استخدم PUT /api/evaluations/:id/correct مع ذكر السبب.';
+
+/** A2: client_admin is refused on the dept approve/return route. */
+export const B16_DEPT_APPROVAL_CLIENT_REFUSAL =
+  'Department approval belongs to the department. Client administrators confirm at client scope instead — use client-approve / client-return. / اعتماد القسم من اختصاص القسم. يعتمد مدير العميل على نطاق العميل — استخدم اعتماد العميل أو الإعادة إلى القسم.';
+
+/** A2: ge_admin is refused on the dept approve/return route. */
+export const B16_DEPT_APPROVAL_GE_REFUSAL =
+  'GE acts at final approval, not at department scope. Use review actions (snapshot note, reasoned correction, open action) or the GE final freeze. / يتصرف GE في الاعتماد النهائي وليس على نطاق القسم. استخدم إجراءات المراجعة (ملاحظة، تصحيح مسبب، فتح إجراء) أو التجميد النهائي لـ GE.';
+
+/** A2: employees of other departments are refused on the dept route. */
+export const B16_CROSS_DEPT_APPROVAL_REFUSAL =
+  'Employees may only approve or return evaluations of their own department. / يجوز للموظفين اعتماد تقييمات قسمهم فقط أو إعادتها.';
+
+/** A2: when a head is assigned, ONLY the head may decide for that department. */
+export function b16HeadOnlyRefusal(departmentName?: string | null): string {
+  const dept = departmentName ? ` (${departmentName})` : '';
+  return (
+    `This department${dept} has an assigned head: only the head may approve or return its evaluations. / ` +
+    `لهذا القسم رئيس معيَّن: يجوز للرئيس فقط اعتماد تقييماته أو إعادتها.`
+  );
+}
+
+/** B3: client_admin may never correct evaluations (use return instead). */
+export const B16_CLIENT_CORRECT_REFUSAL =
+  'Client administrators may not correct evaluations directly. Return the evaluation to the department with a reason instead. / لا يجوز لمديري العميل تصحيح التقييمات مباشرة. أعد التقييم إلى القسم مع ذكر السبب بدلاً من ذلك.';
+
+/** B2: GRI import is GE-only. */
+export const B16_CLIENT_GRI_REFUSAL =
+  'GRI imports are GE-only. Client administrators review imported data in Standards / Gap Analysis instead. / استيراد بيانات GRI من GE فقط. يراجع مديرو العميل البيانات المستوردة في المعايير / تحليل الفجوات.';
+
+/** B2: ESG profile import is GE-only. */
+export const B16_CLIENT_ESG_IMPORT_REFUSAL =
+  'ESG profile imports are GE-only. Client administrators view the ESG profile read-only instead. / استيراد ملف ESG من GE فقط. يعرض مديرو العميل الملف للقراءة فقط.';
+
+/** B2: report level settings are GE-only. */
+export const B16_CLIENT_LEVEL_REFUSAL =
+  'Report levels are set by GE only. Client administrators view settings and use reports / export instead. / يحدد GE مستويات التقارير فقط. يعرض مديرو العميل الإعدادات ويستخدمون التقارير / التصدير.';
+
+/** B2: manual assignments are GE-only. */
+export const B16_CLIENT_ASSIGN_REFUSAL =
+  'Manual assignments are GE-only. Client administrators review the assignment list read-only instead. / الإسناد اليدوي من GE فقط. يراجع مديرو العميل قائمة الإسناد للقراءة فقط.';
+
+/** B2: opening corrective actions is GE-only. */
+export const B16_ACTION_OPEN_REFUSAL =
+  'Opening corrective actions is GE-only. Departments progress their assigned actions (start work, evidence notes) instead. / فتح الإجراءات التصحيحية من GE فقط. تتابع الأقسام إجراءاتها المسندة (بدء العمل، ملاحظات الأدلة).';
+
+/** B2: verifying / closing / reopening actions is GE-only. */
+export const B16_ACTION_CLOSE_REFUSAL =
+  'Verifying, closing or reopening corrective actions is GE-only. / التحقق من الإجراءات التصحيحية أو إغلاقها أو إعادة فتحها من GE فقط.';
+
+/** B2: initiative selection is GE-only. */
+export const B16_CLIENT_INITIATIVE_REFUSAL =
+  'Initiative selection is GE-only. Client administrators browse the library read-only instead. / اختيار المبادرات من GE فقط. يتصفح مديرو العميل المكتبة للقراءة فقط.';
+
+/** B16 (OD-08 s2): the dept-level preliminary label (self-approval exception). */
+export const B16_PRELIMINARY_LABEL_EN = 'dept-approved — preliminary, pending client confirmation';
+export const B16_PRELIMINARY_LABEL_AR = 'معتمد من القسم — أولي، بانتظار تأكيد العميل';
+
+export interface DeptApprovalActor {
+  id: string;
+  role: string;
+  departmentId?: string | null;
+}
+
+export type DeptApprovalGate =
+  | { ok: true; selfApproved: boolean }
+  | { ok: false; status: 403; error: string };
+
+/**
+ * B16-A2 pure actor gate for the repurposed A4 dept approve/return route.
+ * - client_admin → 403 (belongs to the department; confirm at client scope).
+ * - ge_admin → 403 (GE acts at final approval).
+ * - employee of another department → 403 (cross-dept).
+ * - head assigned → ONLY the head; otherwise any member of the department.
+ * - Self-approval (approver = evaluator/submitter) is ALLOWED here (OD-08 s2
+ *   exception) and reported via selfApproved so the UI labels it preliminary.
+ */
+export function deptApproveActorGate(input: {
+  caller: DeptApprovalActor;
+  answerDepartmentId: string;
+  headUserId?: string | null;
+  headDepartmentName?: string | null;
+  evaluatorId?: string | null;
+  submitterId?: string | null;
+}): DeptApprovalGate {
+  const { caller, answerDepartmentId, headUserId } = input;
+  if (caller.role === 'client_admin') {
+    return { ok: false, status: 403, error: B16_DEPT_APPROVAL_CLIENT_REFUSAL };
+  }
+  if (caller.role === 'ge_admin') {
+    return { ok: false, status: 403, error: B16_DEPT_APPROVAL_GE_REFUSAL };
+  }
+  if (caller.role !== 'employee' || caller.departmentId !== answerDepartmentId) {
+    return { ok: false, status: 403, error: B16_CROSS_DEPT_APPROVAL_REFUSAL };
+  }
+  if (headUserId && caller.id !== headUserId) {
+    return { ok: false, status: 403, error: b16HeadOnlyRefusal(input.headDepartmentName) };
+  }
+  const selfApproved = caller.id === input.evaluatorId || caller.id === input.submitterId;
+  return { ok: true, selfApproved };
 }

@@ -49,6 +49,17 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
   const [targetTenantId, setTargetTenantId] = useState<string>('');
   const isGeAdmin = user?.role === 'ge_admin';
 
+  // B16-B2: imports are GE-only. The nav hides this screen for client
+  // roles; the guard below keeps a direct route from showing a dead form.
+  if (!isGeAdmin) {
+    return (
+      <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">{t.b16.importGeOnlyTitle}</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">{t.b16.importGeOnlyDesc}</p>
+      </div>
+    );
+  }
+
   React.useEffect(() => {
     if (!isGeAdmin || !token) return;
     fetch('/api/clients', { headers: { Authorization: `Bearer ${token}` } })

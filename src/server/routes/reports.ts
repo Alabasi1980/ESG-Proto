@@ -29,6 +29,7 @@ import { calculateAggregateScore, gateDraftEvaluations } from '../../lib/scoring
 import {
   contextFromUser,
   requireFreshPassword,
+  B16_CLIENT_LEVEL_REFUSAL,
   type DbClient,
 } from './_shared.ts';
 
@@ -187,13 +188,13 @@ router.get('/report-settings', authMiddleware, async (req: AuthenticatedRequest,
 });
 
 // B10-A1. Store the D-038 level + statement + notification record for a
-// client×service (ge_admin / client_admin own tenant). Missing required
-// fields → 409 with the unified refusal (no default, A-09).
+// client×service (B16-B2: GE-only; client reads settings, uses reports).
+// Missing required fields → 409 with the unified refusal (no default, A-09).
 router.put('/report-settings', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only tenant or platform administrators may set report levels.' });
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_LEVEL_REFUSAL });
     }
     const scope = reportTenantScope(user, req.body?.clientId);
     if ('error' in scope) {

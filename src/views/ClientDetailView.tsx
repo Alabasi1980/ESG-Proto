@@ -24,8 +24,8 @@ interface LinkedService {
 interface DetailData {
   client: { id: string; code: string; name: string; suspended: boolean; industry: string | null };
   services: LinkedService[];
-  departments: { id: string; code: string; name: string }[];
-  users: { id: string; email: string; name: string; role: string; must_change_password: boolean }[];
+  departments: { id: string; code: string; name: string; head_user_id: string | null; head_name: string | null }[];
+  users: { id: string; email: string; name: string; role: string; must_change_password: boolean; department_id: string | null }[];
 }
 
 interface Assignment {
@@ -59,6 +59,10 @@ export const ClientDetailView: React.FC = () => {
   const [assignForm, setAssignForm] = useState({ itemId: '', departmentId: '' });
   const [naForm, setNaForm] = useState({ itemId: '', departmentId: '', naReason: NA_REASONS[0], justification: '' });
   const [linkServiceId, setLinkServiceId] = useState('');
+  // B16-A1: per-department head designation (GE only).
+  const [headPick, setHeadPick] = useState<Record<string, string>>({});
+  const [headMsg, setHeadMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [headSaving, setHeadSaving] = useState<string | null>(null);
 
   const headers = useCallback((): Record<string, string> => {
     const h: Record<string, string> = {};
@@ -241,6 +245,28 @@ export const ClientDetailView: React.FC = () => {
     }
   };
 
+  // B16-A1: designate or clear the department head (GE only).
+  const handleSetHead = async (departmentId: string, clear: boolean) => {
+    setHeadMsg(null);
+    setHeadSaving(departmentId);
+    try {
+      const res = await fetch(`/api/departments/${departmentId}/head`, {
+        method: 'PATCH',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ headUserId: clear ? null : headPick[departmentId] || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setHeadMsg({ kind: 'ok', text: t.b16.headSaved });
+      setHeadPick((p) => ({ ...p, [departmentId]: '' }));
+      await fetchDetail(selected);
+    } catch (err: any) {
+      setHeadMsg({ kind: 'err', text: err.message });
+    } finally {
+      setHeadSaving(null);
+    }
+  };
+
   const isGe = user?.role === 'ge_admin';
 
   return (
@@ -348,6 +374,13 @@ export const ClientDetailView: React.FC = () => {
 
           <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
             <h4 className="font-bold text-sm mb-2">{t.assignments.title}</h4>
+            {!isGe && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                <span className="font-bold text-slate-700 dark:text-slate-200">{t.b16.assignGeOnlyTitle}. </span>
+                {t.b16.assignGeOnlyDesc}
+              </p>
+            )}
+            {isGe && (
             <form onSubmit={handleAssign} className="flex flex-col sm:flex-row gap-2 mb-3">
               <select value={assignForm.itemId} onChange={(e) => setAssignForm({ ...assignForm, itemId: e.target.value })} required className="flex-1 px-3 py-2 rounded-xl text-xs border">
                 <option value="">{t.assignments.itemLabel}…</option>
@@ -369,18 +402,22 @@ export const ClientDetailView: React.FC = () => {
                 {t.assignments.assignBtn}
               </button>
             </form>
+            )}
             <ul className="space-y-1 max-h-64 overflow-y-auto">
               {assignments.slice(0, 200).map((a) => (
                 <li key={a.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border text-[11px]">
                   <span>
                     {a.item_code} → {a.department_name}
                   </span>
-                  <button onClick={() => handleUnassign(a.item_id, a.department_id)} className="px-2 py-1 rounded-lg border border-rose-200 text-rose-600 font-bold">
-                    {t.assignments.unassignBtn}
-                  </button>
+                  {isGe && (
+                    <button onClick={() => handleUnassign(a.item_id, a.department_id)} className="px-2 py-1 rounded-lg border border-rose-200 text-rose-600 font-bold">
+                      {t.assignments.unassignBtn}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
+            {isGe && (
             <form onSubmit={handleNa} className="mt-4 pt-4 border-t grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select value={naForm.itemId} onChange={(e) => setNaForm({ ...naForm, itemId: e.target.value })} required className="px-3 py-2 rounded-xl text-xs border">
                 <option value="">Item…</option>
@@ -410,17 +447,73 @@ export const ClientDetailView: React.FC = () => {
                 {t.assignments.naBtn}
               </button>
             </form>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
-              <h4 className="font-bold text-sm mb-2">{t.clientDetail.departmentsTitle} ({detail.departments.length})</h4>
-              <ul className="text-xs space-y-1">
-                {detail.departments.map((d) => (
-                  <li key={d.id}>
-                    {d.name} ({d.code})
-                  </li>
-                ))}
+              <h4 className="font-bold text-sm mb-1">
+                {t.clientDetail.departmentsTitle} ({detail.departments.length})
+                {isGe && <span className="ms-2 text-[11px] font-semibold text-slate-500">· {t.b16.headTitle}</span>}
+              </h4>
+              {isGe && <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">{t.b16.headDesc}</p>}
+              {headMsg && (
+                <div className={`mb-2 p-2.5 rounded-lg text-[11px] ${headMsg.kind === 'ok' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'}`}>
+                  {headMsg.text}
+                </div>
+              )}
+              <ul className="text-xs space-y-2">
+                {detail.departments.map((d) => {
+                  const members = detail.users.filter((u) => u.department_id === d.id && u.role === 'employee');
+                  return (
+                    <li key={d.id} className="p-2 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">
+                          {d.name} ({d.code})
+                        </span>
+                        {d.head_user_id ? (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                            {t.b16.deptHeadBadge}: {d.head_name || d.head_user_id.slice(0, 8)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">{t.b16.headNone}</span>
+                        )}
+                      </div>
+                      {isGe && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <select
+                            value={headPick[d.id] ?? ''}
+                            onChange={(e) => setHeadPick((p) => ({ ...p, [d.id]: e.target.value }))}
+                            className="flex-1 px-2 py-1.5 rounded-lg text-[11px] border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                          >
+                            <option value="">{t.b16.headLabel}…</option>
+                            {members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.email})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleSetHead(d.id, false)}
+                            disabled={headSaving === d.id || !(headPick[d.id] || '').trim()}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {t.b16.headAssign}
+                          </button>
+                          {d.head_user_id && (
+                            <button
+                              onClick={() => handleSetHead(d.id, true)}
+                              disabled={headSaving === d.id}
+                              className="px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-[11px] font-bold disabled:opacity-50"
+                            >
+                              {t.b16.headClear}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
             <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">

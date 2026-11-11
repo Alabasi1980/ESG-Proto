@@ -16,7 +16,6 @@ import {
 import { resolveImportTenant } from '../../lib/tenantAccess.ts';
 import {
   ACTION_STATUSES,
-  actionTransitionRequiresAdmin,
   actionTransitionRequiresReason,
   canTransitionAction,
   isActionStatus,
@@ -28,6 +27,8 @@ import {
   notifyUsers,
   activeDepartmentUserIds,
   activeClientAdminIds,
+  B16_ACTION_OPEN_REFUSAL,
+  B16_ACTION_CLOSE_REFUSAL,
 } from './_shared.ts';
 
 const router = express.Router();
@@ -38,8 +39,10 @@ const router = express.Router();
 // open → in_progress → awaiting_verification → closed
 // awaiting_verification → closed | reopened (reason required)
 // closed → reopened (reason required); reopened → in_progress
-// Anything else is refused (409). Verify/close/reopen are admin-only
-// (client_admin / ge_admin); employees work their own department only.
+// Anything else is refused (409). B16-B2: opening actions and
+// verify/close/reopen are GE-only; departments start work (in_progress)
+// and save evidence notes on their own actions. Employees of other
+// departments stay refused.
 // Evidence is a TEXT reference (DV-01: no binary upload). Closing an action
 // only UPDATEs actions — evaluations are never touched.
 // ----------------------------------------------------------------------
@@ -113,10 +116,14 @@ router.get('/actions', authMiddleware, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// B1. Create an action (status starts at open). Employees: own department only.
+// B1. Create an action (status starts at open). B16-B2: GE-only —
+// departments progress their assigned actions (start work, evidence).
 router.post('/actions', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_ACTION_OPEN_REFUSAL });
+    }
     const body = req.body ?? {};
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     const description = typeof body.description === 'string' ? body.description.trim() : '';
@@ -129,14 +136,6 @@ router.post('/actions', authMiddleware, requireFreshPassword, async (req: Authen
     }
     if (!departmentId) {
       return res.status(400).json({ error: 'departmentId is required.' });
-    }
-    if (user.role === 'employee') {
-      if (!user.departmentId) {
-        return res.status(400).json({ error: 'Your user account has no department assignment.' });
-      }
-      if (departmentId !== user.departmentId) {
-        return res.status(403).json({ error: 'Employees may only create actions for their own department.' });
-      }
     }
     if (dueDate && Number.isNaN(Date.parse(dueDate))) {
       return res.status(400).json({ error: 'dueDate must be a valid date.' });
@@ -246,8 +245,15 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, async (req: A
         if (actionTransitionRequiresReason(nextStatus) && !reason) {
           throw Object.assign(new Error('A reason is required to reopen an action.'), { statusCode: 400 });
         }
-        if (actionTransitionRequiresAdmin(nextStatus) && user.role === 'employee') {
-          throw Object.assign(new Error('Only tenant or platform administrators may verify, close, or reopen actions.'), {
+        // B16-B2: verify / close / reopen are GE-only (client + employees
+        // refused with the path-pointing message). Starting work
+        // (open→in_progress, reopened→in_progress) and evidence notes stay
+        // with the owning department.
+        if (
+          (nextStatus === 'awaiting_verification' || nextStatus === 'closed' || nextStatus === 'reopened') &&
+          user.role !== 'ge_admin'
+        ) {
+          throw Object.assign(new Error(B16_ACTION_CLOSE_REFUSAL), {
             statusCode: 403,
           });
         }

@@ -390,6 +390,9 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
 
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // B16-A3: dept self-approval exception is labeled preliminary. The flag
+  // rides the audit payload of the EVALUATION_APPROVED entry (server-side).
+  const [deptSelfApproved, setDeptSelfApproved] = useState(false);
 
   const [comment, setComment] = useState('');
   const [deciding, setDeciding] = useState<'approve' | 'return' | null>(null);
@@ -413,6 +416,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     setDecisionMsg(null);
     setCorrectMsg(null);
     setConflict(null);
+    setDeptSelfApproved(false);
     setComment('');
     setCorrectReason('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -432,7 +436,13 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         });
         if (res.ok) {
           const data = await res.json();
-          if (!cancelled) setHistory(data.history || []);
+          if (!cancelled) {
+            setHistory(data.history || []);
+            const self = (data.history || []).some(
+              (h: any) => h.action === 'EVALUATION_APPROVED' && h.payload && (h.payload as any).selfApproved === true
+            );
+            setDeptSelfApproved(self);
+          }
         }
       } catch (err) {
         console.error('Failed to load revision history:', err);
@@ -605,14 +615,25 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     onChanged();
   };
 
-  const isAdmin = user?.role === 'client_admin' || user?.role === 'ge_admin';
+  const isEmployee = user?.role === 'employee';
+  const isClientAdmin = user?.role === 'client_admin';
+  const isGeAdmin = user?.role === 'ge_admin';
   const isSubmitted = item.answer_status === 'submitted';
   const isClientApproved = item.answer_status === 'client_approved';
   const isDecided = item.answer_status === 'approved' || isClientApproved || item.answer_status === 'returned';
   const isPostSubmit = isSubmitted || item.answer_status === 'approved' || isClientApproved;
-  const isOwn = !!user && (user.id === item.evaluator_id || user.id === item.answer_submitted_by);
-  const showApproval = isAdmin && isSubmitted && !isOwn;
-  const showSelfNote = isAdmin && isSubmitted && isOwn;
+  const isOwnEvaluator = !!user && user.id === item.evaluator_id;
+  const inOwnDept = !!user && !!user.departmentId && user.departmentId === item.department_id;
+  // B16-A2: the dept approve/return panel belongs to members of THIS
+  // department only (head-only enforced server-side). client_admin confirms
+  // at client scope (ClientReviewView); ge_admin acts at final approval.
+  const showDeptApproval = isEmployee && inOwnDept && isSubmitted;
+  const showDeptNoteForClient = isClientAdmin && isSubmitted;
+  const showDeptNoteForGe = isGeAdmin && isSubmitted;
+  // B16-B1: only department employees file drafts; B16-B3: only the author
+  // (or GE) corrects — client_admin uses return instead.
+  const canDraft = isEmployee;
+  const canCorrect = isPostSubmit && (isOwnEvaluator || isGeAdmin);
 
   const naReasonKeys = ['not-applicable', 'legal-prohibitions', 'confidentiality-constraints', 'information-unavailable-incomplete'];
 
@@ -652,7 +673,9 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         </div>
       </div>
 
-      {/* Evaluate form */}
+      {/* Evaluate form — B16-B1: department employees only. Other roles get
+          the correct alternative surfaced instead of a dead form. */}
+      {canDraft && !isPostSubmit && !isDecided && (
       <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
         <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.gapAnalysis.evaluateTitle}</h4>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-4">{t.gapAnalysis.scoreLabel}</p>
@@ -775,7 +798,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           </div>
         )}
 
-        {!isPostSubmit && !isDecided && (
+        {!isPostSubmit && !isDecided && canDraft && (
           <div className="flex flex-wrap gap-2 mt-4">
             <button
               onClick={saveDraft}
@@ -796,9 +819,25 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           </div>
         )}
       </div>
+      )}
+      {/* B16-B1: non-drafting roles see the correct alternative, not a dead form. */}
+      {!canDraft && !isPostSubmit && !isDecided && (
+        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">
+            {isClientAdmin ? t.b16.clientNoDraftTitle : t.b16.geNoDraftTitle}
+          </div>
+          <p className="leading-relaxed">{isClientAdmin ? t.b16.clientNoDraftDesc : t.b16.geNoDraftDesc}</p>
+        </div>
+      )}
 
-      {/* Post-submit correction (appended revision only) */}
-      {isPostSubmit && (
+      {/* Post-submit correction — B16-B3: author + GE only; client uses return. */}
+      {isPostSubmit && !canCorrect && isClientAdmin && (
+        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.b16.correctionForbiddenTitle}</div>
+          <p className="leading-relaxed">{t.b16.correctionForbiddenDesc}</p>
+        </div>
+      )}
+      {isPostSubmit && canCorrect && (
         <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-amber-200 dark:border-amber-800/60 shadow-xs">
           <div className="flex items-center gap-2 mb-1">
             <PencilLine className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -838,16 +877,25 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         </div>
       )}
 
-      {/* Approval panel (admins only; never offered for own evaluations) */}
-      {showSelfNote && (
+      {/* B16-A2: dept approval panel — members of THIS department only
+          (head-only enforced server-side). client_admin confirms at client
+          scope; ge_admin acts at final approval. */}
+      {showDeptNoteForClient && (
         <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-          {t.gapAnalysis.selfApprovalNote}
+          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.b16.clientNoDraftTitle}</div>
+          <p className="leading-relaxed">{t.b16.clientNoDraftDesc}</p>
         </div>
       )}
-      {showApproval && (
+      {showDeptNoteForGe && (
+        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.b16.geNoDraftTitle}</div>
+          <p className="leading-relaxed">{t.b16.geNoDraftDesc}</p>
+        </div>
+      )}
+      {showDeptApproval && (
         <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-indigo-200 dark:border-indigo-800/60 shadow-xs">
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.gapAnalysis.approvalTitle}</h4>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.gapAnalysis.approvalDesc}</p>
+          <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.b16.deptApprovalTitle}</h4>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.b16.deptApprovalDesc}</p>
           <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
             {t.gapAnalysis.commentLabel}
           </label>
@@ -895,7 +943,9 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           {isClientApproved
             ? t.gapAnalysis.stClientApproved
             : item.answer_status === 'approved'
-              ? t.gapAnalysis.decidedApproved
+              ? deptSelfApproved
+                ? t.b16.preliminaryBadge
+                : t.gapAnalysis.decidedApproved
               : t.gapAnalysis.decidedReturned}
         </div>
       )}

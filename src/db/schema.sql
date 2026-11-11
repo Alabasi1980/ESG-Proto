@@ -1244,3 +1244,20 @@ CREATE POLICY notifications_isolation_policy ON notifications
   );
 
 ALTER TABLE notifications FORCE ROW LEVEL SECURITY;
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 16 (demo) — client role realignment, department approval with head
+-- (OD-08). Same idempotency contract as FIX BATCH 1/8/9/10/11a/11b/12: safe to
+-- re-apply wholesale (DO-blocks guarded by catalogue checks).
+--
+-- B16-A1. departments.head_user_id: GE designates the department head per
+-- department (nullable; SET NULL when the user is removed). When set, ONLY the
+-- head may dept-approve/return that department's evaluations; when NULL, any
+-- member of the department may. Pre-existing rows are unaffected (NULL head).
+--------------------------------------------------------------------------------
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'departments' AND column_name = 'head_user_id') THEN
+    ALTER TABLE departments ADD COLUMN head_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+  END IF;
+END $$;

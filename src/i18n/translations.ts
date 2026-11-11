@@ -612,6 +612,7 @@ export interface Translations {
   staffLists: Record<string, any>;
   clientDashboard: Record<string, string>;
   assignments: Record<string, string>;
+  b16: Record<string, string>;
 
   audit: {
     title: string;
@@ -1355,6 +1356,36 @@ export const translations: Record<Language, Translations> = {
       deptLabel: 'Department',
       justificationPh: 'justification…',
     },
+    b16: {
+      preliminaryBadge: 'Dept-approved — preliminary, pending client confirmation',
+      deptApprovalTitle: 'Department approval',
+      deptApprovalDesc: 'Members of this department review the submitted evaluation. When a head is assigned, only the head may approve or return.',
+      headOnlyNote: 'This department has an assigned head — only the head may approve or return here.',
+      clientNoDraftTitle: 'Evaluation drafts belong to departments',
+      clientNoDraftDesc: 'Client administrators do not file drafts. Confirm submitted work at client scope instead — use the client-review queue below (client-approve / client-return).',
+      geNoDraftTitle: 'GE never files fresh evaluations',
+      geNoDraftDesc: 'Platform administrators rate via reasoned correction instead — use the correction box below with a reason.',
+      correctionForbiddenTitle: 'Corrections are not a client path',
+      correctionForbiddenDesc: 'Client administrators do not correct evaluations directly. Return the evaluation to the department with a reason instead.',
+      importGeOnlyTitle: 'Imports are GE-only',
+      importGeOnlyDesc: 'GRI and ESG-profile imports are filed by platform administrators only. Review imported data read-only in Standards / Gap Analysis / ESG Profile.',
+      reportSettingsGeOnlyTitle: 'Report levels are set by GE',
+      reportSettingsGeOnlyDesc: 'Only platform administrators set D-038 levels. Reports and gated exports stay available below.',
+      assignGeOnlyTitle: 'Assignments are managed by GE',
+      assignGeOnlyDesc: 'Manual assignments and N/A shortcuts are GE-only. The assignment list below is read-only.',
+      actionsGeOnlyTitle: 'Corrective-action control is GE-only',
+      actionsGeOnlyDesc: 'Only platform administrators open actions or verify / close / reopen them. Departments start work and save evidence notes on assigned actions.',
+      initiativesGeOnlyTitle: 'Initiative selection is GE-only',
+      initiativesGeOnlyDesc: 'Only platform administrators select initiatives for a tenant. The library below is read-only.',
+      headTitle: 'Department head (GE)',
+      headDesc: 'Designate the head per department. When set, only the head may dept-approve or return that department\u2019s evaluations; when empty, any member of the department may.',
+      headLabel: 'Head',
+      headNone: 'No head assigned — any member may approve',
+      headAssign: 'Set head',
+      headClear: 'Clear head',
+      headSaved: 'Department head updated.',
+      deptHeadBadge: 'Head',
+    },
 
     audit: {
       title: 'Audit Log',
@@ -2096,6 +2127,36 @@ export const translations: Record<Language, Translations> = {
       itemLabel: 'البند',
       deptLabel: 'القسم',
       justificationPh: 'المبرر…',
+    },
+    b16: {
+      preliminaryBadge: 'معتمد من القسم — أولي، بانتظار تأكيد العميل',
+      deptApprovalTitle: 'اعتماد القسم',
+      deptApprovalDesc: 'يراجع أعضاء هذا القسم التقييم المرسل. عند تعيين رئيس، يجوز للرئيس فقط الاعتماد أو الإعادة.',
+      headOnlyNote: 'لهذا القسم رئيس معيَّن — يجوز للرئيس فقط الاعتماد أو الإعادة هنا.',
+      clientNoDraftTitle: 'مسودات التقييم من اختصاص الأقسام',
+      clientNoDraftDesc: 'لا ينشئ مديرو العميل مسودات. اعتمد الأعمال المرسلة على نطاق العميل — استخدم قائمة مراجعة العميل أدناه (اعتماد العميل / الإعادة إلى القسم).',
+      geNoDraftTitle: 'GE لا ينشئ تقييمات جديدة أبداً',
+      geNoDraftDesc: 'يقيّم مديرو المنصة عبر تصحيح مسبب — استخدم مربع التصحيح أدناه مع ذكر السبب.',
+      correctionForbiddenTitle: 'التصحيح ليس مسار العميل',
+      correctionForbiddenDesc: 'لا يصحح مديرو العميل التقييمات مباشرة. أعد التقييم إلى القسم مع ذكر السبب.',
+      importGeOnlyTitle: 'الاستيراد من GE فقط',
+      importGeOnlyDesc: 'استيراد GRI وملف ESG من مديري المنصة فقط. راجع البيانات المستوردة للقراءة فقط في المعايير / تحليل الفجوات / ملف ESG.',
+      reportSettingsGeOnlyTitle: 'مستويات التقارير يحددها GE',
+      reportSettingsGeOnlyDesc: 'يحدد مديرو المنصة فقط مستويات D-038. تبقى التقارير والصادرات المسموحة متاحة أدناه.',
+      assignGeOnlyTitle: 'الإسناد يديره GE',
+      assignGeOnlyDesc: 'الإسناد اليدوي وتعليم غير المطبق من GE فقط. قائمة الإسناد أدناه للقراءة فقط.',
+      actionsGeOnlyTitle: 'ضبط الإجراءات التصحيحية من GE فقط',
+      actionsGeOnlyDesc: 'يفتح مديرو المنصة فقط الإجراءات أو يتحققون منها / يغلقونها / يعيدون فتحها. تبدأ الأقسام العمل وتحفظ ملاحظات الأدلة في إجراءاتها المسندة.',
+      initiativesGeOnlyTitle: 'اختيار المبادرات من GE فقط',
+      initiativesGeOnlyDesc: 'يختار مديرو المنصة فقط المبادرات للمستأجر. المكتبة أدناه للقراءة فقط.',
+      headTitle: 'رئيس القسم (GE)',
+      headDesc: 'عيّن الرئيس لكل قسم. عند التعيين، يجوز للرئيس فقط اعتماد تقييمات قسمه أو إعادتها؛ وعند الفراغ يجوز لأي عضو في القسم ذلك.',
+      headLabel: 'الرئيس',
+      headNone: 'لا رئيس معيَّن — يجوز لأي عضو الاعتماد',
+      headAssign: 'تعيين الرئيس',
+      headClear: 'إزالة الرئيس',
+      headSaved: 'تم تحديث رئيس القسم.',
+      deptHeadBadge: 'رئيس',
     },
 
     audit: {

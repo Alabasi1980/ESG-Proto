@@ -19,7 +19,7 @@ import {
 import { parseGRIFile, type ParsedGRIStandard } from '../../lib/griParser.ts';
 import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../../lib/scoring.ts';
 import { resolveImportTenant } from '../../lib/tenantAccess.ts';
-import { contextFromUser, readContext, requireFreshPassword } from './_shared.ts';
+import { contextFromUser, readContext, requireFreshPassword, B16_CLIENT_GRI_REFUSAL } from './_shared.ts';
 
 const router = express.Router();
 
@@ -67,8 +67,9 @@ router.post('/gri/preview', upload.single('file'), (req: Request, res: Response)
 router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators can import GRI standard disclosures.' });
+    // B16-B2: GRI import is GE-only. Client roles review imports read-only.
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_GRI_REFUSAL });
     }
 
     const { standards, clientId: rawClientId } = req.body as { standards: ParsedGRIStandard[]; clientId?: unknown };

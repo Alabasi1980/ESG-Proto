@@ -61,7 +61,13 @@ export const ActionsView: React.FC = () => {
   const [formMsg, setFormMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const authHeaders: Record<string, string> = { Authorization: token ? `Bearer ${token}` : '' };
-  const isAdmin = user?.role === 'client_admin' || user?.role === 'ge_admin';
+  // B16-B2: opening actions and verify/close/reopen are GE-only.
+  // Departments keep: start work (open→in_progress) + evidence notes.
+  const isGeAdmin = user?.role === 'ge_admin';
+  // Department read filter stays for client roles (reads are unaffected).
+  const isReaderAdmin = user?.role === 'ge_admin' || user?.role === 'client_admin';
+  const canVerifyClose = isGeAdmin;
+  const canCreate = isGeAdmin;
 
   const fetchActions = useCallback(async () => {
     setLoading(true);
@@ -104,6 +110,12 @@ export const ActionsView: React.FC = () => {
   }, [fetchDepartments]);
 
   const selected: ActionRow | null = items.find((a) => a.id === selectedId) || null;
+
+  // B16-B2: only GE may move an action INTO verification or close it;
+  // starting/restarting work stays with the owning department.
+  const nextNeedsGe = selected
+    ? NEXT_STATUS[selected.status] === 'awaiting_verification' || NEXT_STATUS[selected.status] === 'closed'
+    : false;
 
   useEffect(() => {
     setEvidence(selected?.evidence_note || '');
@@ -182,7 +194,9 @@ export const ActionsView: React.FC = () => {
           </button>
           <button
             onClick={() => setShowCreate((v) => !v)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+            disabled={!canCreate}
+            title={canCreate ? undefined : t.b16.actionsGeOnlyTitle}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t.actions.createButton}</span>
@@ -267,6 +281,13 @@ export const ActionsView: React.FC = () => {
         </form>
       )}
 
+      {!canCreate && (
+        <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
+          <span className="font-bold">{t.b16.actionsGeOnlyTitle}. </span>
+          {t.b16.actionsGeOnlyDesc}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={statusFilter}
@@ -280,10 +301,10 @@ export const ActionsView: React.FC = () => {
             </option>
           ))}
         </select>
-        {isAdmin && (
-          <select
-            value={deptFilter}
-            onChange={(e) => setDeptFilter(e.target.value)}
+          {isReaderAdmin && (
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
             className="px-3 py-2 rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
           >
             <option value="">{t.actions.allDepartments}</option>
@@ -399,9 +420,9 @@ export const ActionsView: React.FC = () => {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  {NEXT_STATUS[selected.status] && (
+                  {NEXT_STATUS[selected.status] && (!nextNeedsGe || canVerifyClose) && (
                     <button
-                      onClick={() => patchAction({ status: NEXT_STATUS[selected.status] })}
+                      onClick={() => patchAction({ status: NEXT_STATUS[selected.status] as string })}
                       disabled={mutating}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
                     >
@@ -413,7 +434,13 @@ export const ActionsView: React.FC = () => {
                       </span>
                     </button>
                   )}
-                  {isAdmin && (selected.status === 'awaiting_verification' || selected.status === 'closed') && (
+                  {NEXT_STATUS[selected.status] && nextNeedsGe && !canVerifyClose && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-bold">{t.b16.actionsGeOnlyTitle}. </span>
+                      {t.b16.actionsGeOnlyDesc}
+                    </p>
+                  )}
+                  {canVerifyClose && (selected.status === 'awaiting_verification' || selected.status === 'closed') && (
                     <span className="inline-flex items-center gap-2">
                       <input
                         type="text"

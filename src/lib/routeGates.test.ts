@@ -6,7 +6,8 @@
 //    `router.use(...)` mounts and GETs are reads (never gated).
 // 2. S-24 audit-reader matrix: ge_admin always; named delegate via env;
 //    client roles never; case-insensitive e-mail match.
-// 3. S-23 inbox contract: cap is 50; the nine fan-out event types exist.
+// 3. S-23 inbox contract: cap is 50; the ten fan-out event types exist
+//    (B16 adds evaluation.dept_approved).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -74,7 +75,7 @@ test('B12 S-24: audit-reader matrix (GE + named delegate only)', () => {
   }
 });
 
-test('B12 S-23: inbox cap is 50 and the nine fan-out types exist', () => {
+test('B12 S-23: inbox cap is 50 and the ten fan-out types exist', () => {
   assert.equal(NOTIFICATION_INBOX_LIMIT, 50);
   assert.deepEqual([...NOTIFICATION_TYPES].sort(), [
     'action.status',
@@ -82,6 +83,7 @@ test('B12 S-23: inbox cap is 50 and the nine fan-out types exist', () => {
     'evaluation.approved',
     'evaluation.client_approved',
     'evaluation.client_returned',
+    'evaluation.dept_approved',
     'evaluation.returned',
     'evaluation.submitted',
     'staff.approved',

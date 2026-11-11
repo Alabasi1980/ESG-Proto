@@ -40,6 +40,7 @@ import {
   notifyUsers,
   activeClientAdminIds,
   activeDepartmentUserIds,
+  B16_CLIENT_ASSIGN_REFUSAL,
 } from './_shared.ts';
 
 const router = express.Router();
@@ -114,20 +115,21 @@ router.post('/clients', authMiddleware, requireFreshPassword, async (req: Authen
   }
 });
 
-router.get('/departments', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  try {
+router.get('/departments', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {  try {
     const user = req.user!;
 
     const rows = await withTenantContext(contextFromUser(user), async (client) => {
-      let query = 'SELECT id, client_id, code, name, description FROM departments';
+      let query = `SELECT d.id, d.client_id, d.code, d.name, d.description,
+                          d.head_user_id, hu.name AS head_name
+                   FROM departments d LEFT JOIN users hu ON hu.id = d.head_user_id`;
       const params: any[] = [];
 
       if (user.role !== 'ge_admin' && user.clientId) {
-        query += ' WHERE client_id = $1';
+        query += ' WHERE d.client_id = $1';
         params.push(user.clientId);
       }
 
-      query += ' ORDER BY name ASC';
+      query += ' ORDER BY d.name ASC';
       const result = await client.query(query, params);
       return result.rows;
     });
@@ -135,6 +137,63 @@ router.get('/departments', authMiddleware, async (req: AuthenticatedRequest, res
     res.json(rows);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// B16-A1. Designate (or clear) the department head — ge_admin ONLY.
+// The head must be an ACTIVE employee of that same department; client_admin
+// and cross-department users are refused (the A4 gate could never admit
+// them, so designation refuses them too). Pass { headUserId: null } to clear.
+router.patch('/departments/:id/head', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!b11bRequireGeAdmin(user, res)) return;
+    const body = req.body ?? {};
+    const raw = body.headUserId === null || body.headUserId === undefined ? null : String(body.headUserId).trim();
+    const headUserId: string | null = raw === '' ? null : raw;
+
+    const updated = await withTenantContext(contextFromUser(user), async (client) => {
+      await b11bAssertPasswordFresh(client, user.id);
+      const deptRes = await client.query('SELECT id, client_id, code, name FROM departments WHERE id = $1', [
+        req.params.id,
+      ]);
+      const dept = deptRes.rows[0];
+      if (!dept) throw Object.assign(new Error('Department not found.'), { statusCode: 404 });
+
+      if (headUserId !== null) {
+        const uRes = await client.query(
+          'SELECT id, role, client_id, department_id, is_active FROM users WHERE id = $1',
+          [headUserId]
+        );
+        const head = uRes.rows[0];
+        if (!head || head.is_active !== true || head.client_id !== dept.client_id) {
+          throw Object.assign(new Error('Head must be an active user of the same tenant.'), { statusCode: 400 });
+        }
+        if (head.role !== 'employee' || head.department_id !== dept.id) {
+          throw Object.assign(
+            new Error('Head must be an employee of this department (client administrators and other departments are refused).'),
+            { statusCode: 400 }
+          );
+        }
+      }
+
+      const upd = await client.query(
+        'UPDATE departments SET head_user_id = $1, updated_at = NOW() WHERE id = $2 RETURNING id, client_id, code, name, head_user_id',
+        [headUserId, req.params.id]
+      );
+      await recordAuditLog(client, {
+        clientId: dept.client_id,
+        userId: user.id,
+        action: headUserId ? 'DEPARTMENT_HEAD_ASSIGNED' : 'DEPARTMENT_HEAD_CLEARED',
+        entityType: 'departments',
+        entityId: dept.id,
+        payload: { departmentCode: dept.code, headUserId },
+      });
+      return upd.rows[0];
+    });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to set department head' });
   }
 });
 
@@ -508,7 +567,9 @@ router.get('/clients/:id', authMiddleware, async (req: AuthenticatedRequest, res
         [scope.clientId]
       );
       const deptRes = await client.query(
-        'SELECT id, code, name FROM departments WHERE client_id = $1 ORDER BY name ASC',
+        `SELECT d.id, d.code, d.name, d.head_user_id, hu.name AS head_name
+         FROM departments d LEFT JOIN users hu ON hu.id = d.head_user_id
+         WHERE d.client_id = $1 ORDER BY d.name ASC`,
         [scope.clientId]
       );
       const userRes = await client.query(
@@ -829,12 +890,12 @@ router.get('/assignments', authMiddleware, async (req: AuthenticatedRequest, res
   }
 });
 
-// C. Manual assign (S-10) — admins only; employees never assign.
+// C. Manual assign (S-10) — B16-B2: GE-only. Client roles read the list.
 router.post('/assignments', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators may assign items to departments.' });
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_ASSIGN_REFUSAL });
     }
     const body = req.body ?? {};
     const itemId = typeof body.itemId === 'string' ? body.itemId.trim() : '';
@@ -898,12 +959,13 @@ router.post('/assignments', authMiddleware, requireFreshPassword, async (req: Au
   }
 });
 
-// C. Manual unassign (S-10) — refused while answers/evaluations exist (409).
+// C. Manual unassign (S-10) — B16-B2: GE-only; refused while
+// answers/evaluations exist (409).
 router.delete('/assignments', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators may unassign items.' });
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_ASSIGN_REFUSAL });
     }
     const body = (req.body ?? {}) as any;
     const q = req.query as any;
@@ -956,12 +1018,13 @@ router.delete('/assignments', authMiddleware, requireFreshPassword, async (req: 
   }
 });
 
-// C. N/A + reason shortcut (S-10): creates the evaluation row directly.
+// C. N/A + reason shortcut (S-10) — B16-B2: GE-only; creates the
+// evaluation row directly.
 router.post('/assignments/na', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators may mark items N/A.' });
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_ASSIGN_REFUSAL });
     }
     const body = req.body ?? {};
     const itemId = typeof body.itemId === 'string' ? body.itemId.trim() : '';

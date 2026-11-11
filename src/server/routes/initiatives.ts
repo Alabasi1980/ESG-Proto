@@ -20,6 +20,8 @@ import {
   contextFromUser,
   requireFreshPassword,
   isFrozenScope,
+  B16_CLIENT_ESG_IMPORT_REFUSAL,
+  B16_CLIENT_INITIATIVE_REFUSAL,
   type DbClient,
 } from './_shared.ts';
 
@@ -247,8 +249,9 @@ router.patch('/initiatives/:id', authMiddleware, requireFreshPassword, async (re
 router.post('/initiatives/select', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators may select initiatives for a tenant.' });
+    // B16-B2: initiative selection is GE-only (client reads the library).
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_INITIATIVE_REFUSAL });
     }
     const body = req.body ?? {};
     const initiativeId = typeof body.initiativeId === 'string' ? body.initiativeId.trim() : '';
@@ -310,8 +313,9 @@ router.post('/initiatives/select', authMiddleware, requireFreshPassword, async (
 router.delete('/initiatives/select/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators may unselect initiatives for a tenant.' });
+    // B16-B2: initiative selection is GE-only (client reads the library).
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_INITIATIVE_REFUSAL });
     }
     const initiativeId = req.params.id;
     const scope = initiativeSelectionScope(user, req.query.clientId);
@@ -375,12 +379,13 @@ function evalClientScope(user: AuthUser, explicit?: unknown): string | null {
   return user.clientId ?? null;
 }
 
-// C3. Import rows (ge_admin: explicit clientId; client_admin: own tenant).
+// C3. Import rows (ge_admin only, explicit clientId; B16-B2).
 router.post('/esg-profile/import', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'ge_admin' && user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only administrators may import the ESG profile.' });
+    // B16-B2: ESG profile import is GE-only (client reads the profile).
+    if (user.role !== 'ge_admin') {
+      return res.status(403).json({ error: B16_CLIENT_ESG_IMPORT_REFUSAL });
     }
     const body = req.body ?? {};
     const rows = Array.isArray(body.rows) ? body.rows : null;

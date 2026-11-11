@@ -112,7 +112,9 @@ export const ReportsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [incompleteCodes, setIncompleteCodes] = useState<string[]>([]);
 
-  const isAdmin = user?.role === 'ge_admin' || user?.role === 'client_admin';
+  // B16-B2: report level settings are GE-only; every tenant role keeps
+  // reports + gated export. The settings form below renders for GE only.
+  const isGeAdmin = user?.role === 'ge_admin';
 
   const authHeaders = useCallback((): Record<string, string> => {
     const h: Record<string, string> = {};
@@ -573,8 +575,15 @@ export const ReportsView: React.FC = () => {
 
         {renderGateBanner()}
 
-        {/* Settings (admins only) */}
-        {isAdmin && (
+        {/* Settings — B16-B2: GE only. Client roles keep reports/export
+            and see who sets the levels. */}
+        {!isGeAdmin && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.b16.reportSettingsGeOnlyTitle}</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{t.b16.reportSettingsGeOnlyDesc}</p>
+          </div>
+        )}
+        {isGeAdmin && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
             <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
               <Settings2 className="w-4 h-4 text-emerald-600" />

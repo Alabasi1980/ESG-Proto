@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'import-gri' as ActiveTab,
       label: t.nav.importGRI,
       icon: UploadCloud,
-      roles: ['ge_admin', 'client_admin'],
+      roles: ['ge_admin'],
     },
     {
       id: 'actions' as ActiveTab,

@@ -33,6 +33,12 @@ import {
   toFrozenError,
   notifyUsers,
   activeClientAdminIds,
+  deptApproveActorGate,
+  B16_CLIENT_CREATE_EVAL_REFUSAL,
+  B16_GE_CREATE_EVAL_REFUSAL,
+  B16_CLIENT_CORRECT_REFUSAL,
+  B16_PRELIMINARY_LABEL_EN,
+  B16_PRELIMINARY_LABEL_AR,
   type DbClient,
 } from './_shared.ts';
 
@@ -48,7 +54,10 @@ const router = express.Router();
 // averages and counters and always carry one of four stored reasons.
 // Submitted/approved answers are immutable except via appended revision
 // (PUT .../correct) — the answers correction-history trigger is the
-// backstop. Self-approval is forbidden.
+// backstop. B16 (OD-08): the approver≠evaluator≠submitter ban applies ONLY
+// at client and GE levels. At DEPARTMENT level the head (or sole dept
+// member when no head is assigned) MAY approve their own evaluation —
+// labeled preliminary ("dept-approved — pending client confirmation").
 // ----------------------------------------------------------------------
 
 const EVALUATION_SCORES = [0, 50, 100] as const;
@@ -336,6 +345,15 @@ router.get('/queue', authMiddleware, async (req: AuthenticatedRequest, res: Resp
 router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
+    // B16-B1: employees own-dept ONLY. client_admin files nothing (confirm at
+    // client scope instead); ge_admin never files fresh evaluations (GE rates
+    // via reasoned correction, never by fresh evaluation).
+    if (user.role === 'client_admin') {
+      return res.status(403).json({ error: B16_CLIENT_CREATE_EVAL_REFUSAL });
+    }
+    if (user.role === 'ge_admin') {
+      return res.status(403).json({ error: B16_GE_CREATE_EVAL_REFUSAL });
+    }
     const body = req.body ?? {};
     const { itemId, score, notEvaluated, notApplicable, naReason, evidenceNote } = body;
 
@@ -594,7 +612,18 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, asy
     }
   });
 
-// A4. Approve / return a submitted evaluation (admins only, never self).
+// A4. DEPT approve / return (B16 repurpose, OD-08): the department step.
+// Allowed actor = member of the evaluation's department ONLY; when a head
+// is assigned (departments.head_user_id), ONLY the head; employees of other
+// departments → 403; client_admin → 403 (belongs to the department —
+// confirm at client scope); ge_admin → 403 (GE acts at final approval).
+// Requires status submitted, NOT frozen. Stamps level='department', status
+// stays 'approved'. OD-08 s2 exception: at dept level the head (or sole dept
+// member when no head) MAY approve their own evaluation — flagged
+// selfApproved so the UI labels it preliminary ("dept-approved — pending
+// client confirmation"). Dept head may also RETURN to draft with reason
+// (rework inside the dept). Fan-out: the evaluator + the tenant's
+// client_admin(s) ("dept approved, awaiting your confirmation").
 async function handleEvaluationDecision(
   req: AuthenticatedRequest,
   res: Response,
@@ -602,9 +631,6 @@ async function handleEvaluationDecision(
 ) {
   try {
     const user = req.user!;
-    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only tenant or platform administrators may approve or return evaluations.' });
-    }
     const evaluationId = req.params.id;
     const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
     if (decision === 'return' && !comment) {
@@ -614,13 +640,33 @@ async function handleEvaluationDecision(
     const result = await withTenantContext(contextFromUser(user), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
-      if (user.id === evaluation.evaluator_id || (answer && user.id === answer.submitted_by)) {
-        throw Object.assign(new Error('Self-approval is forbidden: the approver must differ from the evaluator and the submitter.'), {
-          statusCode: 403,
+      if (!answer) {
+        throw Object.assign(new Error('No draft answer exists for this evaluation yet. Save a draft first.'), {
+          statusCode: 400,
         });
       }
-      if (!answer || answer.status !== 'submitted') {
-        throw Object.assign(new Error('Only a submitted evaluation can be approved or returned.'), { statusCode: 409 });
+      const deptId: string = answer.department_id;
+
+      // B16-A2 actor gate: dept members only (head-only when assigned).
+      // client_admin / ge_admin / cross-dept employees are refused here with
+      // the bilingual path-pointing messages. No self-ban at this level
+      // (OD-08 s2 exception) — selfApproved is reported for the UI label.
+      const deptRes = await client.query('SELECT head_user_id, name FROM departments WHERE id = $1', [deptId]);
+      const headUserId: string | null = deptRes.rows[0]?.head_user_id ?? null;
+      const gate = deptApproveActorGate({
+        caller: { id: user.id, role: user.role, departmentId: user.departmentId ?? null },
+        answerDepartmentId: deptId,
+        headUserId,
+        headDepartmentName: deptRes.rows[0]?.name ?? null,
+        evaluatorId: evaluation.evaluator_id,
+        submitterId: answer.submitted_by,
+      });
+      if (!gate.ok) {
+        throw Object.assign(new Error(gate.error), { statusCode: gate.status });
+      }
+
+      if (answer.status !== 'submitted') {
+        throw Object.assign(new Error('Only a submitted evaluation can be dept-approved or returned.'), { statusCode: 409 });
       }
 
       // B9-B (WF-05): frozen scope refuses evaluation writes.
@@ -629,7 +675,7 @@ async function handleEvaluationDecision(
       }
 
       // B9-C (A-15): approve/return requires the caller's answer version.
-      const gate = await enforcePairVersion(
+      const vgate = await enforcePairVersion(
         res,
         client,
         evaluation,
@@ -637,18 +683,17 @@ async function handleEvaluationDecision(
         req.body?.version,
         { decision, comment: comment || null }
       );
-      if (!gate) {
+      if (!vgate) {
         throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
       }
 
       const nextStatus = decision === 'approve' ? 'approved' : 'returned';
       const approvalStatus = decision === 'approve' ? 'approved' : 'rejected';
-      const level = user.role === 'ge_admin' ? 'ge' : 'client';
 
       const updRes = await client.query(
         `UPDATE answers SET status = $1, version = version + 1, updated_at = NOW()
           WHERE id = $2 AND version = $3 RETURNING *`,
-        [nextStatus, answer.id, gate.expectedVersion]
+        [nextStatus, answer.id, vgate.expectedVersion]
       );
       if ((updRes.rowCount ?? 0) === 0) {
         const fresh = await loadEvaluationWithAnswer(client, evaluationId).catch(() => null);
@@ -664,8 +709,8 @@ async function handleEvaluationDecision(
       ]);
       const apprRes = await client.query(
         `INSERT INTO approvals (client_id, answer_id, approver_id, level, status, comments)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [evaluation.client_id, answer.id, user.id, level, approvalStatus, comment || null]
+          VALUES ($1, $2, $3, 'department', $4, $5) RETURNING *`,
+        [evaluation.client_id, answer.id, user.id, approvalStatus, comment || null]
       );
 
       await recordAuditLog(client, {
@@ -674,30 +719,52 @@ async function handleEvaluationDecision(
         action: decision === 'approve' ? 'EVALUATION_APPROVED' : 'EVALUATION_RETURNED',
         entityType: 'evaluations',
         entityId: evaluation.id,
-        payload: { itemId: evaluation.item_id, answerId: answer.id, comment: comment || null },
+        payload: {
+          itemId: evaluation.item_id,
+          answerId: answer.id,
+          comment: comment || null,
+          level: 'department',
+          selfApproved: gate.selfApproved,
+        },
       });
 
-      // B12 (S-23): approved/returned → the evaluator.
+      // B12 (S-23) + B16-D: approved/returned → the evaluator; dept-approve
+      // additionally → the tenant's client_admin(s) ("awaiting confirmation").
       const code = await itemCodeFor(client, evaluation.item_id);
+      const selfNote = gate.selfApproved ? ` (${B16_PRELIMINARY_LABEL_EN})` : '';
       await notifyUsers(client, {
         userIds: [evaluation.evaluator_id],
         clientId: evaluation.client_id,
         type: decision === 'approve' ? 'evaluation.approved' : 'evaluation.returned',
-        title: decision === 'approve' ? 'Evaluation approved' : 'Evaluation returned for rework',
-        titleAr: decision === 'approve' ? 'تم اعتماد التقييم' : 'تمت إعادة التقييم للمعالجة',
+        title: decision === 'approve' ? 'Evaluation dept-approved' : 'Evaluation returned for rework',
+        titleAr: decision === 'approve' ? 'تم اعتماد التقييم على مستوى القسم' : 'تمت إعادة التقييم للمعالجة داخل القسم',
         body:
           decision === 'approve'
-            ? `Item ${code} was approved by ${user.name}.`
+            ? `Item ${code} was dept-approved by ${user.name}.${selfNote}`
             : `Item ${code} was returned by ${user.name}: ${comment}`,
         bodyAr:
           decision === 'approve'
-            ? `تم اعتماد البند ${code} بواسطة ${user.name}.`
+            ? `تم اعتماد البند ${code} على مستوى القسم بواسطة ${user.name}.${gate.selfApproved ? ` (${B16_PRELIMINARY_LABEL_AR})` : ''}`
             : `تمت إعادة البند ${code} بواسطة ${user.name}: ${comment}`,
         entityType: 'evaluations',
         entityId: evaluation.id,
       });
+      if (decision === 'approve') {
+        const admins = await activeClientAdminIds(client, evaluation.client_id);
+        await notifyUsers(client, {
+          userIds: admins,
+          clientId: evaluation.client_id,
+          type: 'evaluation.dept_approved',
+          title: 'Department approved an evaluation — awaiting your confirmation',
+          titleAr: 'اعتمد القسم تقييماً — بانتظار تأكيدكم',
+          body: `Item ${code} was dept-approved by ${user.name} — awaiting your confirmation.${selfNote}`,
+          bodyAr: `تم اعتماد البند ${code} على مستوى القسم بواسطة ${user.name} وهو بانتظار تأكيد العميل.${gate.selfApproved ? ` (${B16_PRELIMINARY_LABEL_AR})` : ''}`,
+          entityType: 'evaluations',
+          entityId: evaluation.id,
+        });
+      }
 
-      return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
+      return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0], selfApproved: gate.selfApproved };
     });
 
       res.json(result);
@@ -769,10 +836,15 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, asy
     const result = await withTenantContext(contextFromUser(user), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
+      // B16-B3: author (own, any pre-final state) + ge_admin always, with
+      // reason. client_admin → 403 (use return instead).
+      if (user.role === 'client_admin') {
+        throw Object.assign(new Error(B16_CLIENT_CORRECT_REFUSAL), { statusCode: 403 });
+      }
       const isEvaluator = user.id === evaluation.evaluator_id;
-      const isAdmin = user.role === 'client_admin' || user.role === 'ge_admin';
-      if (!isEvaluator && !isAdmin) {
-        throw Object.assign(new Error('Only the evaluator or a tenant administrator may correct this evaluation.'), {
+      const isGe = user.role === 'ge_admin';
+      if (!isEvaluator && !isGe) {
+        throw Object.assign(new Error('Only the evaluator or a platform administrator may correct this evaluation.'), {
           statusCode: 403,
         });
       }
@@ -1517,6 +1589,21 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, async (re
               `. Every in-scope item must be client-approved (or N/A with a reason) first.`
           ),
           { statusCode: 409 }
+        );
+      }
+
+      // B16 (OD-08): the ban stays strict at GE level — the freezer must
+      // differ from every in-scope evaluator (self-freeze is refused).
+      const actorRes = await client.query(
+        'SELECT DISTINCT evaluator_id FROM evaluations WHERE client_id = $1 AND item_id = ANY($2)',
+        [clientId, items.map((it) => it.itemId)]
+      );
+      if (actorRes.rows.some((r) => r.evaluator_id === user.id)) {
+        throw Object.assign(
+          new Error(
+            'Self-approval is forbidden: the GE final approver must differ from the evaluator. Ask another platform administrator to freeze this scope.'
+          ),
+          { statusCode: 403 }
         );
       }
 
