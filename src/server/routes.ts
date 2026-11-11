@@ -2,8 +2,12 @@
 // under src/server/routes/ (system, session, gri, evaluations, actions,
 // initiatives, reports, storage, admin, audit, notifications) plus the
 // taxonomy router (src/server/taxonomy.ts). This file registers them in the
-// original order under the /api prefix and owns no handlers itself — SAME
-// behavior is proven by the full suite + harness parity re-run.
+// original order under the /api prefix and owns no domain handlers itself —
+// SAME behavior is proven by the full suite + harness parity re-run.
+// Micro-fix: it additionally owns the terminal JSON 404 + global JSON error
+// handlers (mounted LAST), which only fire for errors that would otherwise
+// reach Express's default HTML finalhandler; all existing refusal
+// bodies/statuses are unchanged.
 
 import express from 'express';
 import taxonomyRouter from './taxonomy.ts';
@@ -18,6 +22,7 @@ import storageRouter from './routes/storage.ts';
 import adminRouter from './routes/admin.ts';
 import auditRouter from './routes/audit.ts';
 import notificationsRouter from './routes/notifications.ts';
+import { apiNotFoundHandler, globalJsonErrorHandler } from './errorHandler.ts';
 
 const router = express.Router();
 
@@ -36,5 +41,15 @@ router.use(storageRouter);
 router.use(adminRouter);
 router.use(auditRouter);
 router.use(notificationsRouter);
+
+// Micro-fix: no Express-default HTML page may ever escape the API.
+// 404 (unknown /api route) stays JSON, and the global 4-argument error
+// middleware is mounted LAST so any thrown/forwarded error on any route
+// (sync throw, next(err), …) responds JSON
+// { error, code? } with the original status (default 500) and no stack.
+// Existing refusal bodies are untouched — each route keeps its own
+// try/catch with exact messages/codes.
+router.use(apiNotFoundHandler);
+router.use(globalJsonErrorHandler);
 
 export default router;
