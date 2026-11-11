@@ -8,13 +8,14 @@ import {
   LogOut,
   Globe,
   Building2,
-  ShieldAlert,
-  UserCheck,
+  Wrench,
+  Lightbulb,
+  Sprout,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 
-export type ActiveTab = 'dashboard' | 'standards' | 'gap-analysis' | 'import-gri' | 'settings';
+export type ActiveTab = 'dashboard' | 'standards' | 'gap-analysis' | 'actions' | 'initiatives' | 'esg-profile' | 'import-gri' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -60,6 +61,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: t.nav.importGRI,
       icon: UploadCloud,
       roles: ['ge_admin', 'client_admin'],
+    },
+    {
+      id: 'actions' as ActiveTab,
+      label: t.nav.correctiveActions,
+      icon: Wrench,
+      roles: ['ge_admin', 'client_admin', 'employee'],
+    },
+    {
+      id: 'initiatives' as ActiveTab,
+      label: t.nav.initiatives,
+      icon: Lightbulb,
+      roles: ['ge_admin', 'client_admin', 'employee'],
+    },
+    {
+      id: 'esg-profile' as ActiveTab,
+      label: t.nav.esgProfile,
+      icon: Sprout,
+      roles: ['ge_admin', 'client_admin', 'employee'],
     },
     {
       id: 'settings' as ActiveTab,

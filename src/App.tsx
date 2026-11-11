@@ -6,6 +6,9 @@ import { Header } from './components/Header.tsx';
 import { DashboardView } from './views/DashboardView.tsx';
 import { StandardsView } from './views/StandardsView.tsx';
 import { GapAnalysisView } from './views/GapAnalysisView.tsx';
+import { ActionsView } from './views/ActionsView.tsx';
+import { InitiativesView } from './views/InitiativesView.tsx';
+import { EsgProfileView } from './views/EsgProfileView.tsx';
 import { ImportGRIView } from './views/ImportGRIView.tsx';
 import { SettingsView } from './views/SettingsView.tsx';
 import { LoginView } from './views/LoginView.tsx';
@@ -85,6 +88,9 @@ const MainApp: React.FC = () => {
             {activeTab === 'gap-analysis' && (
               <GapAnalysisView setActiveTab={setActiveTab} />
             )}
+            {activeTab === 'actions' && <ActionsView />}
+            {activeTab === 'initiatives' && <InitiativesView />}
+            {activeTab === 'esg-profile' && <EsgProfileView />}
             {activeTab === 'import-gri' && (
               <ImportGRIView
                 setActiveTab={setActiveTab}

@@ -158,6 +158,10 @@ CREATE TABLE IF NOT EXISTS evaluations (
 );
 
 -- 13. Actions (Corrective Actions)
+-- NOTE (fix batch 8): status set is ('open','in_progress','awaiting_verification',
+-- 'closed','reopened') and evidence_note exists — see the FIX BATCH 8 section
+-- below, which migrates pre-B8 databases idempotently. Fresh installs go through
+-- the same section right after this CREATE.
 CREATE TABLE IF NOT EXISTS actions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -166,7 +170,8 @@ CREATE TABLE IF NOT EXISTS actions (
   title TEXT NOT NULL,
   description TEXT,
   due_date DATE,
-  status TEXT NOT NULL CHECK (status IN ('open', 'in_progress', 'awaiting_verification', 'closed')),
+  status TEXT NOT NULL CHECK (status IN ('open', 'in_progress', 'awaiting_verification', 'closed', 'reopened')),
+  evidence_note TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -606,3 +611,100 @@ ALTER TABLE profile_assessments FORCE ROW LEVEL SECURITY;
 ALTER TABLE report_settings FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 ALTER TABLE items FORCE ROW LEVEL SECURITY;
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 8 (demo) — Actions WF-04, Initiatives library, ESG Profile.
+-- Same idempotency contract as FIX BATCH 1: safe to re-apply wholesale.
+--------------------------------------------------------------------------------
+
+-- B8-A. actions.evidence_note (text reference only — DV-01 forbids binary upload).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'actions' AND column_name = 'evidence_note') THEN
+    ALTER TABLE actions ADD COLUMN evidence_note TEXT;
+  END IF;
+END $$;
+
+-- B8-A. actions.status gains 'reopened' (WF-04: awaiting_verification→reopened,
+-- closed→reopened, both with a reason recorded in audit_log).
+ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_status_check;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'actions_status_check') THEN
+    ALTER TABLE actions ADD CONSTRAINT actions_status_check
+      CHECK (status IN ('open', 'in_progress', 'awaiting_verification', 'closed', 'reopened'));
+  END IF;
+END $$;
+
+-- B8-B. initiatives_library: tenant-neutral GLOBAL library (like standards —
+-- deliberately NO RLS, readable by every authenticated role).
+CREATE TABLE IF NOT EXISTS initiatives_library (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  sector TEXT NOT NULL DEFAULT '',
+  department TEXT NOT NULL DEFAULT '',
+  esg_class TEXT NOT NULL DEFAULT '',
+  standards_ref TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER,
+  import_batch_id TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(title, sector)
+);
+
+-- B8-B. client_initiatives: per-tenant selection links into the global library.
+CREATE TABLE IF NOT EXISTS client_initiatives (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  initiative_id UUID NOT NULL REFERENCES initiatives_library(id) ON DELETE CASCADE,
+  selected_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  selected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(client_id, initiative_id)
+);
+
+-- B8-C. esg_profile: per-tenant ESG profile rows (one per pillar/department/
+-- topic/parameter); profile text preserved, profile_rating 1..3 enforced.
+CREATE TABLE IF NOT EXISTS esg_profile (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  pillar TEXT NOT NULL,
+  department TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  parameter TEXT NOT NULL,
+  observations TEXT,
+  market_scenario TEXT,
+  profile TEXT,
+  profile_rating SMALLINT CHECK (profile_rating IN (1, 2, 3)),
+  timeline TEXT,
+  eco_impact TEXT,
+  rating INTEGER,
+  max_rating INTEGER,
+  sort_order INTEGER,
+  import_batch_id TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(client_id, pillar, department, topic, parameter)
+);
+
+-- B8 RLS: tenant tables follow the evaluations pattern (ge_admin sees all;
+-- any same-tenant role reads; write scoping is enforced in routes).
+ALTER TABLE client_initiatives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE esg_profile ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS client_initiatives_isolation_policy ON client_initiatives;
+CREATE POLICY client_initiatives_isolation_policy ON client_initiatives
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR client_id::text = current_setting('app.current_tenant_id', true)
+  );
+
+DROP POLICY IF EXISTS esg_profile_isolation_policy ON esg_profile;
+CREATE POLICY esg_profile_isolation_policy ON esg_profile
+  FOR ALL
+  USING (
+    current_setting('app.current_user_role', true) = 'ge_admin'
+    OR client_id::text = current_setting('app.current_tenant_id', true)
+  );
+
+ALTER TABLE client_initiatives FORCE ROW LEVEL SECURITY;
+ALTER TABLE esg_profile FORCE ROW LEVEL SECURITY;

@@ -175,6 +175,24 @@ export const StandardsView: React.FC<StandardsViewProps> = ({ setActiveTab }) =>
           </div>
         ))}
       </div>
+
+      {/* MP-43: priority weights — display-only reference footer */}
+      <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+        <h4 className="text-xs font-bold text-slate-900 dark:text-white">{t.weights.title}</h4>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{t.weights.subtitle}</p>
+        <div className="flex flex-wrap gap-2 mt-3 text-[11px] font-bold">
+          <span className="px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900/40">
+            {t.weights.high}
+          </span>
+          <span className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/40">
+            {t.weights.mid}
+          </span>
+          <span className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-900/40">
+            {t.weights.low}
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3">{t.weights.notice}</p>
+      </div>
     </div>
   );
 };

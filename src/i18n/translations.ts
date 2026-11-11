@@ -10,6 +10,8 @@ export interface Translations {
     standards: string;
     gapAnalysis: string;
     correctiveActions: string;
+    initiatives: string;
+    esgProfile: string;
     importGRI: string;
     auditLog: string;
     settings: string;
@@ -271,6 +273,86 @@ export interface Translations {
     noTenantOption: string;
   };
 
+  actions: {
+    title: string;
+    subtitle: string;
+    listTitle: string;
+    emptyTitle: string;
+    emptyDesc: string;
+    filterStatus: string;
+    filterDepartment: string;
+    allStatuses: string;
+    allDepartments: string;
+    createTitle: string;
+    titleLabel: string;
+    titlePh: string;
+    descLabel: string;
+    descPh: string;
+    deptLabel: string;
+    itemLabel: string;
+    dueLabel: string;
+    createButton: string;
+    creating: string;
+    evidenceLabel: string;
+    evidencePh: string;
+    saveEvidence: string;
+    advanceButton: string;
+    closeButton: string;
+    reopenButton: string;
+    reasonLabel: string;
+    reasonPh: string;
+    reasonRequired: string;
+    statusLabels: Record<string, string>;
+    nextOf: Record<string, string>;
+    updatedMsg: string;
+  };
+
+  initiatives: {
+    title: string;
+    subtitle: string;
+    searchPh: string;
+    filterSector: string;
+    filterEsg: string;
+    filterDepartment: string;
+    all: string;
+    selectButton: string;
+    unselectButton: string;
+    selectedBadge: string;
+    emptyTitle: string;
+    emptyDesc: string;
+    standardsRef: string;
+    department: string;
+    sector: string;
+  };
+
+  esgProfile: {
+    title: string;
+    subtitle: string;
+    scoreLabel: string;
+    coverageLabel: string;
+    ratedLabel: string;
+    pillar: string;
+    department: string;
+    topic: string;
+    parameter: string;
+    profile: string;
+    rating: string;
+    timeline: string;
+    impact: string;
+    emptyTitle: string;
+    emptyDesc: string;
+    groupNote: string;
+  };
+
+  weights: {
+    title: string;
+    subtitle: string;
+    high: string;
+    mid: string;
+    low: string;
+    notice: string;
+  };
+
   common: {
     loading: string;
     save: string;
@@ -311,6 +393,8 @@ export const translations: Record<Language, Translations> = {
       standards: 'GRI Standards',
       gapAnalysis: 'Gap Analysis',
       correctiveActions: 'Corrective Actions',
+      initiatives: 'Initiatives Library',
+      esgProfile: 'ESG Profile',
       importGRI: 'Import GRI Data',
       auditLog: 'Audit Log',
       settings: 'Settings & Database',
@@ -604,6 +688,97 @@ export const translations: Record<Language, Translations> = {
         file: 'Document Attachment',
         demoBanner: "Demo build — content is the client's own GRI workbook",
       },
+
+    actions: {
+      title: 'Corrective Actions',
+      subtitle: 'Department-owned follow-ups with a verified close-out (WF-04)',
+      listTitle: 'Actions',
+      emptyTitle: 'No corrective actions yet',
+      emptyDesc: 'Create the first follow-up for your department. Drafts never move numbers; closing an action never changes a score.',
+      filterStatus: 'Status',
+      filterDepartment: 'Department',
+      allStatuses: 'All statuses',
+      allDepartments: 'All departments',
+      createTitle: 'New corrective action',
+      titleLabel: 'Title',
+      titlePh: 'e.g. Fix waste segregation in Building B',
+      descLabel: 'Description',
+      descPh: 'What must be done, and where...',
+      deptLabel: 'Owner department',
+      itemLabel: 'Linked item (optional)',
+      dueLabel: 'Due date (optional)',
+      createButton: 'Create action',
+      creating: 'Creating...',
+      evidenceLabel: 'Evidence (text reference — no file upload in this demo)',
+      evidencePh: 'e.g. Waste log 2026-11-30, photos folder W-114...',
+      saveEvidence: 'Save evidence note',
+      advanceButton: 'Move to next step',
+      closeButton: 'Verify & close',
+      reopenButton: 'Reopen',
+      reasonLabel: 'Reason (required for reopen)',
+      reasonPh: 'Why is this action being reopened?...',
+      reasonRequired: 'A reason is required to reopen an action.',
+      statusLabels: {
+        open: 'Open',
+        in_progress: 'In progress',
+        awaiting_verification: 'Awaiting verification',
+        closed: 'Closed',
+        reopened: 'Reopened',
+      },
+      nextOf: {
+        open: 'Start work',
+        in_progress: 'Submit for verification',
+        awaiting_verification: 'Verify & close',
+        reopened: 'Restart work',
+      },
+      updatedMsg: 'Action updated successfully.',
+    },
+
+    initiatives: {
+      title: 'Initiatives Library',
+      subtitle: 'Global catalogue of common initiatives — select the ones adopted by this tenant',
+      searchPh: 'Search initiatives by title...',
+      filterSector: 'Sector',
+      filterEsg: 'E / S / G',
+      filterDepartment: 'Department',
+      all: 'All',
+      selectButton: 'Select for client',
+      unselectButton: 'Unselect',
+      selectedBadge: 'Selected',
+      emptyTitle: 'Initiatives library is empty',
+      emptyDesc: 'The global library has no rows yet. Import the workbook initiatives to begin.',
+      standardsRef: 'GRI ref',
+      department: 'Department',
+      sector: 'Sector',
+    },
+
+    esgProfile: {
+      title: 'ESG Profile',
+      subtitle: 'Tenant ESG profile by pillar, department, topic and parameter (sheet semantics preserved)',
+      scoreLabel: 'Profile score',
+      coverageLabel: 'Coverage',
+      ratedLabel: 'Rated parameters',
+      pillar: 'Pillar',
+      department: 'Department',
+      topic: 'Topic',
+      parameter: 'Parameter',
+      profile: 'Profile',
+      rating: 'Rating',
+      timeline: 'Timeline',
+      impact: 'Eco impact',
+      emptyTitle: 'No ESG profile imported',
+      emptyDesc: 'Import the workbook ESG Profile sheet for this tenant to see the score and coverage.',
+      groupNote: 'RATING / MAX RATING are shown on group rows exactly as in the workbook; the score aggregates all 1–3 ratings.',
+    },
+
+    weights: {
+      title: 'Priority weights',
+      subtitle: 'Display-only reference used by every score in this demo',
+      high: 'High = 3',
+      mid: 'Medium = 2',
+      low: 'Low = 1',
+      notice: 'Scoring detail is pinned in the scoring rule: weight is derived from priority (High 3 / Mid 2 / Low 1) and drafts never count.',
+    },
   },
 
   ar: {
@@ -616,6 +791,8 @@ export const translations: Record<Language, Translations> = {
       standards: 'معايير GRI',
       gapAnalysis: 'تحليل الفجوات',
       correctiveActions: 'الإجراءات التصحيحية',
+      initiatives: 'مكتبة المبادرات',
+      esgProfile: 'الملف البيئي والاجتماعي (ESG)',
       importGRI: 'استيراد بيانات GRI',
       auditLog: 'سجل التدقيق',
       settings: 'الإعدادات وقاعدة البيانات',
@@ -909,5 +1086,96 @@ export const translations: Record<Language, Translations> = {
         file: 'مرفق مستند',
         demoBanner: 'نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل',
       },
+
+    actions: {
+      title: 'الإجراءات التصحيحية',
+      subtitle: 'متابعات مملوكة للأقسام مع إغلاق موثّق (WF-04)',
+      listTitle: 'الإجراءات',
+      emptyTitle: 'لا توجد إجراءات تصحيحية بعد',
+      emptyDesc: 'أنشئ أول متابعة لقسمك. المسودات لا تحرك الأرقام أبداً؛ وإغلاق إجراء لا يغيّر أي درجة.',
+      filterStatus: 'الحالة',
+      filterDepartment: 'القسم',
+      allStatuses: 'كل الحالات',
+      allDepartments: 'كل الأقسام',
+      createTitle: 'إجراء تصحيحي جديد',
+      titleLabel: 'العنوان',
+      titlePh: 'مثال: معالجة فرز النفايات في المبنى B',
+      descLabel: 'الوصف',
+      descPh: 'ما الذي يجب فعله وأين...',
+      deptLabel: 'القسم المالك',
+      itemLabel: 'البند المرتبط (اختياري)',
+      dueLabel: 'تاريخ الاستحقاق (اختياري)',
+      createButton: 'إنشاء الإجراء',
+      creating: 'جارٍ الإنشاء...',
+      evidenceLabel: 'الدليل (مرجع نصي — لا رفع ملفات في هذه النسخة)',
+      evidencePh: 'مثال: سجل النفايات 2026-11-30، مجلد الصور W-114...',
+      saveEvidence: 'حفظ ملاحظة الدليل',
+      advanceButton: 'نقل للخطوة التالية',
+      closeButton: 'تحقق وإغلاق',
+      reopenButton: 'إعادة فتح',
+      reasonLabel: 'السبب (مطلوب عند إعادة الفتح)',
+      reasonPh: 'لماذا يُعاد فتح هذا الإجراء؟...',
+      reasonRequired: 'يلزم ذكر سبب لإعادة فتح الإجراء.',
+      statusLabels: {
+        open: 'مفتوح',
+        in_progress: 'قيد التنفيذ',
+        awaiting_verification: 'بانتظار التحقق',
+        closed: 'مغلق',
+        reopened: 'مُعاد فتحه',
+      },
+      nextOf: {
+        open: 'بدء العمل',
+        in_progress: 'إرسال للتحقق',
+        awaiting_verification: 'تحقق وإغلاق',
+        reopened: 'إعادة بدء العمل',
+      },
+      updatedMsg: 'تم تحديث الإجراء بنجاح.',
+    },
+
+    initiatives: {
+      title: 'مكتبة المبادرات',
+      subtitle: 'دليل عام للمبادرات الشائعة — اختر المعتمد منها لهذا المستأجر',
+      searchPh: 'ابحث في المبادرات بالعنوان...',
+      filterSector: 'القطاع',
+      filterEsg: 'E / S / G',
+      filterDepartment: 'القسم',
+      all: 'الكل',
+      selectButton: 'اعتماد للعميل',
+      unselectButton: 'إلغاء الاعتماد',
+      selectedBadge: 'معتمَدة',
+      emptyTitle: 'مكتبة المبادرات فارغة',
+      emptyDesc: 'لا توجد صفوف في المكتبة العامة بعد. استورد مبادرات ملف العمل للبدء.',
+      standardsRef: 'مرجع GRI',
+      department: 'القسم',
+      sector: 'القطاع',
+    },
+
+    esgProfile: {
+      title: 'الملف البيئي والاجتماعي',
+      subtitle: 'ملف ESG للمستأجر حسب الركيزة والقسم والموضوع والمعامل (بدلالات الورقة الأصلية)',
+      scoreLabel: 'درجة الملف',
+      coverageLabel: 'التغطية',
+      ratedLabel: 'المعاملات المقيّمة',
+      pillar: 'الركيزة',
+      department: 'القسم',
+      topic: 'الموضوع',
+      parameter: 'المعامل',
+      profile: 'الملف',
+      rating: 'التقييم',
+      timeline: 'الأفق الزمني',
+      impact: 'الأثر البيئي',
+      emptyTitle: 'لم يُستورد ملف ESG بعد',
+      emptyDesc: 'استورد ورقة ESG Profile الخاصة بهذا المستأجر لعرض الدرجة والتغطية.',
+      groupNote: 'تظهر RATING / MAX RATING على صفوف المجموعات كما في الورقة تماماً؛ والدرجة تجمع كل تقييمات 1–3.',
+    },
+
+    weights: {
+      title: 'أوزان الأولوية',
+      subtitle: 'مرجع عرض فقط تعتمده كل الدرجات في هذه النسخة',
+      high: 'مرتفعة = 3',
+      mid: 'متوسطة = 2',
+      low: 'منخفضة = 1',
+      notice: 'تفصيل التسجيل مثبّت في قاعدة التسجيل: الوزن مشتق من الأولوية (مرتفعة 3 / متوسطة 2 / منخفضة 1) والمسودات لا تُحتسب أبداً.',
+    },
   },
 };
