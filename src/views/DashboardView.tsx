@@ -11,7 +11,6 @@ import {
   Leaf,
   Users,
   Building,
-  ArrowRight,
   RefreshCw,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';

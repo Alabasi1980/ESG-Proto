@@ -451,7 +451,7 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-750 text-slate-800 dark:text-slate-200">
                     {parseResult.standards.map((std, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-750/30">
-                        <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400">
+                        <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400" dir="ltr">
                           {std.code}
                         </td>
                         <td className="px-4 py-3 font-medium">{std.title}</td>
@@ -483,8 +483,8 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-750 text-slate-800 dark:text-slate-200">
                     {allDisclosures.map((disc, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-750/30">
-                        <td className="px-4 py-3 text-slate-500 font-medium">{disc.standardCode}</td>
-                        <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400">
+                        <td className="px-4 py-3 text-slate-500 font-medium" dir="ltr">{disc.standardCode}</td>
+                        <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400" dir="ltr">
                           {disc.code}
                         </td>
                         <td className="px-4 py-3 font-medium">{disc.title}</td>
@@ -512,7 +512,7 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-750 text-slate-800 dark:text-slate-200">
                     {allItems.map((item, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-750/30">
-                        <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">
+                        <td className="px-4 py-3 font-bold text-slate-900 dark:text-white" dir="ltr">
                           {item.code}
                         </td>
                         <td className="px-4 py-3">

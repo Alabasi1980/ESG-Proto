@@ -65,6 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Mobile menu button */}
         <button
           onClick={onOpenMobileMenu}
+          data-testid="open-mobile-menu"
           className="p-2 -ms-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
           aria-label="Open navigation menu"
         >

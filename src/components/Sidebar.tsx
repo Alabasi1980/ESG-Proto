@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
   BookOpen,
@@ -14,6 +14,7 @@ import {
   FileText,
   Bell,
   ScrollText,
+  X,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -174,20 +175,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
+  // B15 (RTL docking): off-canvas transforms are scoped to mobile with
+  // `max-lg:` so the desktop (lg:static) sidebar can never be translated
+  // off-screen by a variant-ordering conflict. The drawer is anchored with
+  // logical `start-0` (right in RTL, left in LTR); the closed state slides
+  // it back toward its own anchor side per direction.
+  const drawerClass = isOpen
+    ? 'max-lg:translate-x-0'
+    : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full';
+
+  // B15: Escape dismisses the mobile drawer; focus moves to the drawer
+  // close control when the drawer opens (mobile only — isOpen is false
+  // on desktop, so desktop focus is never stolen).
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    closeBtnRef.current?.focus();
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   return (
     <>
       {/* Mobile backdrop */}
       {isOpen && (
         <div
+          data-testid="sidebar-overlay"
+          aria-hidden="true"
           className="fixed inset-0 z-40 bg-black/50 lg:hidden backdrop-blur-xs transition-opacity"
           onClick={onClose}
         />
       )}
 
       <aside
-        className={`print:hidden fixed top-0 bottom-0 z-40 flex flex-col w-64 bg-slate-900 text-slate-100 border-e border-slate-800 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'
-        }`}
+        data-testid="sidebar"
+        aria-label={lang === 'ar' ? 'قائمة التنقل' : 'Navigation menu'}
+        className={`print:hidden fixed inset-y-0 start-0 z-50 flex flex-col w-64 bg-slate-900 text-slate-100 border-e border-slate-800 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${drawerClass}`}
       >
         {/* Brand header */}
         <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-800">
@@ -202,6 +228,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ESG & GRI System
             </p>
           </div>
+          {/* B15: mobile drawer dismiss control (hidden on desktop where the
+              sidebar is permanently docked). */}
+          <button
+            type="button"
+            ref={closeBtnRef}
+            onClick={onClose}
+            data-testid="sidebar-close"
+            aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close navigation menu'}
+            className="ms-auto lg:hidden p-2 -me-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Tenant context banner */}

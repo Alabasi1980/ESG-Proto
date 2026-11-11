@@ -140,6 +140,7 @@ export const SetupView: React.FC<SetupViewProps> = ({ onBackToLogin }) => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@company.com"
+                  dir="ltr"
                   className="w-full ps-9 pe-4 py-2.5 rounded-xl text-xs bg-slate-900 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                 />
               </div>

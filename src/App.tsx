@@ -245,7 +245,7 @@ const MainApp: React.FC = () => {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main data-testid="main-content" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
             {activeTab === 'dashboard' && (
               <DashboardView setActiveTab={setActiveTab} dbConnected={dbConnected} />

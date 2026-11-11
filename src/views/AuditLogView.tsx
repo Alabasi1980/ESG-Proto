@@ -187,8 +187,8 @@ export const AuditLogView: React.FC = () => {
                       {new Date(r.created_at).toLocaleString()}
                     </td>
                     <td className="px-3 py-2">{r.user_name ?? r.user_email ?? r.user_id ?? '—'}</td>
-                    <td className="px-3 py-2 font-mono">{r.action}</td>
-                    <td className="px-3 py-2 font-mono text-slate-500">
+                    <td className="px-3 py-2 font-mono" dir="ltr">{r.action}</td>
+                    <td className="px-3 py-2 font-mono text-slate-500" dir="ltr">
                       {r.entity_type}
                       {r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}
                     </td>

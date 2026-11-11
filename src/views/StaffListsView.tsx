@@ -173,7 +173,7 @@ export const StaffListsView: React.FC = () => {
             <span>{t.staffLists.otpTitle}</span>
           </div>
           <p className="text-amber-700 dark:text-amber-300 mb-3">{t.staffLists.otpWarning}</p>
-          <ul className="space-y-1 font-mono">
+          <ul className="space-y-1 font-mono" dir="ltr">
             {lastOtps.accounts.map((a) => (
               <li key={a.email}>
                 {a.email} — {a.oneTimePassword}
@@ -191,13 +191,15 @@ export const StaffListsView: React.FC = () => {
           <div className="text-xs font-bold">{t.staffLists.createTitle}</div>
           {rows.map((r, i) => (
             <div key={i} className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-              <input
-                value={r.email}
-                onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))}
-                placeholder={t.staffLists.emailPh}
-                required
-                className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
-              />
+                <input
+                  value={r.email}
+                  onChange={(e) => setRows(rows.map((x, j) => (i === j ? { ...x, email: e.target.value } : x)))}
+                  placeholder={t.staffLists.emailPh}
+                  required
+                  type="email"
+                  dir="ltr"
+                  className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                />
               <input
                 value={r.name}
                 onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}

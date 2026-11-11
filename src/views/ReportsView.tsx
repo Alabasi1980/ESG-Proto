@@ -309,13 +309,13 @@ export const ReportsView: React.FC = () => {
         ) : (
           <ul className="space-y-2">
             {p.topGaps.map((g) => (
-              <li key={g.disclosureCode} className="flex items-center justify-between gap-3 text-sm p-2 rounded-lg bg-slate-50 dark:bg-slate-700/40">
-                <span className="font-medium text-slate-800 dark:text-slate-100">
-                  {g.standardCode} · {g.disclosureCode} — {g.disclosureTitle}
-                </span>
-                <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">
-                  {fmtScore(g.score)} · {R.coverage} {g.coveragePercentage}%
-                </span>
+                <li key={g.disclosureCode} className="flex items-center justify-between gap-3 text-sm p-2 rounded-lg bg-slate-50 dark:bg-slate-700/40">
+                  <span className="font-medium text-slate-800 dark:text-slate-100">
+                    <span dir="ltr">{g.standardCode} · {g.disclosureCode}</span> — {g.disclosureTitle}
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0" dir="ltr">
+                    {fmtScore(g.score)} · {R.coverage} {g.coveragePercentage}%
+                  </span>
               </li>
             ))}
           </ul>
@@ -374,10 +374,10 @@ export const ReportsView: React.FC = () => {
         ) : (
           <ul className="space-y-2">
             {p.omissions.map((o) => (
-              <li key={o.disclosureCode} className="text-sm p-3 rounded-lg bg-slate-50 dark:bg-slate-700/40">
-                <div className="font-medium text-slate-800 dark:text-slate-100">
-                  {o.disclosureCode} — {o.disclosureTitle}
-                </div>
+                <li key={o.disclosureCode} className="text-sm p-3 rounded-lg bg-slate-50 dark:bg-slate-700/40">
+                  <div className="font-medium text-slate-800 dark:text-slate-100">
+                    <span dir="ltr">{o.disclosureCode}</span> — {o.disclosureTitle}
+                  </div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {R.reason}: {reasonLabel(o.reason)} · {R.explanation}: {o.explanation ?? '—'}
                 </div>
@@ -450,12 +450,12 @@ export const ReportsView: React.FC = () => {
             <tbody>
               {p.index.map((row) => (
                 <tr key={row.disclosureCode} className="border-b border-slate-100 dark:border-slate-700/50 align-top">
-                  <td className="py-2 pe-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <td className="py-2 pe-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap" dir="ltr">
                     {row.standardCode}
                     <div className="max-w-40 truncate" title={row.standardTitle}>{row.standardTitle}</div>
                   </td>
                   <td className="py-2 pe-3">
-                    <div className="font-medium text-slate-800 dark:text-slate-100">{row.disclosureCode}</div>
+                    <div className="font-medium text-slate-800 dark:text-slate-100" dir="ltr">{row.disclosureCode}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">{row.disclosureTitle}</div>
                     <div className="text-[11px] text-slate-400 dark:text-slate-500">{row.departments.join(' · ')}</div>
                   </td>
@@ -477,8 +477,8 @@ export const ReportsView: React.FC = () => {
                       <span className="text-slate-400">{R.omittedNo}</span>
                     )}
                   </td>
-                  <td className="py-2 pe-3 font-semibold whitespace-nowrap">{fmtScore(row.score)}</td>
-                  <td className="py-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  <td className="py-2 pe-3 font-semibold whitespace-nowrap" dir="ltr">{fmtScore(row.score)}</td>
+                  <td className="py-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap" dir="ltr">
                     {row.coveragePercentage}% ({row.evaluatedItems}/{row.applicableItems})
                   </td>
                 </tr>
@@ -514,14 +514,14 @@ export const ReportsView: React.FC = () => {
         <tbody>
           {p.index.map((row) => (
             <tr key={row.disclosureCode}>
-              <td className="border border-slate-300 px-1 py-0.5">{row.standardCode}</td>
-              <td className="border border-slate-300 px-1 py-0.5">{row.disclosureCode} — {row.disclosureTitle}</td>
+              <td className="border border-slate-300 px-1 py-0.5" dir="ltr">{row.standardCode}</td>
+              <td className="border border-slate-300 px-1 py-0.5"><span dir="ltr">{row.disclosureCode}</span> — {row.disclosureTitle}</td>
               <td className="border border-slate-300 px-1 py-0.5">{row.location ?? R.locationMissing}</td>
               <td className="border border-slate-300 px-1 py-0.5">
                 {row.omitted ? `${R.omittedYes} (${reasonLabel(row.omissionReason)}: ${row.omissionExplanation ?? '—'})` : R.omittedNo}
               </td>
-              <td className="border border-slate-300 px-1 py-0.5">{fmtScore(row.score)}</td>
-              <td className="border border-slate-300 px-1 py-0.5">{row.coveragePercentage}%</td>
+              <td className="border border-slate-300 px-1 py-0.5" dir="ltr">{fmtScore(row.score)}</td>
+              <td className="border border-slate-300 px-1 py-0.5" dir="ltr">{row.coveragePercentage}%</td>
             </tr>
           ))}
         </tbody>

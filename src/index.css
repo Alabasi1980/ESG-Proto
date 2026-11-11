@@ -9,3 +9,19 @@
     font-family: system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Sans Arabic", "Cairo", sans-serif;
   }
 }
+
+/* B15 (RTL print): the screen tables use logical alignment (text-start /
+   text-end, pe-*) and the report print block (ReportsView renderPrint)
+   inherits the page direction from <html dir>, so Arabic print output
+   stays RTL without any physical left/right rules. Code, score and
+   percentage cells carry their own dir="ltr" isolates in the views.
+   This rule re-asserts the RTL direction for print renderers that
+   reset body styles, and keeps LTR isolates intact inside RTL print. */
+@media print {
+  html[dir="rtl"] body {
+    direction: rtl;
+  }
+  html[dir="rtl"] body [dir="ltr"] {
+    direction: ltr;
+  }
+}

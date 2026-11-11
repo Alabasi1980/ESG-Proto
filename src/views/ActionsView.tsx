@@ -405,7 +405,7 @@ export const ActionsView: React.FC = () => {
                       disabled={mutating}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
                     >
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
                       <span>
                         {selected.status === 'awaiting_verification'
                           ? t.actions.closeButton
