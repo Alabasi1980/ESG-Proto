@@ -957,3 +957,104 @@ CREATE POLICY evidence_attachments_isolation_policy ON evidence_attachments
 ALTER TABLE review_snapshots FORCE ROW LEVEL SECURITY;
 ALTER TABLE snapshot_notes FORCE ROW LEVEL SECURITY;
 ALTER TABLE evidence_attachments FORCE ROW LEVEL SECURITY;
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 10 (demo) — D-038 report settings per (client × service), disclosure
+-- index support. Same idempotency contract as FIX BATCH 1/8/9: safe to
+-- re-apply wholesale (DO-blocks, CREATE ... IF NOT EXISTS, DROP ... IF EXISTS).
+--
+-- A-09: report level is stored per (client × service) with NO default — an
+-- unset level blocks export (the API gate refuses with the unified message).
+-- Existing rows are preserved: the legacy UNIQUE(client_id) becomes two
+-- partial unique indexes so NULL-service rows and per-service rows coexist.
+--------------------------------------------------------------------------------
+
+-- B10-A1. report_settings.service_id (nullable: legacy rows stay valid) -----
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'service_id') THEN
+    ALTER TABLE report_settings ADD COLUMN service_id UUID REFERENCES services(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'disclosure_level') THEN
+    ALTER TABLE report_settings ADD COLUMN disclosure_level TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'report_level') THEN
+    ALTER TABLE report_settings ADD COLUMN report_level TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'statement_name') THEN
+    ALTER TABLE report_settings ADD COLUMN statement_name TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'statement_period') THEN
+    ALTER TABLE report_settings ADD COLUMN statement_period TEXT;
+  END IF;
+END $$;
+
+-- A-11: notification is a RECORD (done/not-done + date + reference — the API
+-- stores it; nothing ever sends it, no mailer dependency exists).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'notified') THEN
+    ALTER TABLE report_settings ADD COLUMN notified TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'notified_date') THEN
+    ALTER TABLE report_settings ADD COLUMN notified_date DATE;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'report_settings' AND column_name = 'notify_ref') THEN
+    ALTER TABLE report_settings ADD COLUMN notify_ref TEXT;
+  END IF;
+END $$;
+
+-- D-038 value domains (NULL allowed = unset = export blocked, never a default).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'report_settings_disclosure_level_valid') THEN
+    ALTER TABLE report_settings ADD CONSTRAINT report_settings_disclosure_level_valid
+      CHECK (disclosure_level IS NULL OR disclosure_level IN ('in-accordance', 'with-reference'));
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'report_settings_report_level_valid') THEN
+    ALTER TABLE report_settings ADD CONSTRAINT report_settings_report_level_valid
+      CHECK (report_level IS NULL OR report_level IN ('L1', 'L2', 'L3'));
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'report_settings_notified_valid') THEN
+    ALTER TABLE report_settings ADD CONSTRAINT report_settings_notified_valid
+      CHECK (notified IS NULL OR notified IN ('done', 'not-done'));
+  END IF;
+END $$;
+
+-- Per-(client × service) uniqueness that preserves legacy rows: the original
+-- UNIQUE(client_id) constraint is replaced by two partial unique indexes
+-- (NULL-service rows stay unique per client; service rows unique per pair).
+ALTER TABLE report_settings DROP CONSTRAINT IF EXISTS report_settings_client_id_key;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ux_report_settings_client_noservice') THEN
+    CREATE UNIQUE INDEX ux_report_settings_client_noservice ON report_settings(client_id) WHERE service_id IS NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ux_report_settings_client_service') THEN
+    CREATE UNIQUE INDEX ux_report_settings_client_service ON report_settings(client_id, service_id) WHERE service_id IS NOT NULL;
+  END IF;
+END $$;

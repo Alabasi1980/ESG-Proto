@@ -11,11 +11,12 @@ import {
   Wrench,
   Lightbulb,
   Sprout,
+  FileText,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 
-export type ActiveTab = 'dashboard' | 'standards' | 'gap-analysis' | 'actions' | 'initiatives' | 'esg-profile' | 'import-gri' | 'settings';
+export type ActiveTab = 'dashboard' | 'standards' | 'gap-analysis' | 'actions' | 'initiatives' | 'esg-profile' | 'reports' | 'import-gri' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -54,6 +55,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'gap-analysis' as ActiveTab,
       label: t.nav.gapAnalysis,
       icon: Scale,
+      roles: ['ge_admin', 'client_admin', 'employee'],
+    },
+    {
+      id: 'reports' as ActiveTab,
+      label: t.nav.reports,
+      icon: FileText,
       roles: ['ge_admin', 'client_admin', 'employee'],
     },
     {
@@ -99,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed top-0 bottom-0 z-40 flex flex-col w-64 bg-slate-900 text-slate-100 border-e border-slate-800 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+        className={`print:hidden fixed top-0 bottom-0 z-40 flex flex-col w-64 bg-slate-900 text-slate-100 border-e border-slate-800 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'
         }`}
       >

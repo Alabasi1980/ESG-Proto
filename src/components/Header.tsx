@@ -27,6 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
         return t.standards.title;
       case 'gap-analysis':
         return t.gapAnalysis.title;
+      case 'reports':
+        return t.reports.title;
       case 'import-gri':
         return t.importGRI.title;
       case 'settings':
@@ -44,6 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
         return t.standards.subtitle;
       case 'gap-analysis':
         return t.gapAnalysis.subtitle;
+      case 'reports':
+        return t.reports.subtitle;
       case 'import-gri':
         return t.importGRI.subtitle;
       case 'settings':
@@ -54,7 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <div className="sticky top-0 z-30">
+    <div className="sticky top-0 z-30 print:hidden">
       <DemoBanner />
     <header className="flex items-center justify-between px-6 py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200 dark:border-slate-800 transition-colors">
       <div className="flex items-center gap-4">

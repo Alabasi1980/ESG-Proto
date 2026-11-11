@@ -9,6 +9,7 @@ import { GapAnalysisView } from './views/GapAnalysisView.tsx';
 import { ActionsView } from './views/ActionsView.tsx';
 import { InitiativesView } from './views/InitiativesView.tsx';
 import { EsgProfileView } from './views/EsgProfileView.tsx';
+import { ReportsView } from './views/ReportsView.tsx';
 import { ImportGRIView } from './views/ImportGRIView.tsx';
 import { SettingsView } from './views/SettingsView.tsx';
 import { LoginView } from './views/LoginView.tsx';
@@ -91,6 +92,7 @@ const MainApp: React.FC = () => {
             {activeTab === 'actions' && <ActionsView />}
             {activeTab === 'initiatives' && <InitiativesView />}
             {activeTab === 'esg-profile' && <EsgProfileView />}
+            {activeTab === 'reports' && <ReportsView />}
             {activeTab === 'import-gri' && (
               <ImportGRIView
                 setActiveTab={setActiveTab}

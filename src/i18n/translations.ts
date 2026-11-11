@@ -20,6 +20,7 @@ export interface Translations {
     login: string;
     setup: string;
     tenantBadge: string;
+    reports: string;
   };
 
   auth: {
@@ -441,6 +442,66 @@ export interface Translations {
     notice: string;
   };
 
+  reports: {
+    navLabel: string;
+    title: string;
+    subtitle: string;
+    levelTabL1: string;
+    levelTabL2: string;
+    levelTabL3: string;
+    levelDescL1: string;
+    levelDescL2: string;
+    levelDescL3: string;
+    headlineScore: string;
+    topGaps: string;
+    byDepartment: string;
+    byStandard: string;
+    actionsSummary: string;
+    omissionsSummary: string;
+    noOmissions: string;
+    standard: string;
+    disclosure: string;
+    location: string;
+    locationMissing: string;
+    omission: string;
+    omittedYes: string;
+    omittedNo: string;
+    reason: string;
+    explanation: string;
+    reasonLabels: Record<string, string>;
+    score: string;
+    coverage: string;
+    items: string;
+    departments: string;
+    statementTitle: string;
+    statementName: string;
+    statementPeriod: string;
+    notificationTitle: string;
+    notifiedDone: string;
+    notifiedNotDone: string;
+    notifiedDate: string;
+    notifyRef: string;
+    notificationRecordNote: string;
+    settingsTitle: string;
+    settingsDesc: string;
+    disclosureLevel: string;
+    reportLevel: string;
+    inAccordance: string;
+    withReference: string;
+    saveSettings: string;
+    saving: string;
+    savedMsg: string;
+    gateBlocked: string;
+    gateOk: string;
+    exportJson: string;
+    exportCsv: string;
+    printBtn: string;
+    loading: string;
+    loadError: string;
+    incompleteTitle: string;
+    selectLevelHint: string;
+  };
+
   common: {
     loading: string;
     save: string;
@@ -491,6 +552,7 @@ export const translations: Record<Language, Translations> = {
       login: 'Sign In',
       setup: 'Initial Setup',
       tenantBadge: 'Tenant',
+      reports: 'Reports',
     },
 
     auth: {
@@ -955,6 +1017,71 @@ export const translations: Record<Language, Translations> = {
       low: 'Low = 1',
       notice: 'Scoring detail is pinned in the scoring rule: weight is derived from priority (High 3 / Mid 2 / Low 1) and drafts never count.',
     },
+
+    reports: {
+      navLabel: 'Reports',
+      title: 'GRI Reports (D-038)',
+      subtitle: 'Executive, management, and detailed views — gated by report level, same numbers everywhere',
+      levelTabL1: 'L1 · Executive',
+      levelTabL2: 'L2 · Management',
+      levelTabL3: 'L3 · Detailed',
+      levelDescL1: 'Headline score, review coverage, and the biggest gaps — honest summary, no trend claims.',
+      levelDescL2: 'Scores by department and standard, corrective actions, and the omissions summary.',
+      levelDescL3: 'Full disclosure index with statement of use and notification record.',
+      headlineScore: 'Headline score',
+      topGaps: 'Biggest gaps',
+      byDepartment: 'Scores by department',
+      byStandard: 'Disclosures by standard',
+      actionsSummary: 'Corrective actions',
+      omissionsSummary: 'Omissions summary',
+      noOmissions: 'No omitted disclosures.',
+      standard: 'Standard',
+      disclosure: 'Disclosure',
+      location: 'Location in evidence',
+      locationMissing: 'Not referenced yet',
+      omission: 'Omitted',
+      omittedYes: 'Yes',
+      omittedNo: 'No',
+      reason: 'Reason',
+      explanation: 'Explanation',
+      reasonLabels: {
+        'not-applicable': 'Not applicable to this organization',
+        'legal-prohibitions': 'Legal prohibitions',
+        'confidentiality-constraints': 'Confidentiality constraints',
+        'information-unavailable-incomplete': 'Information unavailable / incomplete',
+      },
+      score: 'Score',
+      coverage: 'Coverage',
+      items: 'Items',
+      departments: 'Departments',
+      statementTitle: 'Statement of use',
+      statementName: 'Organization name',
+      statementPeriod: 'Reporting period',
+      notificationTitle: 'GRI notification record',
+      notifiedDone: 'Notified',
+      notifiedNotDone: 'Not notified',
+      notifiedDate: 'Notification date',
+      notifyRef: 'Notification reference',
+      notificationRecordNote: 'This is a record only — the platform never sends the notification.',
+      settingsTitle: 'Report settings (D-038)',
+      settingsDesc: 'Level is stored per client and service. Export stays blocked until all required fields are set.',
+      disclosureLevel: 'Disclosure level',
+      reportLevel: 'Report level',
+      inAccordance: 'In accordance',
+      withReference: 'With reference',
+      saveSettings: 'Save report settings',
+      saving: 'Saving...',
+      savedMsg: 'Report settings saved. Export is now unblocked for this client and service.',
+      gateBlocked: 'Export blocked — set the D-038 level first.',
+      gateOk: 'Level set — export unblocked.',
+      exportJson: 'Export JSON',
+      exportCsv: 'Export CSV',
+      printBtn: 'Print / PDF',
+      loading: 'Building report...',
+      loadError: 'Failed to build the report.',
+      incompleteTitle: 'Disclosures omitted without reason and explanation',
+      selectLevelHint: 'Set the report level above, then pick a view.',
+    },
   },
 
   ar: {
@@ -977,6 +1104,7 @@ export const translations: Record<Language, Translations> = {
       login: 'تسجيل الدخول',
       setup: 'التهيئة الأولية',
       tenantBadge: 'المستأجر',
+      reports: 'التقارير',
     },
 
     auth: {
@@ -1440,6 +1568,71 @@ export const translations: Record<Language, Translations> = {
       mid: 'متوسطة = 2',
       low: 'منخفضة = 1',
       notice: 'تفصيل التسجيل مثبّت في قاعدة التسجيل: الوزن مشتق من الأولوية (مرتفعة 3 / متوسطة 2 / منخفضة 1) والمسودات لا تُحتسب أبداً.',
+    },
+
+    reports: {
+      navLabel: 'التقارير',
+      title: 'تقارير GRI ‏(D-038)',
+      subtitle: 'عروض تنفيذية وإدارية وتفصيلية — محكومة بمستوى التقرير، وبأرقام واحدة في كل مكان',
+      levelTabL1: 'L1 · تنفيذي',
+      levelTabL2: 'L2 · إداري',
+      levelTabL3: 'L3 · تفصيلي',
+      levelDescL1: 'الدرجة الإجمالية وتغطية المراجعة وأكبر الفجوات — ملخص أمين دون ادعاء اتجاهات.',
+      levelDescL2: 'الدرجات حسب القسم والمعيار، والإجراءات التصحيحية، وملخص الحذوفات.',
+      levelDescL3: 'فهرس الإفصاحات الكامل مع بيان الاستخدام وسجل الإخطار.',
+      headlineScore: 'الدرجة الإجمالية',
+      topGaps: 'أكبر الفجوات',
+      byDepartment: 'الدرجات حسب القسم',
+      byStandard: 'الإفصاحات حسب المعيار',
+      actionsSummary: 'الإجراءات التصحيحية',
+      omissionsSummary: 'ملخص الحذوفات',
+      noOmissions: 'لا توجد إفصاحات محذوفة.',
+      standard: 'المعيار',
+      disclosure: 'الإفصاح',
+      location: 'الموضع في الأدلة',
+      locationMissing: 'غير مشار إليه بعد',
+      omission: 'محذوف',
+      omittedYes: 'نعم',
+      omittedNo: 'لا',
+      reason: 'السبب',
+      explanation: 'التفسير',
+      reasonLabels: {
+        'not-applicable': 'غير منطبق على المنشأة',
+        'legal-prohibitions': 'موانع قانونية',
+        'confidentiality-constraints': 'قيود السرية',
+        'information-unavailable-incomplete': 'المعلومات غير متوفرة / غير مكتملة',
+      },
+      score: 'الدرجة',
+      coverage: 'التغطية',
+      items: 'البنود',
+      departments: 'الأقسام',
+      statementTitle: 'بيان الاستخدام',
+      statementName: 'اسم المنشأة',
+      statementPeriod: 'الفترة المشمولة',
+      notificationTitle: 'سجل إخطار GRI',
+      notifiedDone: 'تم الإخطار',
+      notifiedNotDone: 'لم يتم الإخطار',
+      notifiedDate: 'تاريخ الإخطار',
+      notifyRef: 'مرجع الإخطار',
+      notificationRecordNote: 'هذا سجل فقط — المنصة لا ترسل الإخطار أبداً.',
+      settingsTitle: 'إعدادات التقارير ‏(D-038)',
+      settingsDesc: 'يُخزن المستوى لكل عميل وخدمة. يبقى التصدير محظوراً حتى اكتمال الحقول المطلوبة.',
+      disclosureLevel: 'مستوى الإفصاح',
+      reportLevel: 'مستوى التقرير',
+      inAccordance: 'وفقاً للمعايير (In accordance)',
+      withReference: 'بالإشارة إلى المعايير (With reference)',
+      saveSettings: 'حفظ إعدادات التقارير',
+      saving: 'جارٍ الحفظ...',
+      savedMsg: 'تم حفظ إعدادات التقارير. التصدير متاح الآن لهذا العميل وهذه الخدمة.',
+      gateBlocked: 'التصدير محظور — حدد مستوى D-038 أولاً.',
+      gateOk: 'تم تحديد المستوى — التصدير متاح.',
+      exportJson: 'تصدير JSON',
+      exportCsv: 'تصدير CSV',
+      printBtn: 'طباعة / PDF',
+      loading: 'جارٍ بناء التقرير...',
+      loadError: 'فشل بناء التقرير.',
+      incompleteTitle: 'إفصاحات محذوفة دون سبب وتفسير',
+      selectLevelHint: 'حدد مستوى التقرير أعلاه ثم اختر العرض.',
     },
   },
 };
