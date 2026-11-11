@@ -53,9 +53,15 @@ import {
   validateReportSettingsInput,
 } from '../lib/reports.ts';
 import { calculateEsgProfileScore } from '../lib/esgProfile.ts';
+import taxonomyRouter from './taxonomy.ts';
 import { esgProfileTextToRating, initiativeNaturalKey } from '../lib/initiatives.ts';
 
 const router = express.Router();
+
+// B11a taxonomy/services/items/links endpoints (S-04/S-05/S-06/S-08).
+// Mounted here so they share the /api prefix; the module owns its routes.
+router.use(taxonomyRouter);
+
 const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   storage: multer.memoryStorage(),

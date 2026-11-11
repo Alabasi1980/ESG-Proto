@@ -444,8 +444,7 @@ export interface Translations {
 
   reports: {
     navLabel: string;
-    title: string;
-    subtitle: string;
+    title: string;    subtitle: string;
     levelTabL1: string;
     levelTabL2: string;
     levelTabL3: string;
@@ -500,6 +499,74 @@ export interface Translations {
     loadError: string;
     incompleteTitle: string;
     selectLevelHint: string;
+  };
+
+  services: {
+    title: string;
+    subtitle: string;
+    listTitle: string;
+    emptyText: string;
+    codeLabel: string;
+    nameLabel: string;
+    descLabel: string;
+    createButton: string;
+    creating: string;
+    saveButton: string;
+    saving: string;
+    editButton: string;
+    duplicateButton: string;
+    duplicating: string;
+    newCodeLabel: string;
+    newCodePh: string;
+    linkedLabel: string;
+    linkButton: string;
+    unlinkButton: string;
+    manageHint: string;
+  };
+
+  taxonomy: {
+    manageTitle: string;
+    manageSubtitle: string;
+    importOwnsNote: string;
+    showManage: string;
+    hideManage: string;
+    editButton: string;
+    saveButton: string;
+    saving: string;
+    deleteButton: string;
+    deleting: string;
+    titleLabel: string;
+    categoryLabel: string;
+    descLabel: string;
+    disclosuresTitle: string;
+    itemsTitle: string;
+    addItemButton: string;
+    addingItem: string;
+    requirementLabel: string;
+    requirementPh: string;
+    codeLabel: string;
+    codePh: string;
+    priorityLabel: string;
+    esgLabel: string;
+    answerTypeLabel: string;
+    hintLabel: string;
+    objectiveLabel: string;
+    topicLabel: string;
+    referenceLabel: string;
+    codeImmutableNote: string;
+    linksTitle: string;
+    linkToLabel: string;
+    linkButton: string;
+    linking: string;
+    unlinkButton: string;
+    unlinkConfirm: string;
+    noLinksText: string;
+    evaluatedBadge: string;
+    notEvaluatedByDept: string;
+    relationLabel: string;
+    deleteStdConfirm: string;
+    deleteDiscConfirm: string;
+    deleteItemConfirm: string;
   };
 
   common: {
@@ -1082,6 +1149,74 @@ export const translations: Record<Language, Translations> = {
       incompleteTitle: 'Disclosures omitted without reason and explanation',
       selectLevelHint: 'Set the report level above, then pick a view.',
     },
+
+    services: {
+      title: 'Services',
+      subtitle: 'GE-managed service catalog: create, edit, link standards, duplicate',
+      listTitle: 'Services',
+      emptyText: 'No services yet. Create the first one below.',
+      codeLabel: 'Code',
+      nameLabel: 'Name',
+      descLabel: 'Description',
+      createButton: 'Create service',
+      creating: 'Creating...',
+      saveButton: 'Save',
+      saving: 'Saving...',
+      editButton: 'Edit',
+      duplicateButton: 'Duplicate',
+      duplicating: 'Duplicating...',
+      newCodeLabel: 'New service code',
+      newCodePh: 'e.g. GRI-CONSULT-02',
+      linkedLabel: 'Linked standards',
+      linkButton: 'Link',
+      unlinkButton: 'Unlink',
+      manageHint: 'Services and their standard links are managed by platform admins only.',
+    },
+
+    taxonomy: {
+      manageTitle: 'Taxonomy management',
+      manageSubtitle: 'Edit titles, manage items and equivalent-item links (platform admins only)',
+      importOwnsNote: 'Standards, disclosures and items are created by the GRI import. Use this panel only for surgical fixes: titles, items, links.',
+      showManage: 'Manage taxonomy',
+      hideManage: 'Hide management',
+      editButton: 'Edit',
+      saveButton: 'Save',
+      saving: 'Saving...',
+      deleteButton: 'Delete',
+      deleting: 'Deleting...',
+      titleLabel: 'Title',
+      categoryLabel: 'Category',
+      descLabel: 'Description',
+      disclosuresTitle: 'Disclosures',
+      itemsTitle: 'Items',
+      addItemButton: 'Add item',
+      addingItem: 'Adding...',
+      requirementLabel: 'Requirement',
+      requirementPh: 'Requirement text...',
+      codeLabel: 'Code',
+      codePh: 'e.g. 2-1-c',
+      priorityLabel: 'Priority',
+      esgLabel: 'ESG class',
+      answerTypeLabel: 'Answer type',
+      hintLabel: 'Hint',
+      objectiveLabel: 'Objective',
+      topicLabel: 'Topic',
+      referenceLabel: 'Reference',
+      codeImmutableNote: 'Code is immutable (natural import key).',
+      linksTitle: 'Equivalent-item links',
+      linkToLabel: 'Link to item code',
+      linkButton: 'Link items',
+      linking: 'Linking...',
+      unlinkButton: 'Unlink',
+      unlinkConfirm: 'Remove this equivalent-item link?',
+      noLinksText: 'No equivalent-item links yet.',
+      evaluatedBadge: 'Evaluated',
+      notEvaluatedByDept: 'not evaluated by your department',
+      relationLabel: 'Relation',
+      deleteStdConfirm: 'Delete this standard? Refused while disclosures exist.',
+      deleteDiscConfirm: 'Delete this disclosure? Refused while items exist.',
+      deleteItemConfirm: 'Delete this item? Refused while answers, evaluations or assignments reference it.',
+    },
   },
 
   ar: {
@@ -1633,6 +1768,74 @@ export const translations: Record<Language, Translations> = {
       loadError: 'فشل بناء التقرير.',
       incompleteTitle: 'إفصاحات محذوفة دون سبب وتفسير',
       selectLevelHint: 'حدد مستوى التقرير أعلاه ثم اختر العرض.',
+    },
+
+    services: {
+      title: 'الخدمات',
+      subtitle: 'دليل الخدمات بإدارة المنصة: إنشاء وتعديل وربط المعايير والتكرار',
+      listTitle: 'الخدمات',
+      emptyText: 'لا توجد خدمات بعد. أنشئ الأولى أدناه.',
+      codeLabel: 'الرمز',
+      nameLabel: 'الاسم',
+      descLabel: 'الوصف',
+      createButton: 'إنشاء خدمة',
+      creating: 'جارٍ الإنشاء...',
+      saveButton: 'حفظ',
+      saving: 'جارٍ الحفظ...',
+      editButton: 'تعديل',
+      duplicateButton: 'تكرار',
+      duplicating: 'جارٍ التكرار...',
+      newCodeLabel: 'رمز الخدمة الجديدة',
+      newCodePh: 'مثال: GRI-CONSULT-02',
+      linkedLabel: 'المعايير المرتبطة',
+      linkButton: 'ربط',
+      unlinkButton: 'فك الربط',
+      manageHint: 'الخدمات وروابط معاييرها تُدار من مديري المنصة فقط.',
+    },
+
+    taxonomy: {
+      manageTitle: 'إدارة التصنيف',
+      manageSubtitle: 'تعديل العناوين وإدارة البنود وروابط البنود المكافئة (لمديري المنصة فقط)',
+      importOwnsNote: 'المعايير والإفصاحات والبنود تُنشأ عبر استيراد GRI. استخدم هذه اللوحة فقط للإصلاحات الدقيقة: العناوين والبنود والروابط.',
+      showManage: 'إدارة التصنيف',
+      hideManage: 'إخفاء الإدارة',
+      editButton: 'تعديل',
+      saveButton: 'حفظ',
+      saving: 'جارٍ الحفظ...',
+      deleteButton: 'حذف',
+      deleting: 'جارٍ الحذف...',
+      titleLabel: 'العنوان',
+      categoryLabel: 'الفئة',
+      descLabel: 'الوصف',
+      disclosuresTitle: 'الإفصاحات',
+      itemsTitle: 'البنود',
+      addItemButton: 'إضافة بند',
+      addingItem: 'جارٍ الإضافة...',
+      requirementLabel: 'المتطلب',
+      requirementPh: 'نص المتطلب...',
+      codeLabel: 'الرمز',
+      codePh: 'مثال: 2-1-c',
+      priorityLabel: 'الأولوية',
+      esgLabel: 'تصنيف ESG',
+      answerTypeLabel: 'نوع الإجابة',
+      hintLabel: 'تلميح',
+      objectiveLabel: 'الهدف',
+      topicLabel: 'الموضوع',
+      referenceLabel: 'المرجع',
+      codeImmutableNote: 'الرمز ثابت (مفتاح الاستيراد الطبيعي).',
+      linksTitle: 'روابط البنود المكافئة',
+      linkToLabel: 'اربط برمز البند',
+      linkButton: 'ربط البندين',
+      linking: 'جارٍ الربط...',
+      unlinkButton: 'فك الربط',
+      unlinkConfirm: 'إزالة رابط التكافؤ هذا؟',
+      noLinksText: 'لا توجد روابط بنود مكافئة بعد.',
+      evaluatedBadge: 'مُقيَّم',
+      notEvaluatedByDept: 'غير مُقيَّم من قسمك',
+      relationLabel: 'العلاقة',
+      deleteStdConfirm: 'حذف هذا المعيار؟ يُرفض ما دامت إفصاحات موجودة تحته.',
+      deleteDiscConfirm: 'حذف هذا الإفصاح؟ يُرفض ما دامت بنود موجودة تحته.',
+      deleteItemConfirm: 'حذف هذا البند؟ يُرفض ما دامت إجابات أو تقييمات أو إسنادات تشير إليه.',
     },
   },
 };

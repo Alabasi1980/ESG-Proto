@@ -11,6 +11,7 @@ import {
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { ActiveTab } from '../components/Sidebar.tsx';
+import { TaxonomyManage } from './TaxonomyManage.tsx';
 
 interface StandardRow {
   id: string;
@@ -101,6 +102,9 @@ export const StandardsView: React.FC<StandardsViewProps> = ({ setActiveTab }) =>
 
   return (
     <div className="space-y-6">
+      {/* B11a (S-05/S-06/S-08): GE-only taxonomy management (titles, items, links). */}
+      <TaxonomyManage />
+
       {/* Search and Filters */}
       <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
         <div className="relative w-full sm:w-80">

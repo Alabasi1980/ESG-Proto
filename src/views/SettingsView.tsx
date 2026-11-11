@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { ServicesManage } from './ServicesManage.tsx';
 
 interface SettingsViewProps {
   onDbStatusChanged?: () => void;
@@ -390,6 +391,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       </div>
 
       {/* B9-D3: evidence storage monitor */}
+      {/* B11a (S-04): GE-only services management (Settings-adjacent, one place). */}
+      {isGeAdmin && <ServicesManage />}
+
       <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700/60">
           <div className="flex items-center gap-3">

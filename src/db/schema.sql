@@ -1058,3 +1058,41 @@ DO $$ BEGIN
     CREATE UNIQUE INDEX ux_report_settings_client_service ON report_settings(client_id, service_id) WHERE service_id IS NOT NULL;
   END IF;
 END $$;
+
+--------------------------------------------------------------------------------
+-- FIX BATCH 11a (demo) — services/taxonomy/items/equivalent-links (S-04,
+-- S-05, S-06, S-08 + WF-05 audit/freeze notes). Same idempotency contract as
+-- FIX BATCH 1/8/9/10: safe to re-apply wholesale (CREATE ... IF NOT EXISTS,
+-- DO-blocks guarded by catalogue checks, DROP ... IF EXISTS).
+--
+-- service_standards and item_links are GLOBAL library tables (like standards
+-- and initiatives_library): deliberately NO RLS, readable by every
+-- authenticated role. Write scoping (GE-only per the 04 matrix) is enforced
+-- in routes, and the link reader (GET) only ever exposes the reader's OWN
+-- department state (DD-06: never another department's answers).
+--------------------------------------------------------------------------------
+
+-- B11a-A. service_standards: which standards belong to a service (S-04).
+CREATE TABLE IF NOT EXISTS service_standards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  standard_id UUID NOT NULL REFERENCES standards(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(service_id, standard_id)
+);
+
+-- B11a-D. item_links: equivalent-item pairs, GLOBAL library level (S-08).
+-- Canonical ordering is enforced by the API (smaller id first) so the
+-- UNIQUE(item_a, item_b) pair also collapses the (b,a) reverse duplicate.
+-- No live syncing: links carry metadata + evaluation STATE only (snapshot
+-- semantics) — never answer text/evidence across departments (DD-06).
+CREATE TABLE IF NOT EXISTS item_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_a UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  item_b UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL DEFAULT 'equivalent',
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CHECK (item_a <> item_b),
+  UNIQUE(item_a, item_b)
+);
