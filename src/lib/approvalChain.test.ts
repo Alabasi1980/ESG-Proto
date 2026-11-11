@@ -42,6 +42,23 @@ test('A1: gate refuses and NAMES the incomplete departments', () => {
   }
 });
 
+test('A1: deduplicates incomplete department names when multiple items are assigned to same department', () => {
+  const gate = clientApproveGate([
+    { departmentId: 'd3', departmentName: 'Legal', answerStatus: 'draft' },
+    { departmentId: 'd3', departmentName: 'Legal', answerStatus: 'draft' },
+    { departmentId: 'd3', departmentName: 'Legal', answerStatus: 'draft' },
+  ]);
+  assert.equal(gate.ok, false);
+  if (!gate.ok) {
+    assert.deepEqual(gate.incomplete, ['Legal']);
+    const msg = clientApproveRefusalMessage(gate.incomplete);
+    assert.equal(
+      msg,
+      'Client approval is blocked: 1 department(s) are not dept-approved yet: Legal. Every department in this disclosure must be approved (or marked N/A with a reason) first.'
+    );
+  }
+});
+
 test('A1: submitted/returned/draft never count as dept-approved', () => {
   for (const status of ['submitted', 'returned', 'draft', 'reopened']) {
     const gate = clientApproveGate([{ departmentId: 'd', departmentName: 'X', answerStatus: status }]);

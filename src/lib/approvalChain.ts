@@ -48,21 +48,23 @@ export type ClientApproveGate =
  * names of the incomplete departments so the 409 message proves the refusal.
  */
 export function clientApproveGate(rows: DepartmentScopeRow[]): ClientApproveGate {
-  const incomplete = rows
+  const rawIncomplete = rows
     .filter(
       (r) =>
         !(DEPT_APPROVED_STATUSES as readonly string[]).includes(r.answerStatus ?? '') &&
         !r.notApplicable
     )
     .map((r) => r.departmentName);
+  const incomplete = Array.from(new Set(rawIncomplete));
   return incomplete.length === 0 ? { ok: true } : { ok: false, incomplete };
 }
 
 /** Human 409 message naming the incomplete departments (API uses code + this text). */
 export function clientApproveRefusalMessage(incomplete: string[]): string {
+  const uniqueIncomplete = Array.from(new Set(incomplete));
   return (
-    `Client approval is blocked: ${incomplete.length} department(s) are not dept-approved yet: ` +
-    incomplete.join(', ') +
+    `Client approval is blocked: ${uniqueIncomplete.length} department(s) are not dept-approved yet: ` +
+    uniqueIncomplete.join(', ') +
     `. Every department in this disclosure must be approved (or marked N/A with a reason) first.`
   );
 }
