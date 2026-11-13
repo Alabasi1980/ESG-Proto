@@ -177,10 +177,10 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-C activation split: 51 business routes UNACTIVATED, 44 legacy (8 system/session + 13 U2-B + 23 U2-C flips) + 4 workspace active', () => {
+test('U2-D activation split: 40 UNACTIVATED; exact 47 business flips + 8 system/session + 4 workspace', () => {
   assert.equal(LEGACY_ROUTES.length, 95);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 51);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 44);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 40);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 55);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
   // Exactly the 13 U2-B + 23 U2-C rows are flipped, and nothing else moved:
@@ -203,8 +203,12 @@ test('U2-C activation split: 51 business routes UNACTIVATED, 44 legacy (8 system
     'POST /items/:id/links', 'DELETE /items/:id/links', 'GET /items/:id/links',
     'POST /gri/preview', 'POST /gri/commit', 'GET /gri/template',
     'GET /standards', 'GET /dashboard/stats',
+    'GET /initiatives', 'POST /initiatives', 'PATCH /initiatives/:id',
+    'POST /initiatives/select', 'DELETE /initiatives/select/:id',
+    'POST /esg-profile/import', 'GET /esg-profile',
+    'GET /report-settings', 'PUT /report-settings', 'GET /reports/index', 'GET /reports/export',
   ];
-  assert.equal(FLIPPED.length, 36);
+  assert.equal(FLIPPED.length, 47);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -259,7 +263,7 @@ const fakeCall = async (method: string, path: string) => {
 test('SHIELD-U2A-01: requireDomainAccess itself refuses non-U1 activation before deriving any context', async () => {
   // Only still-unactivated declarations may appear here; flipped rows (13 U2-B
   // + 23 U2-C) are asserted through assertRouteActivated below instead.
-  for (const [method, path] of [['GET', '/queue'], ['POST', '/evaluations'], ['GET', '/initiatives'],
+  for (const [method, path] of [['GET', '/queue'], ['POST', '/evaluations'], ['GET', '/assignments'],
     ['POST', '/staff-lists'], ['GET', '/unknown']] as const) {
     const result = await fakeCall(method, path);
     assert.equal(result.nexted, false, `${method} ${path} must not reach its handler`);

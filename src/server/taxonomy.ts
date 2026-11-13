@@ -1,4 +1,4 @@
-import express, { type Response } from 'express';
+import express, { type Response, type NextFunction } from 'express';
 import { withTenantContext, recordAuditLog } from '../db/index.ts';
 import { authMiddleware, type AuthenticatedRequest } from './auth.ts';
 import { requireDomainAccess } from './access.ts';
@@ -35,6 +35,19 @@ import {
 
 const router = express.Router();
 
+// U2-D carryover: validate every UUID-bearing input in this activated router,
+// including alternate body/query link filters, before domain SQL can run.
+function validateTaxonomyIds(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (req.params.id !== undefined) scopeId(req.params.id, true);
+    for (const key of ['clientId','serviceId','standardId','disclosureId','itemId','departmentId','otherItemId','linkId']) {
+      if (req.query[key] !== undefined) scopeId(req.query[key], true);
+      if (req.body?.[key] !== undefined && req.body[key] !== null) scopeId(req.body[key], true);
+    }
+    next();
+  } catch (err: any) { res.status(400).json({ error: err.message, code: err.code }); }
+}
+
 /** §22/§3.2: explicit invalid filters REFUSE (400 scope.id_invalid) — they
  * never broaden the set (scope.ts itemQuery rule, applied to every read
  * filter here). Repeated/array query params are refused too (spec §5). */
@@ -42,7 +55,7 @@ function readFilter(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string') throw scopeError(400, 'scope.id_invalid');
   const trimmed = value.trim();
-  if (trimmed === '') return null;
+  if (trimmed === '') throw scopeError(400, 'scope.id_invalid');
   return scopeId(trimmed, true);
 }
 
@@ -54,7 +67,7 @@ function readFilter(value: unknown): string | null {
 // W-C linked only / E linked services having own assigned items — the C1
 // catalog policies scope every joined row (services, service_standards,
 // standards), so the aggregate cannot leak foreign parents or counts.
-router.get('/services', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/services', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const rows = await withTenantContext(readContext(req), async (client) => {
       const result = await client.query(
@@ -83,7 +96,7 @@ router.get('/services', authMiddleware, requireDomainAccess, async (req: Authent
 // List disclosures, optionally under one standard (S-05/S-06 UI support).
 // §3.2: P catalog / W-C L / E L+D; item_count is computed over authorized
 // items only (RLS); an invalid explicit filter refuses with 400.
-router.get('/disclosures', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const standardId = readFilter(req.query.standardId);
     const rows = await withTenantContext(readContext(req), async (client) => {
@@ -116,7 +129,7 @@ router.get('/disclosures', authMiddleware, requireDomainAccess, async (req: Auth
 // List items, optionally under one disclosure (S-06 UI support).
 // §3.2: P catalog / W-C L / E L+D; explicit filters narrow, never broaden,
 // and malformed ones refuse with 400 scope.id_invalid.
-router.get('/items', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const disclosureId = readFilter(req.query.disclosureId);
     const rows = await withTenantContext(readContext(req), async (client) => {
@@ -150,7 +163,7 @@ router.get('/items', authMiddleware, requireDomainAccess, async (req: Authentica
 // A. Services (S-04) — GE-only writes.
 // ----------------------------------------------------------------------
 
-router.post('/services', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
@@ -195,7 +208,7 @@ router.post('/services', authMiddleware, requireFreshPassword, requireDomainAcce
   }
 });
 
-router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const body = req.body ?? {};
@@ -256,7 +269,7 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
 });
 
 // Duplicate a service with its standard links under a NEW code (S-04).
-router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
@@ -311,7 +324,7 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
 });
 
 // Link / unlink a standard to a service (S-04).
-router.post('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const standardId =
@@ -346,7 +359,7 @@ router.post('/services/:id/standards', authMiddleware, requireFreshPassword, req
   }
 });
 
-router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const standardId =
@@ -386,7 +399,7 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, r
 // creation (see the /gri/commit upsert on the natural key).
 // ----------------------------------------------------------------------
 
-router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const body = req.body ?? {};
@@ -437,7 +450,7 @@ router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDoma
   }
 });
 
-router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const result = await withTenantContext(platformConfigContext(req), async (client) => {
@@ -477,7 +490,7 @@ router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDom
   }
 });
 
-router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const body = req.body ?? {};
@@ -535,7 +548,7 @@ router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDo
   }
 });
 
-router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const result = await withTenantContext(platformConfigContext(req), async (client) => {
@@ -581,7 +594,7 @@ router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireD
 // sort_order = max+1 within the disclosure when not provided.
 // ----------------------------------------------------------------------
 
-router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const validation = validateNewItem(req.body ?? {});
@@ -659,7 +672,7 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
   }
 });
 
-router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const body = req.body ?? {};
@@ -791,11 +804,13 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
   }
 });
 
-router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const result = await withTenantContext(platformConfigContext(req), async (client) => {
-      const cur = await client.query('SELECT id, code FROM items WHERE id = $1', [req.params.id]);
+      // Serialize FK writers before counting: no concurrent action insertion
+      // may slip between a truthful count and the ON DELETE SET NULL edge.
+      const cur = await client.query('SELECT id, code FROM items WHERE id = $1 FOR UPDATE', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       // §22/§23 D1: truthful catalog-wide counts for every blocker — answers,
@@ -804,7 +819,8 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
       const counts = await client.query(
         `SELECT b17_catalog_child_count('item.answers', $1) AS answers,
                 b17_catalog_child_count('item.evaluations', $1) AS evaluations,
-                b17_catalog_child_count('item.assignments', $1) AS assignments`,
+                b17_catalog_child_count('item.assignments', $1) AS assignments,
+                b17_catalog_child_count('item.actions', $1) AS actions`,
         [req.params.id]
       );
       const blockers = {
@@ -812,8 +828,14 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
         evaluations: counts.rows[0]?.evaluations ?? 0,
         assignments: counts.rows[0]?.assignments ?? 0,
       };
-      if (blockers.answers + blockers.evaluations + blockers.assignments > 0) {
-        throw Object.assign(new Error(itemDeleteRefusal(blockers)), { statusCode: 409 });
+      const actions = counts.rows[0].actions;
+      const otherCount = blockers.answers + blockers.evaluations + blockers.assignments;
+      if (otherCount + actions > 0) {
+        const refusal = actions > 0 ? (otherCount > 0
+          ? itemDeleteRefusal(blockers).replace(' reference it.', `, ${actions} action(s) reference it.`)
+          : `Cannot delete this item: ${actions} action(s) reference it. Remove the references first.`)
+          : itemDeleteRefusal(blockers);
+        throw Object.assign(new Error(refusal), { statusCode: 409 });
       }
       // item_links rows cascade (ON DELETE CASCADE) — links never block deletion.
       await client.query('DELETE FROM items WHERE id = $1', [req.params.id]);
@@ -843,7 +865,7 @@ function linkRefusal(status: number, error: string): { status: number; error: st
   return { status, error };
 }
 
-router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const otherRaw = req.body?.otherItemId;
@@ -903,7 +925,7 @@ router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDom
   }
 });
 
-router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
     const linkId =
@@ -958,7 +980,7 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireD
 // own-department answer status only, never foreign evidence/text (DD-06).
 // Non-string clientId (repeated/array param) refuses 400; foreign clientId
 // keeps its 403. Inaccessible item id stays the existing generic 404.
-router.get('/items/:id/links', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const access = req.access!;
     const rawClientId = req.query.clientId;

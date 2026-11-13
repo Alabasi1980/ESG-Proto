@@ -432,10 +432,13 @@ CREATE POLICY b17_audit_insert ON audit_log FOR INSERT WITH CHECK (
     OR ((b17_platform_scope() OR b17_platform_config()) AND client_id IS NULL
       AND action IN ('CREATE_SERVICE','UPDATE_SERVICE','DUPLICATE_SERVICE','LINK_SERVICE_STANDARD',
         'UNLINK_SERVICE_STANDARD','UPDATE_STANDARD','DELETE_STANDARD','UPDATE_DISCLOSURE',
-        'DELETE_DISCLOSURE','CREATE_ITEM','UPDATE_ITEM','DELETE_ITEM','LINK_ITEMS','UNLINK_ITEMS'))
+        'DELETE_DISCLOSURE','CREATE_ITEM','UPDATE_ITEM','DELETE_ITEM','LINK_ITEMS','UNLINK_ITEMS',
+        'INITIATIVE_UPSERTED','INITIATIVE_UPDATED'))
     OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
       AND client_id::text=b17_setting('target_id')
-      AND action='IMPORT_GRI_DISCLOSURES' AND entity_type='standards')
+      AND ((action='IMPORT_GRI_DISCLOSURES' AND entity_type='standards')
+        OR (action='ESG_PROFILE_IMPORTED' AND entity_type='esg_profile')
+        OR (action='REPORT_SETTINGS_SAVED' AND entity_type='report_settings')))
     OR b17_work_tenant(client_id)));
 -- U2-B0 adds row scope only. Handlers remain UNACTIVATED.
 -- U2-B round 3 adds only the server-side notify fan-out/trim policies and the
@@ -541,12 +544,12 @@ LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path=pg_catalog,public,pg_temp AS $$
 DECLARE n integer; old_purpose text;
 BEGIN
-  IF ref IS NULL OR kind NOT IN ('standard.disclosures','disclosure.items',
-    'item.answers','item.evaluations','item.assignments','item.evidence')
+  IF ref IS NULL OR kind IS NULL OR kind NOT IN ('standard.disclosures','disclosure.items',
+    'item.answers','item.evaluations','item.assignments','item.evidence','item.actions')
   THEN RAISE EXCEPTION 'b17.count_args'; END IF;
-  IF NOT (b17_setting('current_purpose')='platform.config'
+  IF NOT coalesce((b17_setting('current_purpose')='platform.config'
       AND b17_setting('current_actor_id') IS NOT NULL
-      AND b17_setting('current_user_role')='ge_admin')
+      AND b17_setting('current_user_role')='ge_admin'),false)
   THEN RAISE EXCEPTION 'b17.count_context'; END IF;
   old_purpose := current_setting('app.current_purpose', true);
   BEGIN
@@ -557,6 +560,7 @@ BEGIN
       WHEN 'item.answers' THEN (SELECT count(*)::int FROM answers a WHERE a.item_id=ref)
       WHEN 'item.evaluations' THEN (SELECT count(*)::int FROM evaluations e WHERE e.item_id=ref)
       WHEN 'item.assignments' THEN (SELECT count(*)::int FROM assignments g WHERE g.item_id=ref)
+      WHEN 'item.actions' THEN (SELECT count(*)::int FROM actions a WHERE a.item_id=ref)
       WHEN 'item.evidence' THEN (SELECT count(*)::int FROM evidence_attachments f
         JOIN answers a ON a.id=f.answer_id WHERE a.item_id=ref)
     END INTO n;
@@ -575,10 +579,55 @@ GRANT EXECUTE ON FUNCTION b17_catalog_child_count(text,uuid) TO CURRENT_USER;
 -- purpose is exactly 'scope.counts' (set only inside the function above) AND a
 -- GE actor context is present. Direct requests never carry this purpose.
 DO $$ DECLARE t text; BEGIN
-  FOREACH t IN ARRAY ARRAY['disclosures','items','answers','evaluations','assignments','evidence_attachments'] LOOP
+  FOREACH t IN ARRAY ARRAY['disclosures','items','answers','evaluations','assignments','evidence_attachments','actions'] LOOP
     EXECUTE format('CREATE POLICY b17_count_read ON public.%I FOR SELECT USING
       (b17_setting(''current_purpose'')=''scope.counts''
        AND b17_setting(''current_actor_id'') IS NOT NULL
        AND b17_setting(''current_user_role'')=''ge_admin'')', t);
+  END LOOP;
+END $$;
+
+-- U2-D: eleven positive paths only. No new definer; the existing row-free
+-- service/initiative facts remain the authority for eligibility. No policies
+-- here permit client_services or service_standards mutation or P assessments.
+CREATE FUNCTION b17_domain_config(t uuid,s uuid) RETURNS boolean LANGUAGE sql STABLE
+  SET search_path=pg_catalog,public,pg_temp AS $$ SELECT
+  b17_platform_config() AND b17_setting('current_mode')='platform'
+  AND t::text=b17_setting('target_id') AND t::text=b17_setting('current_tenant_id')
+  AND s IS NOT NULL AND b17_content_fact('service',t,s) $$;
+
+CREATE POLICY b17_config_links_read ON client_services FOR SELECT USING
+  (b17_platform_config() AND b17_setting('current_mode')='platform'
+   AND client_id::text=b17_setting('target_id') AND client_id::text=b17_setting('current_tenant_id'));
+
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['initiatives_library','service_initiatives'] LOOP
+    EXECUTE format('CREATE POLICY b17_library_config_read ON public.%I FOR SELECT USING
+      (b17_platform_config() AND b17_setting(''current_mode'')=''platform'' AND b17_setting(''target_id'') IS NULL)',t);
+    EXECUTE format('CREATE POLICY b17_library_config_insert ON public.%I FOR INSERT WITH CHECK
+      (b17_platform_config() AND b17_setting(''current_mode'')=''platform'' AND b17_setting(''target_id'') IS NULL)',t);
+  END LOOP;
+END $$;
+CREATE POLICY b17_library_config_update ON initiatives_library FOR UPDATE
+  USING (b17_platform_config() AND b17_setting('current_mode')='platform' AND b17_setting('target_id') IS NULL)
+  WITH CHECK (b17_platform_config() AND b17_setting('current_mode')='platform' AND b17_setting('target_id') IS NULL);
+CREATE POLICY b17_library_config_delete ON service_initiatives FOR DELETE
+  USING (b17_platform_config() AND b17_setting('current_mode')='platform' AND b17_setting('target_id') IS NULL);
+
+CREATE POLICY b17_selection_insert ON client_initiatives FOR INSERT WITH CHECK
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'
+   AND selected_by::text=b17_setting('current_actor_id') AND b17_content_fact('initiative',client_id,initiative_id));
+CREATE POLICY b17_selection_delete ON client_initiatives FOR DELETE USING
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'
+   AND b17_content_fact('initiative',client_id,initiative_id));
+
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['esg_profile','report_settings'] LOOP
+    EXECUTE format('CREATE POLICY b17_domain_config_read ON public.%I FOR SELECT USING
+      (b17_domain_config(client_id,service_id))',t);
+    EXECUTE format('CREATE POLICY b17_domain_config_insert ON public.%I FOR INSERT WITH CHECK
+      (b17_domain_config(client_id,service_id))',t);
+    EXECUTE format('CREATE POLICY b17_domain_config_update ON public.%I FOR UPDATE
+      USING (b17_domain_config(client_id,service_id)) WITH CHECK (b17_domain_config(client_id,service_id))',t);
   END LOOP;
 END $$;

@@ -5,12 +5,14 @@ import { GE_ONLY_PROVISION_REFUSAL, resolveImportTenant, validateNewUser } from 
 const GE = { id: 'ge1', role: 'ge_admin' as const, clientId: null };
 const CA = { id: 'ca1', role: 'client_admin' as const, clientId: 'tenant-A' };
 const EMP = { id: 'e1', role: 'employee' as const, clientId: 'tenant-A' };
+const A = '00000000-0000-4000-8000-000000000001';
+const B = '00000000-0000-4000-8000-000000000002';
 
 // --- B: explicit-tenant import resolution ---
 
 test('B: ge_admin with explicit clientId resolves to that tenant (explicit)', () => {
-  const r = resolveImportTenant(GE, 'tenant-B');
-  assert.deepEqual(r, { ok: true, effectiveClientId: 'tenant-B', explicit: true });
+  const r = resolveImportTenant(GE, B);
+  assert.deepEqual(r, { ok: true, effectiveClientId: B, explicit: true });
 });
 
 test('B: tenant-less ge_admin without clientId fails 400 (choose a tenant)', () => {
@@ -24,22 +26,31 @@ test('B: tenant-less ge_admin without clientId fails 400 (choose a tenant)', () 
 
 test('B: client_admin defaults to own tenant; naming own tenant is fine', () => {
   assert.deepEqual(resolveImportTenant(CA, undefined), { ok: true, effectiveClientId: 'tenant-A', explicit: false });
-  assert.deepEqual(resolveImportTenant(CA, 'tenant-A'), { ok: true, effectiveClientId: 'tenant-A', explicit: false });
+  assert.deepEqual(resolveImportTenant({ ...CA, clientId:A }, A), { ok: true, effectiveClientId:A, explicit:false });
 });
 
 test('B3: client_admin naming another tenant → 403', () => {
-  const r = resolveImportTenant(CA, 'tenant-B');
+  const r = resolveImportTenant(CA, B);
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 403);
 });
 
 test('B3: employee naming another tenant → 403', () => {
-  const r = resolveImportTenant(EMP, 'tenant-B');
+  const r = resolveImportTenant(EMP, B);
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 403);
 });
 
 // --- C: user creation validation ---
+test('U2-D import requires explicit UUID T even when GE has a populated clientId', () => {
+  const ge = { ...GE,clientId:A };
+  for (const invalid of [undefined,null,'','not-a-uuid',[A],{ id:A }]) {
+    const r = resolveImportTenant(ge,invalid);
+    assert.equal(r.ok,false);
+    if (!r.ok) assert.equal(r.status,400);
+  }
+  assert.deepEqual(resolveImportTenant(ge,B), { ok:true,effectiveClientId:B,explicit:true });
+});
 
 test('C: ge_admin can create employee in explicit tenant', () => {
   const r = validateNewUser(GE, {

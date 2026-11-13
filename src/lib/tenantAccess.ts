@@ -8,6 +8,7 @@
  */
 
 import { validateSelfChosenPassword } from './password.ts';
+import { UUID } from './capabilities.ts';
 
 export interface ActorSummary {
   id: string;
@@ -17,7 +18,7 @@ export interface ActorSummary {
 
 export type TenantResolution =
   | { ok: true; effectiveClientId: string; explicit: boolean }
-  | { ok: false; status: 400 | 403; error: string };
+  | { ok: false; status: 400 | 403; error: string; code?: string };
 
 function normalizeId(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -31,6 +32,9 @@ function normalizeId(value: unknown): string | null {
  *   human "choose a tenant" message (never orphan rows).
  */
 export function resolveImportTenant(actor: ActorSummary, namedClientId: unknown): TenantResolution {
+  if (namedClientId !== undefined && (typeof namedClientId !== 'string' || !UUID.test(namedClientId))) {
+    return { ok: false, status: 400, error: 'Invalid clientId.', code: 'scope.id_invalid' };
+  }
   const named = normalizeId(namedClientId);
 
   if (named && actor.role !== 'ge_admin' && named !== actor.clientId) {
@@ -41,7 +45,7 @@ export function resolveImportTenant(actor: ActorSummary, namedClientId: unknown)
     };
   }
 
-  const effective = actor.role === 'ge_admin' ? named ?? actor.clientId ?? null : actor.clientId ?? null;
+  const effective = actor.role === 'ge_admin' ? named : actor.clientId ?? null;
 
   if (!effective) {
     return {

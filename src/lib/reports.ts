@@ -383,8 +383,13 @@ export function applyShowGapFlags<T extends { score?: unknown; coveragePercentag
 // ---------------------------------------------------------------------------
 
 function csvCell(value: unknown): string {
-  const s = value === null || value === undefined ? '' : String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  let s = value === null || value === undefined ? '' : String(value);
+  // CSV quoting is syntax, not spreadsheet formula protection. Mark risky
+  // TEXT as literal before quoting, retaining every original character. Do not
+  // convert genuine numeric metrics (including negative numbers) into text.
+  if (typeof value === 'string' && (/^[\s\u0000-\u001f\u007f-\u009f]*[=+\-@]/u.test(s)
+    || /^[\u0000-\u001f\u007f-\u009f]/u.test(s))) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 const INDEX_CSV_HEADERS = [

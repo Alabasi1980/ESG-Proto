@@ -164,13 +164,13 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'DELETE /initiatives/select/:id|W#resolve-A-selection-plus-current-linked-eligibility-id-remains-initiativeId-no-B-mutation',
     'POST /esg-profile/import|P@T#explicit-T-plus-linked-serviceId-freeze-natural-key-upsert-no-W-C-E',
     'GET /esg-profile|W#own-service-bound-profile-rows-aggregate;C#own-service-bound-profile-rows-aggregate-P-E-denied',
-  ]),
+  ], true),
   ...group('reports', [
     'GET /report-settings|P@T#explicit-T-configuration;W:L;C:L#linked-service-read-not-settings-module-permission',
     'PUT /report-settings|P@T#D-038-explicit-T-plus-linked-serviceId-W-C-E-denied',
     'GET /reports/index|W:R+L+V;C:R+L+V#D-038-and-incomplete-index-errors-no-P-E',
     'GET /reports/export|W:R+L+V;C:R+L+V#same-authorized-dataset-as-index-including-error-payloads-no-P-E',
-  ]),
+  ], true),
   ...group('storage', [
     'POST /answers/:id/attachments|E:R+L+D#own-assigned-parent-no-C-answer-editing-no-W-P-filing',
     'GET /answers/:id/attachments|W:R+L;C:R+L;E:R+L+D#metadata-only',

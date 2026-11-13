@@ -8,10 +8,10 @@ export const B17_VERSION = 'B17_U1';
 export const PREDECESSOR_SHAPE = '18851d69e9808bf86a41314173406ef9';
 export const B17_SHAPE = '4b4e39e3a13eae0d336d30fa94bbf52f';
 export const B17_CONTENT_VERSION = 'B17_U2D';
-// U2-C1 (task §23 goal 6): recomputed after the taxonomy/GRI policy substrate
-// joined the content delta (catalog P policies, platform.config target
-// policies, D1 count definer, D2 bound branch, SHIELD-U2B3-01 DELETE identity).
-export const B17_CONTENT_SHAPE = '7a13a70382653f70f2733072f068ad00';
+// U2-D: PG18 recomputation after narrow library/mapping, W selection,
+// target+linked Profile/settings policies, closed audit additions and the
+// item.actions count repair. Sanctioned definer set/owner ACLs unchanged.
+export const B17_CONTENT_SHAPE = '3b40916e614a7743f9d2d5a0fed34908';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

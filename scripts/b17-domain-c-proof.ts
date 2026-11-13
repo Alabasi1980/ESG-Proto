@@ -235,14 +235,14 @@ async function main() {
   // ---- R1 registry truth (re-run after C2): exactly the 23 taxonomy/gri rows
   // are now flipped; no other row moved and capabilities stay truthful. ----
   const unactivated = LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED');
-  assert.equal(unactivated.length, 51, 'C2 flipped exactly 23 rows (74 -> 51)');
+  assert.equal(unactivated.length, 40, 'C2 + D flipped exactly 34 rows (74 -> 40)');
   const u2c = LEGACY_ROUTES.filter(r => r.capability === 'taxonomy' || r.capability === 'gri');
   assert.equal(u2c.length, 23);
   assert.ok(u2c.every(r => r.activation === 'U1'), 'all 23 taxonomy/gri rows activated by C2');
   assert.deepEqual([...activeBusinessCapabilities()],
-    ['taxonomy', 'gri', 'actions', 'storage', 'audit', 'notifications'],
+    ['taxonomy', 'gri', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
     'activeBusinessCapabilities() stays truthful (6 entries)');
-  pass('R1 registry truth (post-C2): 51 UNACTIVATED = 74 - 23 taxonomy/gri flips, no other row changed, capabilities truthful');
+  pass('R1 registry truth (post-D): 40 UNACTIVATED = 74 - 23 taxonomy/gri - 11 initiatives/reports, capabilities truthful');
 
   // ---- Contexts (server-derived GUCs only; C2 will set these server-side) ----
   const scopeCtx: TenantContext = { purpose: 'work', role: 'ge_admin', userId: seed.ge, mode: 'platform', tenantId: null };

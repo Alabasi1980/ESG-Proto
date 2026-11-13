@@ -18,7 +18,7 @@
 //   service mappings can never duplicate an item; show_corrective is
 //   NOT-APPLICABLE to stats (§23 D3, recorded).
 
-import express, { type Response } from 'express';
+import express, { type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import {
   isDatabaseConfigured,
@@ -34,6 +34,17 @@ import { scopeId, scopeError } from '../scope.ts';
 import { readContext, platformConfigContext, requireFreshPassword, B16_CLIENT_GRI_REFUSAL } from './_shared.ts';
 
 const router = express.Router();
+
+// U2-D carryover: reject malformed scope filters before any business query.
+function validateGriIds(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    for (const key of ['clientId','serviceId','standardId','disclosureId','itemId']) {
+      if (req.query[key] !== undefined) scopeId(req.query[key], true);
+      if (req.body?.[key] !== undefined) scopeId(req.body[key], true);
+    }
+    next();
+  } catch (err: any) { res.status(400).json({ error: err.message, code: err.code }); }
+}
 
 const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
@@ -63,7 +74,7 @@ function weightForPriority(priority?: string): number {
 // including fresh-identity and suspension gates — run before multer or
 // parseGRIFile ever touch the payload).
 // ----------------------------------------------------------------------
-router.post('/gri/preview', authMiddleware, requireDomainAccess, upload.single('file'),
+router.post('/gri/preview', authMiddleware, requireDomainAccess, validateGriIds, upload.single('file'),
   (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.file && !req.body.csvContent) {
@@ -80,7 +91,7 @@ router.post('/gri/preview', authMiddleware, requireDomainAccess, upload.single('
   }
 });
 
-router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAccess,
+router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAccess, validateGriIds,
   async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
@@ -106,7 +117,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
       rawClientId
     );
     if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+      return res.status(tenantResolution.status).json({ error: tenantResolution.error, code: tenantResolution.code });
     }
     const effectiveClientId = tenantResolution.effectiveClientId;
     const explicitTenant = tenantResolution.explicit;
@@ -383,7 +394,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
 // Download sample GRI template (.csv) — P only: authenticated fetch (with the
 // platform tab through the wrapper) THEN download; the unauthenticated
 // window.location bypass no longer resolves (§3.2).
-router.get('/gri/template', authMiddleware, requireDomainAccess, (_req: AuthenticatedRequest, res: Response) => {
+router.get('/gri/template', authMiddleware, requireDomainAccess, validateGriIds, (_req: AuthenticatedRequest, res: Response) => {
   const sampleCsv = `Standard Code,Standard Title,Category,Disclosure Code,Disclosure Title,Item Code,Requirement,Priority,ESG Class,Weight,Answer Type,Hint
 GRI 2,General Disclosures 2021,Universal,2-1,Organizational details,2-1-a,Report legal name of the organization,high,governance,1.0,text,Provide registered commercial name
 GRI 2,General Disclosures 2021,Universal,2-1,Organizational details,2-1-b,Report the nature of ownership and legal form,mid,governance,1.0,text,e.g. Private LLC, Public Joint Stock
@@ -405,7 +416,7 @@ GRI 403,Occupational Health and Safety 2018,Social,403-1,OHS management system,4
 // disclosure_count/item_count are computed over AUTHORIZED rows only —
 // zero links returns an empty list, never global content or foreign counts.
 // ----------------------------------------------------------------------
-router.get('/standards', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/standards', authMiddleware, requireDomainAccess, validateGriIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isDatabaseConfigured()) {
       return res.json([]);
@@ -444,7 +455,7 @@ router.get('/standards', authMiddleware, requireDomainAccess, async (req: Authen
 // from RLS-scoped rows, so overlapping service mappings never duplicate an
 // item. show_corrective has no metric here: N/A for stats (§23 D3, recorded).
 // ----------------------------------------------------------------------
-router.get('/dashboard/stats', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/dashboard/stats', authMiddleware, requireDomainAccess, validateGriIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isDatabaseConfigured()) {
       return res.json({

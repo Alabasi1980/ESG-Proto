@@ -447,9 +447,9 @@ async function main() {
         denied++;
       }
     }
-    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 51);
-    assert.equal(denied, 51 * 4);
-    pass('all 51 remaining unactivated business routes still 403 access.unactivated across 4 contexts');
+    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 40);
+    assert.equal(denied, 40 * 4);
+    pass('all 40 remaining unactivated business routes still 403 access.unactivated across 4 contexts');
 
     // --- C: the 8 active system/session routes keep their current behavior ---
     assert.deepEqual((await api('GET', '/db/status')).json, { configured: true, connected: true });
@@ -869,24 +869,28 @@ async function main() {
       'POST /items/:id/links', 'DELETE /items/:id/links', 'GET /items/:id/links',
       'POST /gri/preview', 'POST /gri/commit', 'GET /gri/template',
       'GET /standards', 'GET /dashboard/stats',
+      'GET /initiatives', 'POST /initiatives', 'PATCH /initiatives/:id',
+      'POST /initiatives/select', 'DELETE /initiatives/select/:id',
+      'POST /esg-profile/import', 'GET /esg-profile',
+      'GET /report-settings', 'PUT /report-settings', 'GET /reports/index', 'GET /reports/export',
     ];
     const u1Keys = LEGACY_ROUTES.filter(r => r.activation === 'U1').map(r => `${r.method} ${r.path}`).sort();
-    assert.equal(u1Keys.length, 44, '8 system/session + 13 U2-B + 23 U2-C flips');
+    assert.equal(u1Keys.length, 55, '8 system/session + 13 U2-B + 23 U2-C + 11 U2-D flips');
     assert.deepEqual(u1Keys, [
       'GET /db/status', 'POST /db/migrate', 'GET /setup/status', 'POST /setup/admin',
       'POST /auth/login', 'POST /auth/logout', 'GET /auth/me', 'POST /auth/change-password',
       ...FLIPPED,
     ].sort(), 'exactly the 8 system/session rows + 13 U2-B + 23 U2-C flips are U1; NO other row changed');
-    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 51, '87 -> 74 -> 51 UNACTIVATED');
+    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 40, '87 -> 74 -> 51 -> 40 UNACTIVATED');
     for (const key of FLIPPED) {
       const [method, path] = key.split(' ');
       const route = LEGACY_ROUTES.find(r => r.method === method && r.path === path);
       assert.ok(route && route.activation === 'U1', `flipped row must be U1: ${key}`);
     }
     assert.deepEqual([...activeBusinessCapabilities()],
-      ['taxonomy', 'gri', 'actions', 'storage', 'audit', 'notifications'],
+      ['taxonomy', 'gri', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
       'activeBusinessCapabilities() tracks the 13 U2-B + 23 U2-C flips truthfully');
-    pass('registry truth: exactly 36 flips (87 -> 51 UNACTIVATED), no other row changed, capabilities truthful (6)');
+    pass('registry truth: exactly 47 flips (87 -> 40 UNACTIVATED), no other row changed, capabilities truthful (8)');
 
     // Fresh real sessions/tabs per آ§3 context (server-derived, never client-supplied).
     const wToken = await login('ge');
@@ -897,7 +901,7 @@ async function main() {
     assert.equal(wEnter.status, 200, JSON.stringify(wEnter.json));
     wTab.generation = wEnter.json.generation;
     assert.deepEqual(wEnter.json.capabilities,
-      ['taxonomy', 'gri', 'actions', 'storage', 'audit', 'notifications'],
+      ['taxonomy', 'gri', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
       'workspace envelope reports the landed capabilities');
     const pToken = await login('ge');
     const pTabRes = await api('POST', '/workspace/tab', pToken, {});
@@ -1501,7 +1505,7 @@ async function main() {
     pass('I7 W(B) zero links: services/items/standards empty (never all), dashboard hasData=false');
     pass('U2-C2 E2E: all 23 taxonomy/GRI routes exercised end-to-end — every §3 allowed context served, every disallowed context refused with its status/code');
 
-    console.log('B17 U2 proof complete: 36 routes flipped (87 -> 51 UNACTIVATED: 13 U2-B + 23 U2-C), sections B/H/I green, C1 substrate re-verified, no release acceptance.');
+    console.log('B17 U2 regression proof complete: 47 routes flipped (87 -> 40 UNACTIVATED), sections B/H/I green, no release acceptance.');
 
   } finally {
     await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
