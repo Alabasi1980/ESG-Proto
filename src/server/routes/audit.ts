@@ -1,13 +1,13 @@
-// B12 (S-24) — audit-log read API.
+// B12 (S-24) — audit-log read API, retrofitted for B17 U2-B round 3.
 //
-// S-24: "who did what, when — with before/after + reason — over the existing
-// append-only audit_log, GE ONLY (plus a named GE delegate), NO client access
-// (403 otherwise), read-only (GET only, the table stays append-only)".
-//
-// Visibility: ge_admin reads everything; a named delegate (see
-// isAuditReader) reads within their own tenant scope (RLS applies naturally
-// — never elevated). Everyone else (client_admin, employee, anonymous) gets
-// 403, even with a valid session.
+// §3.6 (binding): P reads PLATFORM events only (client_id IS NULL, no global
+// client payloads); W reads its own A-filtered log (mandatory, server-derived);
+// C/E are denied even when the env names them delegates — admission is the §3
+// matrix inside requireDomainAccess, so the GE_AUDIT_DELEGATES env grant is no
+// longer consulted here (retirement checklist §2). The users JOIN stays: the
+// narrowly-scoped users SELECT (b17-content.sql D1) resolves platform-event
+// actors for P and own-tenant actors for W. Read-only (GET only; the table
+// stays append-only).
 
 import express, { type Response } from 'express';
 import {
@@ -17,9 +17,9 @@ import {
   authMiddleware,
   type AuthenticatedRequest,
 } from '../auth.ts';
+import { requireDomainAccess } from '../access.ts';
 import {
-  contextFromUser,
-  isAuditReader,
+  readContext,
 } from './_shared.ts';
 
 const router = express.Router();
@@ -28,16 +28,9 @@ const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
 
 /** B12 (S-24): audit read UI data — who/what/when/before-after/reason + filters. */
-router.get('/audit-log', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/audit-log', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    if (!isAuditReader(user)) {
-      return res.status(403).json({
-        error: 'Only platform administrators (or a named audit delegate) may read the audit log.',
-        code: 'audit.forbidden',
-      });
-    }
-
+    const access = req.access!;
     const q = req.query as Record<string, unknown>;
     const action = typeof q.action === 'string' && q.action.trim() ? q.action.trim() : null;
     const entityType = typeof q.entityType === 'string' && q.entityType.trim() ? q.entityType.trim() : null;
@@ -51,7 +44,14 @@ router.get('/audit-log', authMiddleware, async (req: AuthenticatedRequest, res: 
     const offsetRaw = Number(q.offset ?? 0);
     const offset = Number.isFinite(offsetRaw) ? Math.max(Math.floor(offsetRaw), 0) : 0;
 
-    const data = await withTenantContext(contextFromUser(user), async (client) => {
+    // §3 preamble: an explicit client filter may only NARROW to the caller's
+    // own context. P has no client scope at all (platform events only), so any
+    // clientId is an explicit mismatch; W may name only its own A.
+    if (clientId && clientId !== access.tenantId) {
+      return res.status(403).json({ error: 'Cross-tenant audit access is forbidden.', code: 'audit.forbidden' });
+    }
+
+    const data = await withTenantContext(readContext(req), async (client) => {
       const params: any[] = [];
       const clauses: string[] = [];
       if (action) {

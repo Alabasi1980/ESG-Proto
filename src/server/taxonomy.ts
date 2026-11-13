@@ -1,11 +1,9 @@
 import express, { type Response } from 'express';
-import { withTenantContext, recordAuditLog, type TenantContext } from '../db/index.ts';
-import {
-  authMiddleware,
-  type AuthenticatedRequest,
-  type AuthUser,
-} from './auth.ts';
-import { requireFreshPassword } from './routes/_shared.ts';
+import { withTenantContext, recordAuditLog } from '../db/index.ts';
+import { authMiddleware, type AuthenticatedRequest } from './auth.ts';
+import { requireDomainAccess } from './access.ts';
+import { readContext, platformConfigContext, requireFreshPassword } from './routes/_shared.ts';
+import { scopeId, scopeError } from './scope.ts';
 import {
   canonicalLinkPair,
   isEsgClass,
@@ -16,48 +14,49 @@ import {
 } from '../lib/taxonomy.ts';
 
 // B11a — services / taxonomy / items / equivalent-links (S-04, S-05, S-06, S-08).
-//
-// WHY a separate router: routes.ts is already >4000 lines; this batch gets
-// its own module so the diff stays reviewable. Mounted via router.use() in
-// routes.ts — same /api prefix, same auth + tenant-context discipline.
-//
+// B17 U2-C (task §22/§24): all 18 declarations are retrofitted through
+// requireDomainAccess → context → scope/RLS → handler and activated:
+// - READS run under readContext(req) (purpose 'work'): P sees the global
+//   catalog through the b17_platform_scope arm of the C1 catalog policies;
+//   W/C/E are scoped by the linked/assigned fact predicates (L / L+D) with
+//   authorized-children-only parents and truthful counts — zero links means
+//   an empty list, never all content.
+// - WRITES (the 12 P-only declarations + delete-refusal pre-checks) run under
+//   platformConfigContext(req) (purpose 'platform.config', targetless for the
+//   global catalog; §24 ratified posture). DELETE pre-checks use the sanctioned
+//   count-only definer b17_catalog_child_count so dependency refusals carry
+//   truthful catalog-wide counts BEFORE any delete (no silent CASCADE, §23 D1).
+// - The local contextFromUser builder and requireGeAdmin role checks are
+//   retired per U2_LEGACY_HELPER_RETIREMENT.md: the dispatcher + wrapper matrix
+//   (SHIELD-U2A-01/02) now refuse any non-P caller before this file runs.
 // Import path owns creation of standards/disclosures/items at scale (the GRI
 // commit upsert on the natural key); the endpoints below are the GE-only
-// surgical tools for single-row fixes. No create/delete of
-// standards/disclosures via UI — the import path owns creation (S-05).
+// surgical tools for single-row fixes.
 
 const router = express.Router();
 
-function contextFromUser(user?: AuthUser | null): TenantContext {
-  return {
-    tenantId: user?.clientId ?? null,
-    role: user?.role ?? '',
-    departmentId: user?.departmentId ?? null,
-    userId: user?.id ?? null,
-  };
-}
-
-/**
- * 04 matrix: define/taxonomy/items/links writes are GE CRUD only.
- * client_admin/employee get a human 403 (never a silent filter).
- */
-function requireGeAdmin(user: AuthUser, res: Response, what: string): boolean {
-  if (user.role !== 'ge_admin') {
-    res.status(403).json({ error: `Only platform administrators may ${what}.` });
-    return false;
-  }
-  return true;
+/** §22/§3.2: explicit invalid filters REFUSE (400 scope.id_invalid) — they
+ * never broaden the set (scope.ts itemQuery rule, applied to every read
+ * filter here). Repeated/array query params are refused too (spec §5). */
+function readFilter(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw scopeError(400, 'scope.id_invalid');
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  return scopeId(trimmed, true);
 }
 
 // ----------------------------------------------------------------------
 // Reads (any authenticated role; RLS still scopes department rows).
 // ----------------------------------------------------------------------
 
-// List services with their linked standards (S-04).
-router.get('/services', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// List services with their linked standards (S-04). §3.2: P catalog /
+// W-C linked only / E linked services having own assigned items — the C1
+// catalog policies scope every joined row (services, service_standards,
+// standards), so the aggregate cannot leak foreign parents or counts.
+router.get('/services', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+    const rows = await withTenantContext(readContext(req), async (client) => {
       const result = await client.query(
         `SELECT s.id, s.code, s.name, s.description, s.created_at,
                 COALESCE(
@@ -77,19 +76,17 @@ router.get('/services', authMiddleware, async (req: AuthenticatedRequest, res: R
     });
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch services' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch services' });
   }
 });
 
 // List disclosures, optionally under one standard (S-05/S-06 UI support).
-router.get('/disclosures', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// §3.2: P catalog / W-C L / E L+D; item_count is computed over authorized
+// items only (RLS); an invalid explicit filter refuses with 400.
+router.get('/disclosures', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const standardId =
-      typeof req.query.standardId === 'string' && req.query.standardId.trim()
-        ? req.query.standardId.trim()
-        : null;
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+    const standardId = readFilter(req.query.standardId);
+    const rows = await withTenantContext(readContext(req), async (client) => {
       const params: any[] = [];
       let where = '';
       if (standardId) {
@@ -112,19 +109,17 @@ router.get('/disclosures', authMiddleware, async (req: AuthenticatedRequest, res
     });
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch disclosures' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch disclosures' });
   }
 });
 
 // List items, optionally under one disclosure (S-06 UI support).
-router.get('/items', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// §3.2: P catalog / W-C L / E L+D; explicit filters narrow, never broaden,
+// and malformed ones refuse with 400 scope.id_invalid.
+router.get('/items', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const disclosureId =
-      typeof req.query.disclosureId === 'string' && req.query.disclosureId.trim()
-        ? req.query.disclosureId.trim()
-        : null;
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+    const disclosureId = readFilter(req.query.disclosureId);
+    const rows = await withTenantContext(readContext(req), async (client) => {
       const params: any[] = [];
       let where = '';
       if (disclosureId) {
@@ -147,7 +142,7 @@ router.get('/items', authMiddleware, async (req: AuthenticatedRequest, res: Resp
     });
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch items' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch items' });
   }
 });
 
@@ -155,10 +150,9 @@ router.get('/items', authMiddleware, async (req: AuthenticatedRequest, res: Resp
 // A. Services (S-04) — GE-only writes.
 // ----------------------------------------------------------------------
 
-router.post('/services', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage services')) return;
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const description =
@@ -168,7 +162,7 @@ router.post('/services', authMiddleware, requireFreshPassword, async (req: Authe
     if (!code) return res.status(400).json({ error: 'Service code is required.' });
     if (!name) return res.status(400).json({ error: 'Service name is required.' });
 
-    const created = await withTenantContext(contextFromUser(user), async (client) => {
+    const created = await withTenantContext(platformConfigContext(req), async (client) => {
       let row;
       try {
         const ins = await client.query(
@@ -201,14 +195,13 @@ router.post('/services', authMiddleware, requireFreshPassword, async (req: Authe
   }
 });
 
-router.patch('/services/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage services')) return;
     const body = req.body ?? {};
     // Service code is the natural key: immutable after creation.
     if (typeof body.code === 'string' && body.code.trim() !== '') {
-      const cur = await withTenantContext(contextFromUser(user), async (client) => {
+      const cur = await withTenantContext(platformConfigContext(req), async (client) => {
         const r = await client.query('SELECT code FROM services WHERE id = $1', [req.params.id]);
         return r.rows[0]?.code ?? null;
       });
@@ -237,7 +230,7 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, async (req: 
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Provide name and/or description to update.' });
     }
-    const updated = await withTenantContext(contextFromUser(user), async (client) => {
+    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE services SET ${sets.join(', ')} WHERE id = $${params.length}
@@ -263,10 +256,9 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, async (req: 
 });
 
 // Duplicate a service with its standard links under a NEW code (S-04).
-router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'duplicate services')) return;
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
     if (!code) {
       return res.status(400).json({ error: 'A new service code is required for duplication.' });
@@ -276,7 +268,7 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, asy
         ? req.body.name.trim()
         : null;
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       const srcRes = await client.query('SELECT * FROM services WHERE id = $1', [req.params.id]);
       const src = srcRes.rows[0];
       if (!src) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
@@ -319,15 +311,14 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, asy
 });
 
 // Link / unlink a standard to a service (S-04).
-router.post('/services/:id/standards', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'link standards to services')) return;
     const standardId =
       typeof req.body?.standardId === 'string' ? req.body.standardId.trim() : '';
     if (!standardId) return res.status(400).json({ error: 'standardId is required.' });
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       const svc = await client.query('SELECT id, code FROM services WHERE id = $1', [req.params.id]);
       if (!svc.rows[0]) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
       const std = await client.query('SELECT id, code FROM standards WHERE id = $1', [standardId]);
@@ -355,17 +346,16 @@ router.post('/services/:id/standards', authMiddleware, requireFreshPassword, asy
   }
 });
 
-router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'unlink standards from services')) return;
     const standardId =
       (typeof req.body?.standardId === 'string' && req.body.standardId.trim()) ||
       (typeof req.query.standardId === 'string' && req.query.standardId.trim()) ||
       '';
     if (!standardId) return res.status(400).json({ error: 'standardId is required.' });
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       const del = await client.query(
         'DELETE FROM service_standards WHERE service_id = $1 AND standard_id = $2',
         [req.params.id, standardId]
@@ -396,10 +386,9 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, a
 // creation (see the /gri/commit upsert on the natural key).
 // ----------------------------------------------------------------------
 
-router.patch('/standards/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'edit standards')) return;
     const body = req.body ?? {};
     if (typeof body.code === 'string' && body.code.trim() !== '') {
       return res.status(400).json({
@@ -423,7 +412,7 @@ router.patch('/standards/:id', authMiddleware, requireFreshPassword, async (req:
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Provide title and/or category to update.' });
     }
-    const updated = await withTenantContext(contextFromUser(user), async (client) => {
+    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE standards SET ${sets.join(', ')} WHERE id = $${params.length}
@@ -448,16 +437,18 @@ router.patch('/standards/:id', authMiddleware, requireFreshPassword, async (req:
   }
 });
 
-router.delete('/standards/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'delete standards')) return;
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       const cur = await client.query('SELECT id, code FROM standards WHERE id = $1', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Standard not found.'), { statusCode: 404 });
+      // §22/§23 D1: truthful catalog-wide refusal count via the sanctioned
+      // count-only definer (platform.config guard inside), BEFORE any delete —
+      // children of a global standard may belong to any tenant (no CASCADE).
       const kids = await client.query(
-        'SELECT COUNT(*)::int AS n FROM disclosures WHERE standard_id = $1',
+        `SELECT b17_catalog_child_count('standard.disclosures', $1) AS n`,
         [req.params.id]
       );
       const n = kids.rows[0]?.n ?? 0;
@@ -486,10 +477,9 @@ router.delete('/standards/:id', authMiddleware, requireFreshPassword, async (req
   }
 });
 
-router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'edit disclosures')) return;
     const body = req.body ?? {};
     if (typeof body.code === 'string' && body.code.trim() !== '') {
       return res.status(400).json({
@@ -520,7 +510,7 @@ router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, async (re
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Provide title and/or description to update.' });
     }
-    const updated = await withTenantContext(contextFromUser(user), async (client) => {
+    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE disclosures SET ${sets.join(', ')} WHERE id = $${params.length}
@@ -545,17 +535,18 @@ router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, async (re
   }
 });
 
-router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'delete disclosures')) return;
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       const cur = await client.query('SELECT id, code FROM disclosures WHERE id = $1', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Disclosure not found.'), { statusCode: 404 });
-      const kids = await client.query('SELECT COUNT(*)::int AS n FROM items WHERE disclosure_id = $1', [
-        req.params.id,
-      ]);
+      // §22/§23 D1: truthful catalog-wide refusal count before any delete.
+      const kids = await client.query(
+        `SELECT b17_catalog_child_count('disclosure.items', $1) AS n`,
+        [req.params.id]
+      );
       const n = kids.rows[0]?.n ?? 0;
       if (n > 0) {
         throw Object.assign(
@@ -590,10 +581,9 @@ router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, async (r
 // sort_order = max+1 within the disclosure when not provided.
 // ----------------------------------------------------------------------
 
-router.post('/items', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage items')) return;
     const validation = validateNewItem(req.body ?? {});
     if (!validation.ok) {
       return res.status(validation.status).json({ error: validation.error });
@@ -601,7 +591,7 @@ router.post('/items', authMiddleware, requireFreshPassword, async (req: Authenti
     const v = validation.value;
     const disclosureId = String((req.body as any).disclosureId).trim();
 
-    const created = await withTenantContext(contextFromUser(user), async (client) => {
+    const created = await withTenantContext(platformConfigContext(req), async (client) => {
       const disc = await client.query('SELECT id, code FROM disclosures WHERE id = $1', [disclosureId]);
       if (!disc.rows[0]) throw Object.assign(new Error('Disclosure not found.'), { statusCode: 404 });
       if (v.departmentId) {
@@ -669,10 +659,9 @@ router.post('/items', authMiddleware, requireFreshPassword, async (req: Authenti
   }
 });
 
-router.patch('/items/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage items')) return;
     const body = req.body ?? {};
     if (
       (typeof body.code === 'string' && body.code.trim() !== '') ||
@@ -764,7 +753,7 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, async (req: Aut
       return res.status(400).json({ error: 'No editable field provided.' });
     }
 
-    const updated = await withTenantContext(contextFromUser(user), async (client) => {
+    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
       const cur = await client.query('SELECT id, code FROM items WHERE id = $1', [req.params.id]);
       if (!cur.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       if (departmentTouched) {
@@ -802,21 +791,26 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, async (req: Aut
   }
 });
 
-router.delete('/items/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage items')) return;
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       const cur = await client.query('SELECT id, code FROM items WHERE id = $1', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
-      const ans = await client.query('SELECT COUNT(*)::int AS n FROM answers WHERE item_id = $1', [req.params.id]);
-      const ev = await client.query('SELECT COUNT(*)::int AS n FROM evaluations WHERE item_id = $1', [req.params.id]);
-      const asg = await client.query('SELECT COUNT(*)::int AS n FROM assignments WHERE item_id = $1', [req.params.id]);
+      // §22/§23 D1: truthful catalog-wide counts for every blocker — answers,
+      // evaluations and assignments (incl. OTHER tenants' rows) come from the
+      // count-only definer, so the refusal can never fail open into CASCADE.
+      const counts = await client.query(
+        `SELECT b17_catalog_child_count('item.answers', $1) AS answers,
+                b17_catalog_child_count('item.evaluations', $1) AS evaluations,
+                b17_catalog_child_count('item.assignments', $1) AS assignments`,
+        [req.params.id]
+      );
       const blockers = {
-        answers: ans.rows[0]?.n ?? 0,
-        evaluations: ev.rows[0]?.n ?? 0,
-        assignments: asg.rows[0]?.n ?? 0,
+        answers: counts.rows[0]?.answers ?? 0,
+        evaluations: counts.rows[0]?.evaluations ?? 0,
+        assignments: counts.rows[0]?.assignments ?? 0,
       };
       if (blockers.answers + blockers.evaluations + blockers.assignments > 0) {
         throw Object.assign(new Error(itemDeleteRefusal(blockers)), { statusCode: 409 });
@@ -849,10 +843,9 @@ function linkRefusal(status: number, error: string): { status: number; error: st
   return { status, error };
 }
 
-router.post('/items/:id/links', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage equivalent-item links')) return;
     const otherRaw = req.body?.otherItemId;
     const pair = canonicalLinkPair(req.params.id, otherRaw);
     if (!pair) {
@@ -871,7 +864,7 @@ router.post('/items/:id/links', authMiddleware, requireFreshPassword, async (req
     }
     const [first, second] = pair;
 
-    const created = await withTenantContext(contextFromUser(user), async (client) => {
+    const created = await withTenantContext(platformConfigContext(req), async (client) => {
       const items = await client.query('SELECT id FROM items WHERE id = ANY($1)', [[first, second]]);
       if ((items.rowCount ?? 0) !== 2) {
         const mine = await client.query('SELECT id FROM items WHERE id = $1', [req.params.id]);
@@ -910,10 +903,9 @@ router.post('/items/:id/links', authMiddleware, requireFreshPassword, async (req
   }
 });
 
-router.delete('/items/:id/links', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!requireGeAdmin(user, res, 'manage equivalent-item links')) return;
     const linkId =
       (typeof req.body?.linkId === 'string' && req.body.linkId.trim()) ||
       (typeof req.query.linkId === 'string' && req.query.linkId.trim()) ||
@@ -926,7 +918,7 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, async (r
       return res.status(400).json({ error: 'Provide linkId or otherItemId to remove the link.' });
     }
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(platformConfigContext(req), async (client) => {
       let del;
       if (linkId) {
         del = await client.query(
@@ -959,21 +951,28 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, async (r
 });
 
 // Read-only reference: linked item metadata + the reader's OWN-department
-// evaluation state (or "not evaluated by your department"). Tenant-scoped;
-// never returns another department's answers or evidence text (DD-06).
-router.get('/items/:id/links', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// evaluation state (or "not evaluated by your department"). §3.2 (U2-C):
+// P = catalog metadata ONLY, never a tenant evaluation overlay — a supplied
+// clientId is refused for P; W/C = both ends L with own-tenant evaluation
+// state (C gap-gated by the evaluations policy); E = both ends L+D and
+// own-department answer status only, never foreign evidence/text (DD-06).
+// Non-string clientId (repeated/array param) refuses 400; foreign clientId
+// keeps its 403. Inaccessible item id stays the existing generic 404.
+router.get('/items/:id/links', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
+    const access = req.access!;
+    const rawClientId = req.query.clientId;
+    if (rawClientId !== undefined && rawClientId !== null && typeof rawClientId !== 'string') {
+      throw scopeError(400, 'scope.id_invalid');
+    }
     const explicitClient =
-      typeof req.query.clientId === 'string' && req.query.clientId.trim()
-        ? req.query.clientId.trim()
-        : null;
-    if (explicitClient && user.role !== 'ge_admin' && explicitClient !== user.clientId) {
+      typeof rawClientId === 'string' && rawClientId.trim() ? rawClientId.trim() : null;
+    if (explicitClient && (access.mode === 'platform' || explicitClient !== access.tenantId)) {
       return res.status(403).json({ error: 'Cross-tenant link reads are forbidden.' });
     }
-    const tenantId = user.role === 'ge_admin' ? explicitClient : user.clientId ?? null;
+    const tenantId = access.mode === 'platform' ? null : access.tenantId;
 
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+    const rows = await withTenantContext(readContext(req), async (client) => {
       const mine = await client.query('SELECT id FROM items WHERE id = $1', [req.params.id]);
       if (!mine.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       const links = await client.query(
@@ -1004,13 +1003,13 @@ router.get('/items/:id/links', authMiddleware, async (req: AuthenticatedRequest,
           [tenantId, otherIds]
         );
         for (const r of evRes.rows) evalByItem.set(String(r.item_id), r);
-        // Own department only: the reader's department answer status, never
+        // Own department only (E): the reader's department answer status, never
         // another department's rows (answers RLS enforces this too).
-        if (user.departmentId) {
+        if (access.departmentId) {
           const ansRes = await client.query(
             `SELECT item_id, status FROM answers
              WHERE client_id = $1 AND department_id = $2 AND item_id = ANY($3)`,
-            [tenantId, user.departmentId, otherIds]
+            [tenantId, access.departmentId, otherIds]
           );
           for (const r of ansRes.rows) ansByItem.set(String(r.item_id), r.status);
         }

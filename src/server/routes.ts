@@ -1,13 +1,5 @@
-// B12 (R-01) — thin mount point. All domain routes live in sub-routers
-// under src/server/routes/ (system, session, gri, evaluations, actions,
-// initiatives, reports, storage, admin, audit, notifications) plus the
-// taxonomy router (src/server/taxonomy.ts). This file registers them in the
-// original order under the /api prefix and owns no domain handlers itself —
-// SAME behavior is proven by the full suite + harness parity re-run.
-// Micro-fix: it additionally owns the terminal JSON 404 + global JSON error
-// handlers (mounted LAST), which only fire for errors that would otherwise
-// reach Express's default HTML finalhandler; all existing refusal
-// bodies/statuses are unchanged.
+// B17 U1: keep legacy declarations registered for U2, but never expose a partially
+// retrofitted domain. Coverage is asserted and the activation dispatcher runs FIRST.
 
 import express from 'express';
 import taxonomyRouter from './taxonomy.ts';
@@ -23,8 +15,17 @@ import adminRouter from './routes/admin.ts';
 import auditRouter from './routes/audit.ts';
 import notificationsRouter from './routes/notifications.ts';
 import { apiNotFoundHandler, globalJsonErrorHandler } from './errorHandler.ts';
+import workspaceRouter from './workspace.ts';
+import { accessDispatcher } from './access.ts';
+import { assertRegistryCoverage } from './accessRegistry.ts';
 
 const router = express.Router();
+
+assertRegistryCoverage([taxonomyRouter, systemRouter, sessionRouter, griRouter, evaluationsRouter,
+  actionsRouter, initiativesRouter, reportsRouter, storageRouter, adminRouter, auditRouter,
+  notificationsRouter, workspaceRouter]);
+router.use(accessDispatcher);
+router.use(workspaceRouter);
 
 // B11a taxonomy/services/items/equivalent-links endpoints (S-04/S-05/S-06/S-08).
 // Mounted here so they share the /api prefix; the module owns its routes.

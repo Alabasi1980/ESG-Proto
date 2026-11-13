@@ -1,200 +1,57 @@
-// B12 (R-01) — system sub-router: database/health + initial setup.
-// Mounted by src/server/routes.ts under the /api prefix. Moved verbatim;
-// B12 change: POST /setup/admin enforces the shared S-02 complexity rule.
-
-import express, { type Request, type Response } from 'express';
-import {
-  isDatabaseConfigured,
-  withTenantContext,
-  recordAuditLog,
-  runMigrations,
-  checkDatabaseHealth,
-} from '../../db/index.ts';
-import type { AuthUser } from '../auth.ts';
-import { hashPassword, generateToken } from '../auth.ts';
+import express from 'express';
+import { isDatabaseConfigured, withTenantContext, setTenantContext, recordAuditLog, getPool } from '../../db/index.ts';
+import { assertB17Ready } from '../../db/b17Readiness.ts';
+import { hashPassword, issueSession, sendAuthError, authError, type AuthUser } from '../auth.ts';
+import { sessionCookie } from './session.ts';
 import { validateSelfChosenPassword } from '../../lib/password.ts';
-import { ELEVATED_CONTEXT } from './_shared.ts';
+import { randomUUID } from 'node:crypto';
 
 const router = express.Router();
-
-// ----------------------------------------------------------------------
-// 1. Database & Health Status
-// ----------------------------------------------------------------------
-router.get('/db/status', async (_req: Request, res: Response) => {
-  try {
-    const configured = isDatabaseConfigured();
-    if (!configured) {
-      return res.json({
-        configured: false,
-        connected: false,
-        tableCount: 0,
-        tables: [],
-        userCount: 0,
-        error: 'DATABASE_URL environment variable is missing.',
-      });
-    }
-
-    const health = await checkDatabaseHealth();
-    let userCount = 0;
-
-    if (health.connected && health.tables.includes('users')) {
-      // Explicit elevated context so the count stays correct under FORCE RLS.
-      userCount = await withTenantContext(ELEVATED_CONTEXT, async (client) => {
-        const countRes = await client.query('SELECT COUNT(*)::int as count FROM users');
-        return countRes.rows[0]?.count || 0;
-      });
-    }
-
-    res.json({
-      configured: true,
-      connected: health.connected,
-      tableCount: health.tableCount,
-      tables: health.tables,
-      userCount,
-      error: health.error,
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Database status check failed' });
-  }
+router.get('/db/status', async (_req, res) => {
+  const configured = isDatabaseConfigured();
+  let connected = false;
+  if (configured) { try { await getPool().query('SELECT 1'); connected = true; } catch { /* Minimal public diagnostics only. */ } }
+  res.json({ configured, connected });
 });
-
-// Run migrations (Create tables, RLS policies, triggers)
-router.post('/db/migrate', async (_req: Request, res: Response) => {
-  try {
-    if (!isDatabaseConfigured()) {
-      return res.status(400).json({
-        success: false,
-        error: 'DATABASE_URL environment variable is not defined.',
-      });
-    }
-
-    const result = await runMigrations();
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Migration failed' });
-  }
+router.post('/db/migrate', (_req, res) => {
+  res.status(409).json({ error: 'migrations.offline_only', code: 'migrations.offline_only' });
 });
-
-// ----------------------------------------------------------------------
-// 2. Initial Setup (First Admin Bootstrap — exactly once)
-// ----------------------------------------------------------------------
-router.get('/setup/status', async (_req: Request, res: Response) => {
+router.get('/setup/status', async (_req, res) => {
   try {
-    if (!isDatabaseConfigured()) {
-      return res.json({ canSetup: false, reason: 'Database is not configured' });
-    }
-
-    const health = await checkDatabaseHealth();
-    if (!health.connected || !health.tables.includes('users')) {
-      return res.json({ canSetup: true, needsMigration: true });
-    }
-
-    // Elevated context: the users table is FORCE RLS; only an explicit
-    // ge_admin context sees the true count for the bootstrap guard.
-    const userCount = await withTenantContext(ELEVATED_CONTEXT, async (client) => {
-      const countRes = await client.query('SELECT COUNT(*)::int as count FROM users');
-      return countRes.rows[0]?.count || 0;
-    });
-
-    res.json({
-      canSetup: userCount === 0,
-      userCount,
-      needsMigration: false,
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+    await assertB17Ready();
+    const canSetup = await withTenantContext({ purpose: 'auth.setup' }, async client =>
+      !(await client.query('SELECT 1 FROM users LIMIT 1')).rows.length);
+    res.json({ canSetup, needsMigration: false });
+  } catch { res.json({ canSetup: false, needsMigration: true }); }
 });
-
-router.post('/setup/admin', async (req: Request, res: Response) => {
+router.post('/setup/admin', async (req, res) => {
   try {
-    const { email, password, name, role = 'ge_admin', clientName, clientCode } = req.body;
-
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Email, password, and name are required.' });
-    }
-
-    // B12 (S-02 completion): self-chosen bootstrap passwords use the shared
-    // complexity rule (≥10 + upper/lower/digit/symbol). F-03 allowlist: the
-    // fresh gate does not apply here (no session exists yet).
-    const pwCheck = validateSelfChosenPassword(password);
-    if (!pwCheck.ok) {
-      return res.status(400).json({ error: pwCheck.error });
-    }
-
-    // Ensure tables exist (DDL as owner; unaffected by RLS)
-    await runMigrations();
-
-    // Bootstrap guard: works exactly once while users is empty.
-    // Count runs under an elevated context so FORCE RLS cannot hide existing users.
-    const existingCount = await withTenantContext(ELEVATED_CONTEXT, async (client) => {
-      const userCheck = await client.query('SELECT COUNT(*)::int as count FROM users');
-      return userCheck.rows[0]?.count || 0;
+    if (req.headers.authorization !== undefined || req.cookies?.token) throw authError(403, 'setup.denied');
+    const { email, password, name, role = 'ge_admin', clientName, clientCode } = req.body ?? {};
+    const clientBootstrap = clientName !== undefined || clientCode !== undefined;
+    if (typeof email !== 'string' || !email.trim() || email.length > 320 || typeof name !== 'string'
+      || !name.trim() || name.length > 200 || !['ge_admin','client_admin'].includes(role)
+      || (!clientBootstrap && role !== 'ge_admin')
+      || (clientBootstrap && (typeof clientName !== 'string' || !clientName.trim() || clientName.length > 200
+        || typeof clientCode !== 'string' || !clientCode.trim() || clientCode.length > 100))
+      || !validateSelfChosenPassword(password).ok || password.length > 1024) throw authError(400, 'setup.input_invalid');
+    const result = await withTenantContext({ purpose: 'auth.bootstrap' }, async client => {
+      // Held across count+insert+session+audit; readiness has already been checked without DDL.
+      await client.query('SELECT pg_advisory_xact_lock(1717002)');
+      if ((await client.query('SELECT 1 FROM users LIMIT 1')).rows.length) throw authError(403, 'setup.completed');
+      const clientId = clientBootstrap ? randomUUID() : null;
+      await setTenantContext(client, { purpose: 'auth.bootstrap', targetId: clientId });
+      if (clientId) await client.query('INSERT INTO clients(id,code,name) VALUES($1,$2,$3)', [clientId,clientCode.trim(),clientName.trim()]);
+      const row = (await client.query(`INSERT INTO users (email,password_hash,name,role,client_id)
+        VALUES ($1,$2,$3,$4,$5) RETURNING id,email,name,role`,
+      [email.trim().toLowerCase(), await hashPassword(password), name.trim(),clientId?'client_admin':'ge_admin',clientId])).rows[0];
+      const user: AuthUser = { ...row, clientId, clientName: clientId ? clientName.trim() : null, departmentId: null };
+      await setTenantContext(client, { purpose: 'auth.bootstrap', userId: user.id, role: user.role, tenantId: clientId });
+      const { token } = await issueSession(client, user);
+      await recordAuditLog(client, { clientId, userId: user.id, action: 'BOOTSTRAP_INITIAL_ADMIN', entityType: 'users', entityId: user.id });
+      return { token, user };
     });
-    if (existingCount > 0) {
-      return res.status(403).json({ error: 'Initial setup has already been completed.' });
-    }
-
-    const passwordHash = await hashPassword(password);
-
-    const created = await withTenantContext(ELEVATED_CONTEXT, async (client) => {
-      let createdClientId: string | null = null;
-      let finalRole: 'ge_admin' | 'client_admin' | 'employee' = role;
-
-      // If client details are provided, create client tenant
-      if (clientName && clientCode) {
-        const clientRes = await client.query(
-          `INSERT INTO clients (code, name) VALUES ($1, $2) RETURNING id`,
-          [clientCode.trim(), clientName.trim()]
-        );
-        createdClientId = clientRes.rows[0].id;
-        finalRole = 'client_admin';
-      }
-
-      const userRes = await client.query(
-        `INSERT INTO users (email, password_hash, name, role, client_id)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, email, name, role, client_id`,
-        [email.toLowerCase().trim(), passwordHash, name.trim(), finalRole, createdClientId]
-      );
-
-      const newUser = userRes.rows[0];
-
-      // Record in audit log
-      await recordAuditLog(client, {
-        clientId: createdClientId,
-        userId: newUser.id,
-        action: 'BOOTSTRAP_INITIAL_ADMIN',
-        entityType: 'users',
-        entityId: newUser.id,
-        payload: { email: newUser.email, role: newUser.role },
-      });
-
-      return { newUser, createdClientId };
-    });
-
-    const authUser: AuthUser = {
-      id: created.newUser.id,
-      email: created.newUser.email,
-      name: created.newUser.name,
-      role: created.newUser.role,
-      clientId: created.newUser.client_id,
-      clientName: clientName || null,
-    };
-
-    const token = generateToken(authUser);
-
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.json({ token, user: authUser });
-  } catch (err: any) {
-    console.error('Setup admin error:', err);
-    res.status(500).json({ error: err.message || 'Failed to create initial admin user' });
-  }
+    res.cookie('token', result.token, sessionCookie()); res.json(result);
+  } catch (err) { sendAuthError(res, err); }
 });
-
 export default router;

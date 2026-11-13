@@ -1,25 +1,37 @@
 // B12 (R-01) — GRI sub-router: import preview/commit, template, standards
-// listing, dashboard stats. Mounted by src/server/routes.ts under /api.
-// Moved verbatim; B12 wiring: POST /gri/commit carries requireFreshPassword
-// (F-03). POST /gri/preview stays ungated (F-03 allowlist: unauthenticated
-// parse-only preview — no user exists to check).
+// listing, dashboard stats. B17 U2-C (task §22/§24): all 5 declarations are
+// retrofitted through requireDomainAccess and activated —
+// - POST /gri/preview: P ONLY, authenticated BEFORE the upload parser
+//   (the optional-auth public path is closed; F-03 allowlist entry stays
+//   because the wrapper itself enforces fresh identity and nothing is written).
+// - POST /gri/commit: P explicit T + EXPLICIT linked serviceId, everything
+//   under platform.config(T): catalog upsert, target-tenant department/
+//   assignment provisioning via the ratified C1 policies, freeze via the
+//   fact-gated is_scope_frozen, truthful unmapped-standard notice; NO
+//   client_services mutation and NO guessed standards→service mapping.
+// - GET /gri/template: P ONLY (auth + wrapper before download).
+// - GET /standards: P catalog / W-C L / E L+D content metadata (optional auth
+//   removed); counts are computed over RLS-authorized rows only.
+// - GET /dashboard/stats: W/C L+V ONLY (matrix refuses P/E/anonymous); every
+//   score/gap field is redacted to null for C when show_gap hides gaps (§6/D3);
+//   numerator AND denominator come from RLS-scoped rows, so overlapping
+//   service mappings can never duplicate an item; show_corrective is
+//   NOT-APPLICABLE to stats (§23 D3, recorded).
 
-import express, { type Request, type Response } from 'express';
+import express, { type Response } from 'express';
 import multer from 'multer';
 import {
   isDatabaseConfigured,
   withTenantContext,
   recordAuditLog,
 } from '../../db/index.ts';
-import {
-  authMiddleware,
-  optionalAuthMiddleware,
-  type AuthenticatedRequest,
-} from '../auth.ts';
+import { authMiddleware, type AuthenticatedRequest } from '../auth.ts';
+import { requireDomainAccess } from '../access.ts';
 import { parseGRIFile, type ParsedGRIStandard } from '../../lib/griParser.ts';
 import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../../lib/scoring.ts';
 import { resolveImportTenant } from '../../lib/tenantAccess.ts';
-import { contextFromUser, readContext, requireFreshPassword, B16_CLIENT_GRI_REFUSAL } from './_shared.ts';
+import { scopeId, scopeError } from '../scope.ts';
+import { readContext, platformConfigContext, requireFreshPassword, B16_CLIENT_GRI_REFUSAL } from './_shared.ts';
 
 const router = express.Router();
 
@@ -46,9 +58,13 @@ function weightForPriority(priority?: string): number {
 }
 
 // ----------------------------------------------------------------------
-// 4. Import GRI Data (.xlsx / .csv)
+// 4. Import GRI Data (.xlsx / .csv) — P only, AUTHENTICATED BEFORE the parser
+// (§3.2: the previous public preview closes; auth + the domain wrapper —
+// including fresh-identity and suspension gates — run before multer or
+// parseGRIFile ever touch the payload).
 // ----------------------------------------------------------------------
-router.post('/gri/preview', upload.single('file'), (req: Request, res: Response) => {
+router.post('/gri/preview', authMiddleware, requireDomainAccess, upload.single('file'),
+  (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.file && !req.body.csvContent) {
       return res.status(400).json({ error: 'No file or CSV content provided.' });
@@ -64,21 +80,26 @@ router.post('/gri/preview', upload.single('file'), (req: Request, res: Response)
   }
 });
 
-router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAccess,
+  async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    // B16-B2: GRI import is GE-only. Client roles review imports read-only.
+    // B16-B2: GRI import is GE-only (the wrapper's P-only matrix already
+    // refuses client roles; this keeps the bilingual refusal as defence-in-depth).
     if (user.role !== 'ge_admin') {
       return res.status(403).json({ error: B16_CLIENT_GRI_REFUSAL });
     }
 
-    const { standards, clientId: rawClientId } = req.body as { standards: ParsedGRIStandard[]; clientId?: unknown };
+    const { standards, clientId: rawClientId, serviceId: rawServiceId } =
+      req.body as { standards: ParsedGRIStandard[]; clientId?: unknown; serviceId?: unknown };
     if (!standards || !Array.isArray(standards) || standards.length === 0) {
       return res.status(400).json({ error: 'No valid standards provided for commit.' });
     }
+    // §22/§3.2: EXPLICIT linked serviceId is mandatory — missing -> 400
+    // scope.id_required, malformed -> 400 scope.id_invalid (scope.ts codes).
+    const serviceId = scopeId(rawServiceId, true)!;
 
-    // B1/B2: ge_admin may target any tenant explicitly; client_admin always
-    // uses their own tenant (another tenant → 403); tenant-less ge_admin
+    // B1/B2: ge_admin may target any tenant explicitly; tenant-less ge_admin
     // without clientId → 400 "choose a tenant" (never orphan rows).
     const tenantResolution = resolveImportTenant(
       { id: user.id, role: user.role, clientId: user.clientId ?? null },
@@ -90,14 +111,24 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
     const effectiveClientId = tenantResolution.effectiveClientId;
     const explicitTenant = tenantResolution.explicit;
 
-    // Run in tenant context to enforce RLS and audit log
+    // §24 R5 invariant: purpose/target are SERVER-selected here — target T is
+    // the validated explicit clientId, purpose the constant platform.config.
+    // Runs in the C1 target-bound configuration context (RLS + audit).
     const result = await withTenantContext(
-      contextFromUser(user),
+      platformConfigContext(req, effectiveClientId),
       async (client) => {
         // The explicit tenant must exist (ge_admin names it by id).
         const tenantCheck = await client.query('SELECT id, code, name FROM clients WHERE id = $1', [effectiveClientId]);
         if ((tenantCheck.rowCount ?? 0) === 0) {
           throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
+        }
+        // §22: the service must ALREADY be linked to T — selecting it never
+        // grants a subscription (row-free fact check under platform.config(T);
+        // zero client_services mutation on every path, denied otherwise).
+        const linked = await client.query(
+          "SELECT b17_content_fact('service', $1, $2) AS ok", [effectiveClientId, serviceId]);
+        if (!linked.rows[0]?.ok) {
+          throw scopeError(403, 'scope.service_unlinked');
         }
         let standardsProcessed = 0;
         let disclosuresProcessed = 0;
@@ -107,19 +138,37 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
         // B9-B3: frozen rows are skipped with reason, never touched.
         let skippedFrozen = 0;
         const seenItemKeys = new Set<string>();
+        // Payload standards (for the truthful mapped/unmapped setup notice, §6).
+        const payloadStandardIds: string[] = [];
         const importBatchId = `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
         // normCode -> { display name from payload, item ids needing assignment }
         const deptToItemIds = new Map<string, { name: string; itemIds: string[] }>();
 
-        // B9-B3: snapshot-derived frozen scopes for the effective tenant.
-        const frozenSnapRes = await client.query(
-          'SELECT scope_type, scope_ref FROM review_snapshots WHERE client_id = $1',
-          [effectiveClientId]
-        );
-        const tenantFrozen = frozenSnapRes.rows.some((r) => r.scope_type === 'tenant');
-        const frozenDisclosureIds = new Set(
-          frozenSnapRes.rows.filter((r) => r.scope_type === 'disclosure').map((r) => String(r.scope_ref))
-        );
+        // B9-B3 / §23 D2 (U2-C2): freeze detection runs through the FACT-GATED
+        // is_scope_frozen under platform.config(T) — raw snapshot rows stay
+        // invisible to every context (C1 proved), while the boolean semantics
+        // are unchanged: a tenant-scope snapshot freezes the whole import and a
+        // disclosure-scope snapshot skips that disclosure's rows.
+        const frozenRes = await client.query('SELECT is_scope_frozen($1) AS frozen', [effectiveClientId]);
+        const tenantFrozen = frozenRes.rows[0]?.frozen === true;
+        const disclosureFrozenCache = new Map<string, boolean>();
+        const disclosureFrozen = async (disclosureId: string): Promise<boolean> => {
+          if (tenantFrozen) return true;
+          const cached = disclosureFrozenCache.get(disclosureId);
+          if (cached !== undefined) return cached;
+          // A disclosure-scope snapshot implies evaluations existed, so at least
+          // one catalog item is already present; without items nothing can
+          // reference this disclosure and it is not frozen.
+          const anyItem = await client.query('SELECT id FROM items WHERE disclosure_id = $1 LIMIT 1', [disclosureId]);
+          let frozen = false;
+          if (anyItem.rows[0]) {
+            const r = await client.query('SELECT is_scope_frozen($1, $2) AS frozen',
+              [effectiveClientId, anyItem.rows[0].id]);
+            frozen = r.rows[0]?.frozen === true;
+          }
+          disclosureFrozenCache.set(disclosureId, frozen);
+          return frozen;
+        };
 
         for (const std of standards) {
           // Upsert standard
@@ -132,6 +181,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
             [std.code, std.title, std.category, std.version || '2021']
           );
           const standardId = stdRes.rows[0].id;
+          payloadStandardIds.push(standardId);
           standardsProcessed++;
 
           for (const disc of std.disclosures) {
@@ -165,7 +215,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
               // items skip tenant provisioning (departments/assignments) and
               // are counted as skipped with reason. The shared catalog upsert
               // below stays descriptive-only (never touches tenant rows).
-              if (tenantFrozen || frozenDisclosureIds.has(disclosureId)) {
+              if (await disclosureFrozen(disclosureId)) {
                 skipped++;
                 skippedFrozen++;
                 continue;
@@ -262,6 +312,18 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
           }
         }
 
+        // §6 setup notice: TRUTHFUL mapped/unmapped counts for this payload
+        // against the already-linked target service — no mapping is ever
+        // guessed or created here (POST /services/:id/standards owns mapping).
+        const mappedRes = await client.query(
+          'SELECT standard_id FROM service_standards WHERE service_id = $1 AND standard_id = ANY($2::uuid[])',
+          [serviceId, payloadStandardIds]);
+        const mappedStandards = mappedRes.rows.length;
+        const unmappedStandards = payloadStandardIds.length - mappedStandards;
+        const setupNotice = unmappedStandards > 0
+          ? `${unmappedStandards} imported standard(s) are not yet mapped to the target service — link them via POST /api/services/:id/standards before tenant assignments become authorized.`
+          : null;
+
         // Record in append-only audit log (explicit-tenant commits carry
         // actor + targetTenant + counts per B1).
         await recordAuditLog(client, {
@@ -299,6 +361,10 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
           importBatchId,
           departmentsUpserted,
           assignmentsCreated,
+          serviceId,
+          mappedStandards,
+          unmappedStandards,
+          setupNotice,
         };
       }
     );
@@ -314,8 +380,10 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, async (req: Aut
   }
 });
 
-// Download sample GRI template (.csv)
-router.get('/gri/template', (_req: Request, res: Response) => {
+// Download sample GRI template (.csv) — P only: authenticated fetch (with the
+// platform tab through the wrapper) THEN download; the unauthenticated
+// window.location bypass no longer resolves (§3.2).
+router.get('/gri/template', authMiddleware, requireDomainAccess, (_req: AuthenticatedRequest, res: Response) => {
   const sampleCsv = `Standard Code,Standard Title,Category,Disclosure Code,Disclosure Title,Item Code,Requirement,Priority,ESG Class,Weight,Answer Type,Hint
 GRI 2,General Disclosures 2021,Universal,2-1,Organizational details,2-1-a,Report legal name of the organization,high,governance,1.0,text,Provide registered commercial name
 GRI 2,General Disclosures 2021,Universal,2-1,Organizational details,2-1-b,Report the nature of ownership and legal form,mid,governance,1.0,text,e.g. Private LLC, Public Joint Stock
@@ -331,16 +399,18 @@ GRI 403,Occupational Health and Safety 2018,Social,403-1,OHS management system,4
 });
 
 // ----------------------------------------------------------------------
-// 5. Standards & Items Listing
+// 5. Standards & Items Listing — §3.2 (U2-C): P catalog / W-C L / E L+D
+// content metadata only; the optional-auth mount is GONE (authenticated P/W/
+// C/E callers only). The C1 catalog policies scope every joined row, so
+// disclosure_count/item_count are computed over AUTHORIZED rows only —
+// zero links returns an empty list, never global content or foreign counts.
 // ----------------------------------------------------------------------
-router.get('/standards', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/standards', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isDatabaseConfigured()) {
       return res.json([]);
     }
 
-    // Explicit tenant context (caller's, or empty for anonymous): under
-    // FORCE RLS the items join only sees rows the caller may see.
     const rows = await withTenantContext(readContext(req), async (client) => {
       // Fetch standards with count of disclosures and items
       const query = `
@@ -366,8 +436,15 @@ router.get('/standards', optionalAuthMiddleware, async (req: AuthenticatedReques
 
 // ----------------------------------------------------------------------
 // 6. Dashboard Stats (Evaluations, Review Coverage, Gap Analysis)
+// §3.2 (U2-C): W/C L+V ONLY — no P, no E, no anonymous (the matrix refuses
+// them before this handler runs); optional-auth mount removed. §6/D3:
+// show_gap is enforced SERVER-SIDE — for C every score/gap field returns
+// null when the tenant's linked services hide gaps (the RLS evaluations
+// policy hides the rows at the same time). Numerator AND denominator come
+// from RLS-scoped rows, so overlapping service mappings never duplicate an
+// item. show_corrective has no metric here: N/A for stats (§23 D3, recorded).
 // ----------------------------------------------------------------------
-router.get('/dashboard/stats', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/dashboard/stats', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isDatabaseConfigured()) {
       return res.json({
@@ -382,7 +459,7 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
       });
     }
 
-    const user = req.user;
+    const access = req.access!;
 
     const data = await withTenantContext(readContext(req), async (client) => {
       // Check if standards and items exist
@@ -422,13 +499,11 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
                     AND a2.status IN ('submitted', 'approved', 'client_approved')
                ) AS has_submitted
         FROM items i
-        LEFT JOIN evaluations e ON e.item_id = i.id
+        LEFT JOIN evaluations e ON e.item_id = i.id AND e.client_id = $1
       `;
-      const params: any[] = [];
-      if (user?.clientId) {
-        evalQuery += ` AND e.client_id = $1`;
-        params.push(user.clientId);
-      }
+      // §5: every W/C statement uses the server-resolved tenant (never a
+      // request value); RLS adds the L / show_gap gates on top.
+      const params: any[] = [access.tenantId];
 
       const evalRes = await client.query(evalQuery, params);
       const evalRecords = gateDraftEvaluations(
@@ -446,6 +521,34 @@ router.get('/dashboard/stats', optionalAuthMiddleware, async (req: Authenticated
       );
 
       const scoreResult = calculateAggregateScore(evalRecords);
+
+      // show_gap redaction (§6 / §23 D3): for C, once the linked services hide
+      // gaps, EVERY score/gap/coverage field returns null — never a fabricated
+      // 0 — while the workflow-truthful counts (hasData, standards/items/
+      // totalCount) stay. W is not gated (GE review retains access within A).
+      if (access.mode === 'client') {
+        const flag = await client.query(
+          'SELECT COALESCE(bool_or(show_gap), false) AS v FROM client_services WHERE client_id = $1',
+          [access.tenantId]);
+        if (flag.rows[0]?.v !== true) {
+          return {
+            hasData: true,
+            standardsCount,
+            itemsCount,
+            aggregateScore: null,
+            evaluatedCount: null,
+            applicableCount: null,
+            totalCount: scoreResult.totalCount,
+            notApplicableCount: null,
+            notEvaluatedCount: null,
+            coverageRatio: null,
+            coveragePercentage: null,
+            fullGapCount: null,
+            partialGapCount: null,
+            noGapCount: null,
+          };
+        }
+      }
 
       return {
         hasData: true,

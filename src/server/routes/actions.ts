@@ -1,7 +1,15 @@
-// B12 (R-01) — actions sub-router: corrective-action lifecycle (WF-04).
-// Mounted by src/server/routes.ts under the /api prefix. Moved verbatim;
-// B12 wiring: requireFreshPassword on POST + PATCH (F-03); S-23 fan-out on
-// verified/closed/reopened transitions (→ owner dept users + client_admins).
+// B12 (R-01) — actions sub-router: corrective-action lifecycle (WF-04),
+// retrofitted for B17 U2-B round 3.
+// Mounted by src/server/routes.ts under the /api prefix. B12 wiring:
+// requireFreshPassword + requireDomainAccess on POST/PATCH (F-03 + §3 matrix);
+// S-23 fan-out on verified/closed/reopened transitions (→ owner dept users +
+// client_admins) now commits through the server-side notify context.
+//
+// §3.5: GET = W/C linked + owned (C covers ALL own-company departments);
+// POST = W only (owner dept in A + linked item or explicit linked service);
+// PATCH = W keeps the existing GE transition set, C is owned start-work +
+// evidence ONLY, E/P denied. WF-04 transition legality and the required-reason
+// rule stay in src/lib/actions.ts; the policy layer encodes neither.
 
 import express, { type Response } from 'express';
 import {
@@ -11,9 +19,9 @@ import {
 import {
   authMiddleware,
   type AuthenticatedRequest,
-  type AuthUser,
 } from '../auth.ts';
-import { resolveImportTenant } from '../../lib/tenantAccess.ts';
+import { requireDomainAccess } from '../access.ts';
+import { assertActionBinding, scopeId, scopeError } from '../scope.ts';
 import {
   ACTION_STATUSES,
   actionTransitionRequiresReason,
@@ -22,7 +30,7 @@ import {
   type ActionStatus,
 } from '../../lib/actions.ts';
 import {
-  contextFromUser,
+  readContext,
   requireFreshPassword,
   notifyUsers,
   activeDepartmentUserIds,
@@ -41,16 +49,15 @@ const router = express.Router();
 // closed → reopened (reason required); reopened → in_progress
 // Anything else is refused (409). B16-B2: opening actions and
 // verify/close/reopen are GE-only; departments start work (in_progress)
-// and save evidence notes on their own actions. Employees of other
-// departments stay refused.
+// and save evidence notes on their own actions.
 // Evidence is a TEXT reference (DV-01: no binary upload). Closing an action
 // only UPDATEs actions — evaluations are never touched.
 // ----------------------------------------------------------------------
 
 // B1. List actions in scope, optional status/department filters.
-router.get('/actions', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/actions', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
+    const access = req.access!;
     const namedStatus = typeof req.query.status === 'string' && req.query.status.trim()
       ? req.query.status.trim()
       : null;
@@ -64,34 +71,29 @@ router.get('/actions', authMiddleware, async (req: AuthenticatedRequest, res: Re
     if (namedStatus && !isActionStatus(namedStatus)) {
       return res.status(400).json({ error: 'Unknown action status filter.' });
     }
-    if (user.role === 'employee') {
-      if (!user.departmentId) {
-        return res.status(400).json({ error: 'Your user account has no department assignment.' });
-      }
-      if (namedDept && namedDept !== user.departmentId) {
-        return res.status(403).json({ error: 'Employees may only access actions assigned to their own department.' });
+    // Supplied ids are comparisons/filters only, never the scope source:
+    // a foreign clientId or a department outside own company is a 403.
+    if (namedClient) {
+      scopeId(namedClient, true);
+      if (namedClient !== access.tenantId) {
+        return res.status(403).json({ error: 'Cross-tenant action access is forbidden.' });
       }
     }
-    if ((user.role === 'client_admin' || user.role === 'employee') && namedClient && namedClient !== user.clientId) {
-      return res.status(403).json({ error: 'Cross-tenant action access is forbidden.' });
-    }
-    const deptFilter = user.role === 'employee' ? user.departmentId! : namedDept;
-    const clientFilter = user.role === 'ge_admin' ? namedClient : null;
+    if (namedDept) scopeId(namedDept, true);
 
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
-      const params: any[] = [];
-      let where = '';
+    const rows = await withTenantContext(readContext(req), async (client) => {
+      if (namedDept && !(await client.query('SELECT 1 FROM departments WHERE id = $1', [namedDept])).rowCount) {
+        throw scopeError(403, 'scope.department_mismatch');
+      }
+      const params: any[] = [access.tenantId];
+      let where = ' AND a.client_id = $1';
       if (namedStatus) {
         params.push(namedStatus);
         where += ` AND a.status = $${params.length}`;
       }
-      if (deptFilter) {
-        params.push(deptFilter);
+      if (namedDept) {
+        params.push(namedDept);
         where += ` AND a.owner_department_id = $${params.length}`;
-      }
-      if (clientFilter) {
-        params.push(clientFilter);
-        where += ` AND a.client_id = $${params.length}`;
       }
       const result = await client.query(
         `SELECT a.id, a.client_id, a.item_id, a.owner_department_id,
@@ -116,12 +118,14 @@ router.get('/actions', authMiddleware, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-// B1. Create an action (status starts at open). B16-B2: GE-only —
-// departments progress their assigned actions (start work, evidence).
-router.post('/actions', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// B1. Create an action (status starts at open). §3.5: W only — the owner
+// department must belong to A, with a linked item or an explicit linked
+// service for a standalone action (assertActionBinding in scope.ts).
+router.post('/actions', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    if (user.role !== 'ge_admin') {
+    const access = req.access!;
+    // Defence in depth: the matrix already refuses every non-W context.
+    if (access.mode !== 'consultant') {
       return res.status(403).json({ error: B16_ACTION_OPEN_REFUSAL });
     }
     const body = req.body ?? {};
@@ -129,6 +133,7 @@ router.post('/actions', authMiddleware, requireFreshPassword, async (req: Authen
     const description = typeof body.description === 'string' ? body.description.trim() : '';
     const departmentId = typeof body.departmentId === 'string' ? body.departmentId.trim() : '';
     const itemId = typeof body.itemId === 'string' && body.itemId.trim() ? body.itemId.trim() : null;
+    const serviceId = typeof body.serviceId === 'string' && body.serviceId.trim() ? body.serviceId.trim() : null;
     const dueDate = typeof body.dueDate === 'string' && body.dueDate.trim() ? body.dueDate.trim() : null;
 
     if (!title) {
@@ -140,49 +145,30 @@ router.post('/actions', authMiddleware, requireFreshPassword, async (req: Authen
     if (dueDate && Number.isNaN(Date.parse(dueDate))) {
       return res.status(400).json({ error: 'dueDate must be a valid date.' });
     }
-
-    // Effective tenant: same explicit-tenant pattern as /gri/commit.
-    const tenantResolution = resolveImportTenant(
-      { id: user.id, role: user.role, clientId: user.clientId ?? null },
-      body.clientId
-    );
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error });
+    // Effective tenant is the server-derived A; a supplied clientId may only
+    // agree with it (explicit mismatch -> 403), never widen the scope.
+    if (body.clientId !== undefined && body.clientId !== null && body.clientId !== '') {
+      if (body.clientId !== access.tenantId) {
+        return res.status(403).json({ error: 'Cross-tenant action access is forbidden.' });
+      }
     }
-    const effectiveClientId = tenantResolution.effectiveClientId;
 
-    const created = await withTenantContext(contextFromUser(user), async (client) => {
-      const deptRes = await client.query(
-        'SELECT id, client_id FROM departments WHERE id = $1',
-        [departmentId]
-      );
-      if (!deptRes.rows[0]) {
-        throw Object.assign(new Error('Department not found for the given departmentId.'), { statusCode: 404 });
-      }
-      if (deptRes.rows[0].client_id !== effectiveClientId) {
-        throw Object.assign(new Error('Department does not belong to the target tenant.'), { statusCode: 400 });
-      }
-      if (itemId) {
-        const itemRes = await client.query('SELECT id FROM items WHERE id = $1', [itemId]);
-        if (!itemRes.rows[0]) {
-          throw Object.assign(new Error('Item not found for the given itemId.'), { statusCode: 404 });
-        }
-      }
-
+    const created = await withTenantContext(readContext(req), async (client) => {
+      await assertActionBinding(client, access, { itemId, serviceId, departmentId });
       const insRes = await client.query(
-        `INSERT INTO actions (client_id, item_id, owner_department_id, title, description, due_date, status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'open')
+        `INSERT INTO actions (client_id, item_id, service_id, owner_department_id, title, description, due_date, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'open')
          RETURNING *`,
-        [effectiveClientId, itemId, departmentId, title, description || null, dueDate]
+        [access.tenantId, itemId, serviceId, departmentId, title, description || null, dueDate]
       );
 
       await recordAuditLog(client, {
-        clientId: effectiveClientId,
-        userId: user.id,
+        clientId: access.tenantId,
+        userId: access.actorId,
         action: 'ACTION_CREATED',
         entityType: 'actions',
         entityId: insRes.rows[0].id,
-        payload: { itemId, departmentId, title, explicitTenant: tenantResolution.explicit },
+        payload: { itemId, serviceId, departmentId, title },
       });
 
       return insRes.rows[0];
@@ -197,10 +183,17 @@ router.post('/actions', authMiddleware, requireFreshPassword, async (req: Authen
 
 // B1. Patch an action: WF-04 transition and/or evidence note.
 // Closing NEVER touches evaluations — this handler UPDATEs actions only.
-router.patch('/actions/:id', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// §19(4)/QA-R2: COLUMN SCOPE is handler-enforced — this handler writes ONLY
+// status, evidence_note and updated_at, whatever else the body carries; and
+// MODE SCOPE: W keeps the full existing GE transition set, C is start-work
+// (→ in_progress) + evidence only. E/P never reach here (matrix + mode check).
+router.patch('/actions/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
+    const access = req.access!;
     const actionId = req.params.id;
+    if (access.mode !== 'consultant' && access.mode !== 'client') {
+      return res.status(403).json({ error: B16_ACTION_CLOSE_REFUSAL });
+    }
     const body = req.body ?? {};
     const hasStatus = body.status !== undefined && body.status !== null;
     const hasEvidence = typeof body.evidenceNote === 'string';
@@ -219,20 +212,12 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, async (req: A
       nextStatus = body.status;
     }
 
-    const updated = await withTenantContext(contextFromUser(user), async (client) => {
+    const updated = await withTenantContext(readContext(req), async (client) => {
       const found = await client.query('SELECT * FROM actions WHERE id = $1', [actionId]);
       const action = found.rows[0];
       // Outside the caller's RLS scope the row is simply not visible.
       if (!action) {
         throw Object.assign(new Error('Action not found.'), { statusCode: 404 });
-      }
-
-      if (user.role === 'employee') {
-        if (!user.departmentId || action.owner_department_id !== user.departmentId) {
-          throw Object.assign(new Error('Employees may only update actions assigned to their own department.'), {
-            statusCode: 403,
-          });
-        }
       }
 
       if (nextStatus) {
@@ -245,20 +230,15 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, async (req: A
         if (actionTransitionRequiresReason(nextStatus) && !reason) {
           throw Object.assign(new Error('A reason is required to reopen an action.'), { statusCode: 400 });
         }
-        // B16-B2: verify / close / reopen are GE-only (client + employees
-        // refused with the path-pointing message). Starting work
-        // (open→in_progress, reopened→in_progress) and evidence notes stay
-        // with the owning department.
-        if (
-          (nextStatus === 'awaiting_verification' || nextStatus === 'closed' || nextStatus === 'reopened') &&
-          user.role !== 'ge_admin'
-        ) {
-          throw Object.assign(new Error(B16_ACTION_CLOSE_REFUSAL), {
-            statusCode: 403,
-          });
+        // C capability gate (§3.5): client_admin gets start-work only — the
+        // legal GE transitions into awaiting_verification/closed/reopened are
+        // refused with the existing B16 path-pointing message.
+        if (access.mode === 'client' && nextStatus !== 'in_progress') {
+          throw Object.assign(new Error(B16_ACTION_CLOSE_REFUSAL), { statusCode: 403 });
         }
       }
 
+      // Column scope: ONLY these columns are ever written (QA-R2 / §19(4)).
       const sets: string[] = ['updated_at = NOW()'];
       const params: any[] = [];
       if (nextStatus) {
@@ -278,7 +258,7 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, async (req: A
       if (nextStatus) {
         await recordAuditLog(client, {
           clientId: action.client_id,
-          userId: user.id,
+          userId: access.actorId,
           action: 'ACTION_STATUS_CHANGED',
           entityType: 'actions',
           entityId: action.id,
@@ -306,7 +286,7 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, async (req: A
       if (hasEvidence) {
         await recordAuditLog(client, {
           clientId: action.client_id,
-          userId: user.id,
+          userId: access.actorId,
           action: 'ACTION_EVIDENCE_UPDATED',
           entityType: 'actions',
           entityId: action.id,

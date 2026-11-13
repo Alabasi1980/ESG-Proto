@@ -3,7 +3,7 @@
 // WHY this module: routes.ts (~5550 lines) is split into domain sub-routers
 // under src/server/routes/. Everything those routers share lives here so the
 // split stays a pure move + wiring (no behavior change):
-// - tenant RLS context builders (contextFromUser, readContext, ELEVATED_CONTEXT)
+// - legacy RLS context builders (deny unless replaced with trusted access in U2)
 // - B11b scope/gate helpers (b11bRequireGeAdmin, b11bOwnTenantScope,
 //   b11bAssertTenantActive, b11bAssertPasswordFresh)
 // - F-03 FULL fresh-gate retrofit: assertPasswordFresh (single DB choke point)
@@ -41,31 +41,44 @@ export type DbClient = {
 // FORCE ROW LEVEL SECURITY is enabled).
 // ----------------------------------------------------------------------
 
-/**
- * Elevated service context (ge_admin). Used ONLY for bootstrap/health
- * internals that must see true counts under FORCE RLS:
- * users-count checks, the pre-authentication login lookup, and
- * unauthenticated health counters. It is never used to return tenant rows.
- */
-export const ELEVATED_CONTEXT: TenantContext = {
-  tenantId: null,
-  role: 'ge_admin',
-  departmentId: null,
-  userId: null,
-};
-
 export function contextFromUser(user?: AuthUser | null): TenantContext {
   return {
     tenantId: user?.clientId ?? null,
     role: user?.role ?? '',
     departmentId: user?.departmentId ?? null,
     userId: user?.id ?? null,
+    // A bare user is not a workspace capability. Legacy callers remain closed until U2.
+    purpose: null,
+    mode: null,
   };
 }
 
-/** Context for optional-auth reads: caller's context, or an empty one (global rows only). */
+/** No optional-auth/global fallback: only a trusted resolved request can supply context.
+ * PURPOSE BINDING (task §19(2), U2-B round 3 — this is the readContext purpose fix):
+ * the domain transaction runs under the same server-selected purpose the scoped
+ * bind uses ('work', cf. withWorkspace's 'workspace' / bindB17WorkScope's 'work'),
+ * NEVER the route capability string. b17_work_tenant(), b17_platform_scope() and
+ * every §3 policy in b17-content.sql key on that purpose, so a capability-named
+ * purpose would silently read 0 rows (fail-closed but wrong). */
 export function readContext(req: AuthenticatedRequest): TenantContext {
-  return req.user ? contextFromUser(req.user) : { tenantId: null, role: '', departmentId: null, userId: null };
+  if (!req.access) return { purpose: null, mode: null };
+  return { tenantId: req.access.tenantId, role: req.access.role, departmentId: req.access.departmentId,
+    userId: req.access.actorId, sessionId: req.access.sessionId, tabId: req.access.tabId,
+    mode: req.access.mode, purpose: 'work' };
+}
+
+/** C2 PURPOSE BINDING #1 (task §24, ratifies §23 D2/D3 readings): the ONE
+ * platform configuration context. Purpose is the constant 'platform.config';
+ * targetId is SERVER-SELECTED — omitted/null for global catalog configuration
+ * (taxonomy writes + D1 delete counts), or the caller's own validated explicit
+ * T for GRI-commit provisioning (resolved by resolveImportTenant + existence
+ * check inside the handler, never a raw request value). Requires the caller to
+ * already hold a P (platform-mode GE) access context from requireDomainAccess. */
+export function platformConfigContext(req: AuthenticatedRequest, targetId: string | null = null): TenantContext {
+  if (!req.access || req.access.mode !== 'platform' || req.access.role !== 'ge_admin') {
+    throw Object.assign(new Error('scope.denied'), { statusCode: 403, code: 'scope.denied' });
+  }
+  return { ...readContext(req), purpose: 'platform.config', tenantId: targetId, targetId };
 }
 
 // ----------------------------------------------------------------------
@@ -131,8 +144,10 @@ export function b11bOwnTenantScope(
  * - POST /api/auth/change-password — THE remediation path itself.
  * - POST /api/setup/admin — once-only bootstrap, no session exists yet.
  * - POST /api/db/migrate — infra DDL, no user session.
- * - POST /api/gri/preview — unauthenticated parse-only preview (the commit
- *   path IS gated). No user exists to check, so gating is impossible.
+ * - POST /api/gri/preview — AUTHENTICATED parse-only preview (U2-C: the
+ *   route mounts auth + requireDomainAccess before the upload parser, which
+ *   also enforces fresh identity/suspension; no DB write, so no
+ *   requireFreshPassword middleware). The commit path IS gated.
  * Reads (GET) are never gated. Everything else mutating carries the gate.
  */
 export const FRESH_GATE_ALLOWLIST: readonly string[] = [
@@ -147,6 +162,7 @@ export const FRESH_GATE_ALLOWLIST: readonly string[] = [
 /** Single DB choke point for the forced-change gate (S-12/F-03). */
 export async function assertPasswordFresh(db: DbClient, userId: string): Promise<void> {
   const r = await db.query('SELECT must_change_password FROM users WHERE id = $1', [userId]);
+  if (!r.rows[0]) throw Object.assign(new Error('auth.invalid'), { statusCode: 401, code: 'auth.invalid' });
   if (r.rows[0]?.must_change_password === true) {
     throw Object.assign(new Error(passwordChangeRequiredBody().error), {
       statusCode: 403,

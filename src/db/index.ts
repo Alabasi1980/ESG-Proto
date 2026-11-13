@@ -9,6 +9,26 @@ export interface TenantContext {
   role?: 'ge_admin' | 'client_admin' | 'employee' | string;
   departmentId?: string | null;
   userId?: string | null;
+  mode?: string | null;
+  purpose?: string | null;
+  sessionId?: string | null;
+  tabId?: string | null;
+  loginEmail?: string | null;
+  targetId?: string | null;
+}
+
+export async function setTenantContext(client: pg.PoolClient, context: TenantContext): Promise<void> {
+  // Every field is cleared, including when a pooled connection last served another tenant.
+  const settings: Record<string, string | null | undefined> = {
+    current_tenant_id: context.tenantId, current_user_role: context.role,
+    current_user_department_id: context.departmentId, current_actor_id: context.userId,
+    current_mode: context.mode, current_purpose: context.purpose,
+    current_session_id: context.sessionId, current_tab_id: context.tabId,
+    login_email: context.loginEmail, target_id: context.targetId,
+  };
+  for (const [key, value] of Object.entries(settings)) {
+    await client.query('SELECT set_config($1, $2, true)', [`app.${key}`, value ?? '']);
+  }
 }
 
 // Cached pool instance
@@ -72,24 +92,7 @@ export async function withTenantContext<T>(
   try {
     await client.query('BEGIN');
 
-    // Set RLS session settings for the current transaction
-    if (context.tenantId) {
-      await client.query("SELECT set_config('app.current_tenant_id', $1, true)", [context.tenantId]);
-    } else {
-      await client.query("SELECT set_config('app.current_tenant_id', '', true)");
-    }
-
-    if (context.role) {
-      await client.query("SELECT set_config('app.current_user_role', $1, true)", [context.role]);
-    } else {
-      await client.query("SELECT set_config('app.current_user_role', '', true)");
-    }
-
-    if (context.departmentId) {
-      await client.query("SELECT set_config('app.current_user_department_id', $1, true)", [context.departmentId]);
-    } else {
-      await client.query("SELECT set_config('app.current_user_department_id', '', true)");
-    }
+    await setTenantContext(client, context);
 
     const result = await operation(client);
     await client.query('COMMIT');
@@ -131,7 +134,7 @@ export async function recordAuditLog(
 }
 
 /**
- * Runs the initial SQL schema and RLS policies on the database.
+ * Explicit offline empty-install initializer only. Never called by startup or HTTP.
  */
 export async function runMigrations(): Promise<{ success: boolean; message: string }> {
   if (!isDatabaseConfigured()) {
@@ -145,55 +148,15 @@ export async function runMigrations(): Promise<{ success: boolean; message: stri
     const schemaPath = path.resolve(process.cwd(), 'src/db/schema.sql');
     const sql = fs.readFileSync(schemaPath, 'utf-8');
 
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(1717001)');
     await client.query(sql);
+    await client.query('COMMIT');
     return { success: true, message: 'Schema and RLS policies applied successfully.' };
   } catch (err: any) {
-    console.error('Migration execution failed:', err);
-    return { success: false, message: err.message || 'Unknown migration error' };
+    await client.query('ROLLBACK');
+    return { success: false, message: 'Empty-install initialization refused or failed.' };
   } finally {
     client.release();
-  }
-}
-
-/**
- * Health and diagnostics check for database connection
- */
-export async function checkDatabaseHealth(): Promise<{
-  connected: boolean;
-  tableCount: number;
-  tables: string[];
-  error?: string;
-}> {
-  if (!isDatabaseConfigured()) {
-    return {
-      connected: false,
-      tableCount: 0,
-      tables: [],
-      error: 'DATABASE_URL environment variable is missing.',
-    };
-  }
-
-  try {
-    const p = getPool();
-    const result = await p.query(
-      `SELECT table_name
-       FROM information_schema.tables
-       WHERE table_schema = 'public'
-       ORDER BY table_name;`
-    );
-
-    const tables = result.rows.map((r) => r.table_name);
-    return {
-      connected: true,
-      tableCount: tables.length,
-      tables,
-    };
-  } catch (err: any) {
-    return {
-      connected: false,
-      tableCount: 0,
-      tables: [],
-      error: err.message || 'Failed to connect to database',
-    };
   }
 }

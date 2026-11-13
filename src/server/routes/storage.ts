@@ -1,9 +1,15 @@
-// B12 (R-01) — storage sub-router: evidence attachments + storage usage.
-// Mounted by src/server/routes.ts under the /api prefix. Moved verbatim;
-// B12 wiring: both mutating routes carry the fresh gate (F-03) — DELETE via
-// requireFreshPassword middleware, POST /answers/:id/attachments via the
-// shared assert inside the multer callback (the multipart stream must parse
-// before the handler body runs).
+// B12 (R-01) — storage sub-router: evidence attachments + storage usage,
+// retrofitted for B17 U2-B round 3.
+// Mounted by src/server/routes.ts under the /api prefix. B12 wiring: both
+// mutating routes carry the fresh gate (F-03) plus requireDomainAccess; the
+// multipart stream must parse before the handler body runs, so the wrapper is
+// mounted as route middleware (it reads headers/session only, never the body).
+//
+// §3.6: upload = E own-assigned parent only; metadata/download = W/C R+L and
+// E R+L+D with attachId bound to that answer; delete = E own uploader OR W
+// scoped GE authority — C/P DENIED (the old isAdmin branch that admitted
+// client_admin is gone); usage = P explicit T / W-C linked-visible / E own
+// assigned. 5 MB + mime checks and the freeze trigger are retained unchanged.
 
 import express, { type Response } from 'express';
 import multer from 'multer';
@@ -14,16 +20,18 @@ import {
 import {
   authMiddleware,
   type AuthenticatedRequest,
-  type AuthUser,
 } from '../auth.ts';
+import { requireDomainAccess } from '../access.ts';
+import { scopeId } from '../scope.ts';
 import {
   validateAttachment,
   MAX_ATTACHMENT_BYTES,
   STORAGE_WARN_BYTES,
   formatBytes,
 } from '../../lib/approvalChain.ts';
+import type { AccessContext } from '../../lib/capabilities.ts';
 import {
-  contextFromUser,
+  readContext,
   requireFreshPassword,
   isFrozenScope,
   frozenWriteError,
@@ -46,25 +54,25 @@ const attachmentUpload = multer({
 // ----------------------------------------------------------------------
 
 /** Loads an answer the caller may see (RLS applies); employees: own dept only. */
-async function loadVisibleAnswer(client: DbClient, user: AuthUser, answerId: string): Promise<any> {
+async function loadVisibleAnswer(client: DbClient, access: AccessContext, answerId: string): Promise<any> {
   const ansRes = await client.query('SELECT * FROM answers WHERE id = $1', [answerId]);
   const answer = ansRes.rows[0];
   if (!answer) {
     throw Object.assign(new Error('Answer not found.'), { statusCode: 404 });
   }
-  if (user.role === 'employee') {
-    if (!user.departmentId || answer.department_id !== user.departmentId) {
-      throw Object.assign(new Error('Employees may only manage attachments for their own department.'), {
-        statusCode: 403,
-      });
-    }
+  // Defence in depth: RLS already hides foreign-department answers from E, so
+  // this branch only ever sees own-department rows; it mirrors §3 R+L+D.
+  if (access.mode === 'employee' && answer.department_id !== access.departmentId) {
+    throw Object.assign(new Error('Employees may only manage attachments for their own department.'), {
+      statusCode: 403,
+    });
   }
   return answer;
 }
 
 // B9-D2. Upload (multipart). Multer enforces the 5 MB stream cap first; the
 // route re-checks size + allowlist via validateAttachment (never trust client).
-router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, (req: AuthenticatedRequest, res: Response) => {
+router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, requireDomainAccess, (req: AuthenticatedRequest, res: Response) => {
   attachmentUpload.single('file')(req, res, async (multerErr: any) => {
     try {
       if (multerErr) {
@@ -76,7 +84,7 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, (r
         }
         return res.status(400).json({ error: multerErr.message || 'Upload failed.', code: 'attachments.upload' });
       }
-      const user = req.user!;
+      const access = req.access!;
       const file = (req as any).file;
       if (!file) {
         return res.status(400).json({ error: 'A file field named "file" is required.', code: 'attachments.missing' });
@@ -92,21 +100,28 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, (r
         });
       }
 
-      const created = await withTenantContext(contextFromUser(user), async (client) => {
-        const answer = await loadVisibleAnswer(client, user, req.params.id);
+      const created = await withTenantContext(readContext(req), async (client) => {
+        const answer = await loadVisibleAnswer(client, access, req.params.id);
         if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
           throw frozenWriteError();
+        }
+        // RLS INSERT policy is E-only + uploaded_by=actor + own-assigned parent;
+        // this handler mirrors that scope (W/P filing and C editing refused).
+        if (access.mode !== 'employee') {
+          throw Object.assign(new Error('Only employees may file evidence on their own assigned answers.'), {
+            statusCode: 403,
+          });
         }
         const insRes = await client.query(
           `INSERT INTO evidence_attachments (answer_id, file_name, mime, size_bytes, data, uploaded_by)
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id, answer_id, file_name, mime, size_bytes, uploaded_by, created_at`,
-          [answer.id, String(file.originalname).slice(0, 255), file.mimetype, file.size, file.buffer, user.id]
+          [answer.id, String(file.originalname).slice(0, 255), file.mimetype, file.size, file.buffer, access.actorId]
         );
 
         await recordAuditLog(client, {
           clientId: answer.client_id,
-          userId: user.id,
+          userId: access.actorId,
           action: 'ATTACHMENT_UPLOADED',
           entityType: 'evidence_attachments',
           entityId: insRes.rows[0].id,
@@ -126,11 +141,11 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, (r
 });
 
 // B9-D2. List metadata (never bulk bytes).
-router.get('/answers/:id/attachments', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/answers/:id/attachments', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
-      await loadVisibleAnswer(client, user, req.params.id);
+    const access = req.access!;
+    const rows = await withTenantContext(readContext(req), async (client) => {
+      await loadVisibleAnswer(client, access, req.params.id);
       const result = await client.query(
         `SELECT ea.id, ea.answer_id, ea.file_name, ea.mime, ea.size_bytes,
                 ea.uploaded_by, u.name AS uploaded_by_name, ea.created_at
@@ -150,12 +165,12 @@ router.get('/answers/:id/attachments', authMiddleware, async (req: Authenticated
   }
 });
 
-// B9-D2. Single-file download stream.
-router.get('/answers/:id/attachments/:attachId/download', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// B9-D2. Single-file download stream (attachId must belong to that answer).
+router.get('/answers/:id/attachments/:attachId/download', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const file = await withTenantContext(contextFromUser(user), async (client) => {
-      const answer = await loadVisibleAnswer(client, user, req.params.id);
+    const access = req.access!;
+    const file = await withTenantContext(readContext(req), async (client) => {
+      const answer = await loadVisibleAnswer(client, access, req.params.id);
       const fileRes = await client.query('SELECT * FROM evidence_attachments WHERE id = $1 AND answer_id = $2', [
         req.params.attachId,
         answer.id,
@@ -176,12 +191,12 @@ router.get('/answers/:id/attachments/:attachId/download', authMiddleware, async 
   }
 });
 
-// B9-D2. Delete (uploader or admin; audited).
-router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// B9-D2. Delete (§3.6: E own uploader OR W scoped GE authority; C/P denied).
+router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    await withTenantContext(contextFromUser(user), async (client) => {
-      const answer = await loadVisibleAnswer(client, user, req.params.id);
+    const access = req.access!;
+    await withTenantContext(readContext(req), async (client) => {
+      const answer = await loadVisibleAnswer(client, access, req.params.id);
       if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
         throw frozenWriteError();
       }
@@ -193,8 +208,17 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
       if (!file) {
         throw Object.assign(new Error('Attachment not found.'), { statusCode: 404 });
       }
-      const isAdmin = user.role === 'client_admin' || user.role === 'ge_admin';
-      if (!isAdmin && file.uploaded_by !== user.id) {
+      // Handler-side mirror of §3 DELETE: the old `isAdmin` branch admitted
+      // client_admin — that contradiction is removed. Employee = own upload
+      // only; consultant (W scoped GE) keeps its admin delete authority; any
+      // other mode is refused here even though the matrix already refuses it.
+      if (access.mode === 'employee') {
+        if (String(file.uploaded_by) !== access.actorId) {
+          throw Object.assign(new Error('Only the uploader or an administrator may delete this attachment.'), {
+            statusCode: 403,
+          });
+        }
+      } else if (access.mode !== 'consultant') {
         throw Object.assign(new Error('Only the uploader or an administrator may delete this attachment.'), {
           statusCode: 403,
         });
@@ -203,7 +227,7 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
 
       await recordAuditLog(client, {
         clientId: answer.client_id,
-        userId: user.id,
+        userId: access.actorId,
         action: 'ATTACHMENT_DELETED',
         entityType: 'evidence_attachments',
         entityId: file.id,
@@ -220,19 +244,29 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
 });
 
 // B9-D3. Storage monitor readout (bytes + files + cap note), shown in Settings.
-router.get('/storage/usage', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// §3.6 usage: P needs an explicit validated target T (400 without one); W/C/E
+// are pinned to their own server-derived tenant and a supplied foreign clientId
+// is an explicit mismatch (403). KNOWN GAP (task §20 D3): under platform mode
+// no RLS path admits answers/attachment rows, so a P@T aggregate returns zeros
+// rather than true counts — deferred to a later platform-summary round.
+router.get('/storage/usage', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
+    const access = req.access!;
     const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
-    if (user.role !== 'ge_admin' && namedClient && namedClient !== user.clientId) {
-      return res.status(403).json({ error: 'Cross-tenant storage access is forbidden.' });
-    }
-    const tenantId = user.role === 'ge_admin' ? namedClient ?? user.clientId ?? null : user.clientId ?? null;
-    if (!tenantId) {
+    let tenantId: string;
+    if (namedClient) {
+      const id = scopeId(namedClient, true)!; // malformed -> 400 scope.id_invalid
+      if (access.mode !== 'platform' && id !== access.tenantId) {
+        return res.status(403).json({ error: 'Cross-tenant storage access is forbidden.', code: 'scope.tenant_mismatch' });
+      }
+      tenantId = id;
+    } else if (access.mode === 'platform') {
       return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
+    } else {
+      tenantId = access.tenantId!;
     }
 
-    const usage = await withTenantContext(contextFromUser(user), async (client) => {
+    const usage = await withTenantContext(readContext(req), async (client) => {
       const result = await client.query(
         `SELECT COUNT(*)::int AS files, COALESCE(SUM(ea.size_bytes), 0)::int AS bytes
           FROM evidence_attachments ea

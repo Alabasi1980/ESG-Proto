@@ -73,6 +73,13 @@ test('B12 S-24: audit-reader matrix (GE + named delegate only)', () => {
     if (prev === undefined) delete process.env.GE_AUDIT_DELEGATES;
     else process.env.GE_AUDIT_DELEGATES = prev;
   }
+  // U2-B round-3 retirement (U2_LEGACY_HELPER_RETIREMENT §2): audit admission
+  // is now the §3 matrix inside requireDomainAccess, so the delegate env must
+  // no longer grant audit read anywhere in the handler.
+  const auditSource = fs.readFileSync(path.join(ROUTES_DIR, 'audit.ts'), 'utf8');
+  assert.ok(!auditSource.includes('isAuditReader'), 'audit.ts must not consult the delegate grant');
+  assert.ok(!auditSource.includes('auditDelegateEmails'), 'audit.ts must not read the delegate env');
+  assert.ok(auditSource.includes('requireDomainAccess'), 'audit read must mount the §3 wrapper');
 });
 
 test('B12 S-23: inbox cap is 50 and the ten fan-out types exist', () => {

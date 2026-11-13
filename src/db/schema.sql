@@ -1,3 +1,19 @@
+-- OFFLINE EMPTY-INSTALL ONLY. This guard precedes all DDL/policy/data changes.
+-- The transaction lock also protects direct whole-file execution, not just the TS initializer.
+SELECT pg_advisory_xact_lock(1717001);
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY(ARRAY[
+      'clients','departments','users','services','standards','disclosures','items',
+      'client_services','assignments','answers','approvals','evaluations','actions',
+      'profile_assessments','report_settings','audit_log','initiatives_library',
+      'client_initiatives','esg_profile','review_snapshots','snapshot_notes',
+      'evidence_attachments','service_standards','item_links','staff_lists',
+      'staff_list_rows','notifications','app_schema_versions','auth_sessions','workspace_tabs'
+    ])
+  ) THEN RAISE EXCEPTION 'schema.empty_install_only'; END IF;
+END $$;
+
 -- GreenEdge ESG & GRI Platform Database Schema & RLS Policies
 -- Compatible with PostgreSQL 13+
 
@@ -1180,20 +1196,10 @@ CREATE POLICY staff_list_rows_isolation_policy ON staff_list_rows
 ALTER TABLE staff_lists FORCE ROW LEVEL SECURITY;
 ALTER TABLE staff_list_rows FORCE ROW LEVEL SECURITY;
 
--- B11b-B. Pre-approved GRI seed (idempotent, by code): the ONLY seeded
--- service. Linked to every existing tenant with visible flags.
--- Runs on every migration re-apply; INSERT ... ON CONFLICT DO NOTHING keeps
--- it a no-op after the first run (proof-friendly, demo-safe).
+-- Catalog definition only. A subscription always requires an explicit later operation.
 INSERT INTO services (code, name, description)
 VALUES ('GRI', 'GRI Reporting', 'GRI sustainability disclosure service')
 ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO client_services (client_id, service_id, show_gap, show_corrective)
-SELECT c.id, s.id, true, true
-FROM clients c
-CROSS JOIN services s
-WHERE s.code = 'GRI'
-ON CONFLICT (client_id, service_id) DO NOTHING;
 
 --------------------------------------------------------------------------------
 -- FIX BATCH 12 (demo) — in-app notifications (S-23). S-24 (audit read UI) and
