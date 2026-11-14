@@ -10,7 +10,8 @@
     "test": "tsx --test src/**/*.test.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "showcase": "tsx scripts/b17-showcase.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
