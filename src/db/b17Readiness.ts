@@ -17,7 +17,17 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // history branch (SHIELD-U2E-E2), the §10 ruling-1 tenant preflight kind and
 // the ruling-3 approvals provenance pin (SHIELD-U2E-E3); definer set/owner
 // ACLs still unchanged (no new SECURITY DEFINER).
-export const B17_CONTENT_SHAPE = '8c8f60bf7af9cbc5bd6f483b5b0dc715';
+// U2-F round 1: recomputed after SHIELD-U2F-01 — the 22-row §3.4 admin
+// substrate (NULL-target platform-progress summary reads, target-bound
+// clients/client_services/assignments writes, staff draft/submit/reject rows,
+// W-only N/A inserts, the P@T notify/trim + audit branches, the users target
+// branch and the two tenant.item.* blocker kinds).
+// U2-F round 2 (final): recomputed after the SHIELD-U2F-01 PROVISIONING
+// extension — b17_admin_users_insert (explicit T only),
+// b17_admin_users_update (target-bound
+// deactivation) and the USER_CREATED/USER_DEACTIVATED/USER_REACTIVATED/
+// STAFF_LIST_APPROVED audit rows. Still no new definer; owner ACLs untouched.
+export const B17_CONTENT_SHAPE = '5d5ddb9344225a53059da3f7d92bdd94';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

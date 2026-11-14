@@ -47,25 +47,31 @@ test('U2-B0 notifications scope is P platform / W own-A / C own-company / E deni
   assert.ok(update.includes('b17_platform_scope()') && update.includes('b17_work_tenant(client_id)'));
 });
 
-test('U2-B round 3: notify fan-out/trim is work-context + tenant/recipient bound; users SELECT is narrowly scoped', () => {
+test('U2-B round 3 + U2-F round 1: notify fan-out/trim is work- OR P@T-context + tenant/recipient bound; users SELECT is narrowly scoped', () => {
   // §19(1) / §20 D1+D2: the server-side notify context and the cap-trim.
   const insert = section('CREATE POLICY b17_notifications_insert', 'CREATE POLICY b17_notifications_delete');
   assert.ok(insert.includes('WITH CHECK'), 'INSERT must carry WITH CHECK');
   assert.ok(insert.includes('b17_work_tenant(client_id)'), 'insert requires the caller own work tenant');
   assert.ok(insert.includes('EXISTS(SELECT 1 FROM users u WHERE u.id=user_id AND u.client_id=client_id)'),
     'recipient must be a member of that tenant: cross-tenant/cross-user recipients refused');
-  assert.ok(!insert.includes('b17_platform_scope'), 'platform fan-out stays deferred (no caller until U2-F)');
+  // U2-F round 1 (SHIELD-U2F-01): the U2-B0 "no caller until U2-F" promise is
+  // now kept — a P@T configuration transaction fans out inside EXPLICIT TARGET T
+  // only, with the same membership check; no b17_platform_scope branch crept in.
+  assert.ok(!insert.includes('b17_platform_scope'), 'the P@T fan-out is target-bound, never the platform summary context');
+  assert.ok(insert.includes('b17_platform_config()') && insert.includes('target_id'),
+    'P@T fan-out branch exists for assignment-create/staff-reject');
   const del = section('CREATE POLICY b17_notifications_delete', '-- D1 (task');
   assert.ok(del.includes('b17_work_tenant(client_id)'), 'trim is scoped to the caller own work tenant');
   assert.ok(del.includes('u.id=user_id AND u.client_id=client_id'),
     'cap-trim deletes own inbox rows only: never platform rows, never another tenant rows');
-  assert.ok(!del.includes('b17_platform_scope'), 'no platform trim');
+  assert.ok(del.includes('b17_platform_config()'), 'U2-F: the P@T cap-trim twin exists');
   // §19(1): the cap-trim needs a recipient-row identity signal, because a
   // DELETE with a WHERE clause also has the SELECT policy enforced (PG18).
   const read = section('CREATE POLICY b17_notifications ON notifications', 'CREATE POLICY b17_notifications_update');
   assert.ok(read.includes("user_id::text=b17_setting('notify_trim_target')"),
     'trim-target branch lets the notify insert mark exactly the inbox being trimmed');
-  assert.ok(read.includes("b17_setting('current_purpose')='work'"), 'trim-target branch is purpose-bound');
+  assert.ok(read.includes("b17_setting('current_purpose') IN ('work','platform.config')"),
+    'trim-target branch is purpose-bound (work + the U2-F P@T configuration twin)');
   assert.ok(read.includes("user_id::text=b17_setting('current_actor_id')"), 'own-row identity retained for inbox reads');
   assert.ok(sql.includes('CREATE TRIGGER b17_notify_target BEFORE INSERT ON notifications'),
     'every notifications insert marks its recipient for the same-transaction trim');
@@ -150,13 +156,15 @@ test('U2-E E-2 write substrate: only the §3.3 contexts gain INSERT/UPDATE, no D
     assert.ok(sql.includes(`CREATE POLICY ${policy} ON ${table} FOR ${cmd}`), `${policy} must exist`);
   }
   // Nothing else in the tenant surface mutates: no DELETE anywhere on them,
-  // no UPDATE on the immutable snapshot tables, client_services still frozen.
+  // no UPDATE on the immutable snapshot tables. The U2-F round-1 exception is
+  // EXACTLY the §3.4 link/unlink/flags + assignment-unlink set below (task §3(1),
+  // SHIELD-U2F-01) — still target-bound platform configuration, never a work
+  // context, never an answers/evaluations/approvals DELETE.
   for (const [table, cmd] of [
     ['answers', 'DELETE'], ['evaluations', 'DELETE'], ['approvals', 'UPDATE'], ['approvals', 'DELETE'],
     ['review_snapshots', 'UPDATE'], ['review_snapshots', 'DELETE'],
     ['snapshot_notes', 'UPDATE'], ['snapshot_notes', 'DELETE'],
-    ['client_services', 'INSERT'], ['client_services', 'UPDATE'], ['client_services', 'DELETE'],
-    ['assignments', 'UPDATE'], ['assignments', 'DELETE'], ['departments', 'DELETE'],
+    ['assignments', 'UPDATE'], ['departments', 'DELETE'], ['users', 'DELETE'], ['clients', 'DELETE'],
   ] as const)
     assert.ok(!sql.includes(`ON ${table} FOR ${cmd}`), `no ${cmd} policy on ${table}`);
   // G-SHARED stays fail-closed: the draft INSERTs are own-department/actor
@@ -247,13 +255,20 @@ test('U2-C1 substrate: catalog P policies, platform.config target policies, audi
         `catalog ${cmd} policy loop covers ${table}`);
   }
   assert.ok(sql.includes('WITH CHECK (b17_platform_scope() OR b17_platform_config())'));
-  // U2-C1 itself gained NO mutation surface: client_services never gets any
-  // policy (no implicit grant), assignments/departments stay read-only. The
-  // answers/evaluations write policies below are the SEPARATE, §4.1-authorized
-  // U2-E E-2 E-0 delta and are pinned by their own test above.
-  for (const [table, cmd] of [['client_services', 'INSERT'], ['client_services', 'UPDATE'], ['client_services', 'DELETE'],
+  // U2-C1 itself gained NO mutation surface (assignments/departments stayed
+  // read-only THERE); the U2-F round-1 SHIELD-U2F-01 delta is the sanctioned,
+  // target-bound link/unlink + assignment-UNLINK set — pinned by its own test
+  // below — and the answers/evaluations write policies remain the SEPARATE,
+  // §4.1-authorized U2-E E-2 E-0 delta pinned above. Never deleted: answers,
+  // evaluations, approvals, snapshots, users.
+  // U2-F round 2 SUPERSEDES part of this list: users INSERT/UPDATE now exist
+  // (SHIELD-U2F-01 provisioning extension, pinned by its own test below) —
+  // what must still hold: no DELETE anywhere on them and assignments/
+  // departments stay without DELETE/UPDATE beyond the sanctioned set.
+  for (const [table, cmd] of [
     ['answers', 'DELETE'], ['evaluations', 'DELETE'],
-    ['assignments', 'UPDATE'], ['assignments', 'DELETE'], ['departments', 'DELETE']] as const)
+    ['assignments', 'UPDATE'], ['departments', 'DELETE'], ['users', 'DELETE'],
+  ] as const)
     assert.ok(!sql.includes(`ON ${table} FOR ${cmd}`), `no ${cmd} policy on ${table}`);
   // D2 target-bound configuration: only platform.config with explicit target.
   for (const policy of ['b17_config_clients_read', 'b17_config_departments_insert',
@@ -295,4 +310,104 @@ test('U2-C1 substrate: catalog P policies, platform.config target policies, audi
   assert.equal((sql.match(/b17_catalog_child_count/g) ?? []).length >= 3, true, 'count fn defined + REVOKE + GRANT');
   assert.equal((sql.match(/set_config\('app.current_purpose','scope.counts'/g) ?? []).length, 1,
     'scope.counts is set in exactly one place: inside the count definer');
+});
+
+test('U2-F round 1: SHIELD-U2F-01 admin substrate — summary reads, target-bound link/unlink, W/C drafts, W-only N/A, admin audit, blocker kinds', () => {
+  const src = readFileSync(new URL('../db/b17-content.sql', import.meta.url), 'utf8');
+  // (1) §5 fixed-aggregate summary reads: ONLY a P platform WORK context, only
+  // on the four tables the P /clients progress + /ge/overview totals need.
+  const summary = src.slice(src.indexOf('FOREACH t IN ARRAY ARRAY[\'assignments\''),
+    src.indexOf('END $$;', src.indexOf('FOREACH t IN ARRAY ARRAY[\'assignments\'')));
+  assert.ok(/ARRAY\['assignments','answers','review_snapshots','client_services'\]/.test(summary),
+    'the summary-read loop covers exactly assignments/answers/review_snapshots/client_services');
+  assert.ok(summary.includes('b17_platform_config()') && summary.includes('target_id\'\') IS NULL'),
+    'summary read is the NULL-target platform configuration context ONLY (§5 fixed-aggregate exception)');
+  assert.ok(!summary.includes('b17_platform_scope'),
+    'no work-purpose platform branch remains: c-proof R5 keeps answers unreachable there');
+  assert.ok(!summary.includes('evaluations'), 'P never gains an evaluations summary read (no score surface)');
+  // (2) clients: list/overview read + targetless create + target-bound update.
+  assert.ok(src.includes('CREATE POLICY b17_admin_clients_read ON clients FOR SELECT'), 'clients summary read');
+  assert.ok(src.includes('CREATE POLICY b17_admin_clients_insert ON clients FOR INSERT'), 'clients targetless create');
+  assert.ok(src.includes('CREATE POLICY b17_admin_clients_update ON clients FOR UPDATE'), 'clients target-bound update');
+  // (3) client_services link/flag/unlink: P@T bound; link-all only under a NULL target.
+  for (const cmd of ['INSERT', 'UPDATE', 'DELETE'])
+    assert.ok(src.includes(`CREATE POLICY b17_admin_links_${cmd.toLowerCase()} ON client_services FOR ${cmd}`),
+      `client_services ${cmd} exists for §3.4 rows 12/13/14/15`);
+  const unlink = src.slice(src.indexOf('CREATE POLICY b17_admin_links_delete'));
+  assert.ok(unlink.slice(0, 300).includes("target_id') IS NOT NULL"), 'unlink is target-bound (never bulk)');
+  const linkInsert = src.slice(src.indexOf('CREATE POLICY b17_admin_links_insert'), src.indexOf('CREATE POLICY b17_admin_links_update'));
+  assert.ok(linkInsert.includes("target_id') IS NULL"), 'link-all bulk needs the explicit NULL-target context');
+  assert.ok(linkInsert.includes("current_mode')='platform'"), 'link insert is platform mode only');
+  // (4) assignments: DELETE is target-bound and that is the ONLY new command.
+  const asgDelete = src.slice(src.indexOf('CREATE POLICY b17_admin_assignments_delete'));
+  assert.ok(asgDelete.slice(0, 300).includes("client_id::text=b17_setting('target_id')"), 'assignment unlink is target-bound');
+  // (5) staff drafts: C/W insert own-tenant DRAFT rows; work UPDATE pinned to
+  // submitted/rejected (a work context can never mint 'approved' = provision);
+  // P reject/approve shares one explicit target-bound branch.
+  const staffInsert = src.slice(src.indexOf('CREATE POLICY b17_admin_staff_insert'), src.indexOf('CREATE POLICY b17_admin_staff_update'));
+  assert.ok(staffInsert.includes("status='draft'"), 'draft insert only');
+  assert.ok(staffInsert.includes('submitted_by::text'), 'submitter is the actor');
+  const staffUpdate = src.slice(src.indexOf('CREATE POLICY b17_admin_staff_update'), src.indexOf('CREATE POLICY b17_admin_staff_rows_read'));
+  assert.ok(staffUpdate.includes("status IN ('submitted','rejected')"), 'work context may only write submitted/rejected');
+  assert.ok(staffUpdate.includes('WITH CHECK'), 'staff UPDATE carries WITH CHECK');
+  assert.ok(src.includes('CREATE POLICY b17_admin_staff_rows_insert ON staff_list_rows FOR INSERT'), 'draft row insert');
+  assert.ok(src.includes('CREATE POLICY b17_admin_staff_read ON staff_lists FOR SELECT'), 'staff read (summary + P@T)');
+  // (6) NA shortcut: W consultant GE only, N/A row only, retained assignment.
+  for (const policy of ['b17_answers_na_insert', 'b17_evaluations_na_insert'])
+    assert.ok(src.includes(`CREATE POLICY ${policy} ON`), policy);
+  const naEval = src.slice(src.indexOf('CREATE POLICY b17_evaluations_na_insert'));
+  assert.ok(naEval.slice(0, 600).includes('not_applicable'), 'N/A evaluation must be not_applicable');
+  assert.ok(naEval.slice(0, 600).includes('score IS NULL'), 'no score can be minted through the N/A shortcut');
+  assert.ok(naEval.slice(0, 600).includes("'current_mode')='consultant'"), 'N/A insert is W (consultant) only');
+  assert.ok(naEval.slice(0, 600).includes('EXISTS(SELECT 1 FROM assignments'), 'retained assignment required');
+  // (7) admin configuration audit: closed action lists, targetless + target-bound.
+  const audit = section('CREATE POLICY b17_audit_insert', '-- U2-B0 adds row scope only');
+  for (const action of ['CREATE_CLIENT', 'LINK_SERVICE_ALL_TENANTS', 'CLIENT_SUSPENDED',
+    'DEPARTMENT_HEAD_ASSIGNED', 'LINK_CLIENT_SERVICE', 'UNLINK_CLIENT_SERVICE',
+    'ASSIGN_ITEM', 'UNASSIGN_ITEM', 'STAFF_LIST_REJECTED',
+    'USER_CREATED', 'USER_DEACTIVATED', 'USER_REACTIVATED', 'STAFF_LIST_APPROVED'])
+    assert.ok(audit.includes(`'${action}'`), `admin audit action: ${action}`);
+  const targetlessAudit = audit.slice(audit.indexOf("b17_setting('target_id') IS NULL"),
+    audit.indexOf("OR (b17_setting('target_id') IS NOT NULL", audit.indexOf("b17_setting('target_id') IS NULL")));
+  assert.ok(!targetlessAudit.includes("'USER_CREATED'"), 'no targetless provisioning-audit branch');
+  // (8) DELETE /assignments blockers: two tenant-scoped kinds, target-bound guard,
+  // one integer each — never an answer/evaluation row in a P context.
+  for (const kind of ['tenant.item.answers', 'tenant.item.evaluations'])
+    assert.equal((src.match(new RegExp(kind.replace(/\./g, '\\.'), 'g')) ?? []).length >= 3, true,
+      `${kind} appears in the closed kind list, its guard and its CASE arm`);
+  const blockerGuard = src.slice(src.indexOf("ELSIF kind IN ('tenant.item.answers'"));
+  assert.ok(blockerGuard.slice(0, 1600).includes("'platform.config'"), 'blocker kinds are platform.config-only');
+  assert.ok(blockerGuard.slice(0, 1600).includes("target_id') IS NOT NULL"), 'blocker kinds need the explicit target T');
+  // (9) No new definer, no PUBLIC grant, no answers/evaluations DELETE, no
+  // users/clients DELETE: the sanctioned set and the REVOKE discipline hold.
+  assert.equal((src.match(/SECURITY DEFINER\s*\nSET search_path/g) ?? []).length, 2);
+  assert.ok(!/CREATE POLICY \w+ ON (answers|evaluations|approvals|users|clients|departments) FOR DELETE/.test(src));
+});
+
+test('U2-F round 2: provisioning substrate — users INSERT/UPDATE row scope, provisioning audit rows, no new definer', () => {
+  const sql = readFileSync(new URL('../db/b17-content.sql', import.meta.url), 'utf8');
+  // users INSERT = a tenant user under EXPLICIT target T only.
+  // Under the legacy purpose-NULL context this INSERT was
+  // denied outright (b17_bootstrap is auth.bootstrap-only) — Shield R2-B.
+  const insert = sql.slice(sql.indexOf('CREATE POLICY b17_admin_users_insert'),
+    sql.indexOf('CREATE POLICY b17_admin_users_update'));
+  assert.ok(insert.includes('b17_platform_config()'), 'users INSERT is platform-configuration only');
+  assert.ok(insert.includes("current_mode')='platform'"), 'platform mode pinned');
+  assert.ok(/target_id'\) IS NOT NULL\s+AND client_id::text=b17_setting\('target_id'\)/.test(insert),
+    'tenant branch is target-bound (P@T provisioning)');
+  assert.ok(!insert.includes("IS NULL"), 'no NULL-target/tenant-less provisioning path');
+  // users UPDATE = the target-bound deactivate/reactivate of §3.4 row 7; both
+  // USING and WITH CHECK carry the target predicate (no cross-T rewrite, no
+  // role/client_id movement possible through it).
+  const update = sql.slice(sql.indexOf('CREATE POLICY b17_admin_users_update'));
+  assert.ok(update.includes('WITH CHECK'), 'users UPDATE carries WITH CHECK');
+  assert.equal((update.match(/client_id::text=b17_setting\('target_id'\)/g) ?? []).length, 2,
+    'USING and WITH CHECK are both target-bound');
+  // Final-SQL discipline re-asserted after the round-2 delta: no new definer,
+  // no users DELETE, b17.sql trigger surface untouched (protected set diff).
+  assert.equal((sql.match(/SECURITY DEFINER\s*\nSET search_path/g) ?? []).length, 2,
+    'sanctioned definer set still exactly the two originals');
+  assert.ok(!/CREATE POLICY \w+ ON users FOR DELETE/.test(sql), 'users stays without a DELETE policy');
+  // (b17_revoke_inactive itself lives ONLY in b17.sql — proven by the empty-diff
+  // of the protected set, not by this file's text.)
 });

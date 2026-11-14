@@ -327,10 +327,11 @@ async function main() {
     // locked tab read). In production the dispatcher runs the same gates first.
     const probe = express.Router();
     const echo = (req: any, res: any) => res.json({ access: req.access });
-    probe.get('/ge/overview', requireDomainAccess, echo);   // UNACTIVATED
+    probe.post('/staff-lists/00000000-0000-4000-8000-000000000000/approve', requireDomainAccess, echo); // active after U2-F R2
     probe.get('/auth/me', requireDomainAccess, echo);          // U1, SESSION row
     probe.post('/workspace/enter', requireDomainAccess, echo); // U1, P-only row
-    probe.post('/clients', requireDomainAccess, echo);         // UNACTIVATED (U2-F admin)
+    probe.post('/users', requireDomainAccess, echo);           // active after U2-F R2
+    probe.get('/unknown', requireDomainAccess, echo);          // wrapper's unknown-route arm
     const probeApp = express();
     probeApp.use(jsonInput); probeApp.use(cookieParser()); probeApp.use('/api', probe);
     const probeServer = probeApp.listen(0, '127.0.0.1');
@@ -341,26 +342,36 @@ async function main() {
         ...(tab ? { 'X-Workspace-Tab': tab.tabHandle, 'X-Workspace-Version': String(tab.generation) } : {}), ...extra } });
       return { status: r.status, json: await r.json() };
     };
-    const probePost = async (path: string, token: string, tab?: typeof t) => {
-      const r = await fetch(pbase + path, { method: 'POST', headers: { Authorization: `Bearer ${token}`,
+    const probePost = async (path: string, token?: string, tab?: typeof t) => {
+      const r = await fetch(pbase + path, { method: 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}),
         'Content-Type': 'application/json', ...(tab ? { 'X-Workspace-Tab': tab.tabHandle,
           'X-Workspace-Version': String(tab.generation) } : {}) } });
       return { status: r.status, json: await r.json() };
     };
     try {
-      // A1 أ¢â‚¬â€‌ SHIELD-U2A-01: the wrapper itself refuses a non-U1 route, for every
-      // context, before any context derivation (no tab, session or DB work).
-      for (const [token, tabArg] of [[undefined, undefined], [ge, t], [ca, undefined],
-        [employee, undefined]] as const) {
-        const r = await probeGet('/ge/overview', token, tabArg);
-        assert.deepEqual([r.status, r.json.code], [403, 'access.unactivated'],
-          'SHIELD-U2A-01: requireDomainAccess must refuse an UNACTIVATED route itself');
-      }
-      const unactivatedPost = await fetch(pbase + '/clients', { method: 'POST',
-        headers: { 'Content-Type': 'application/json', Cookie: `token=${ca}` } });
-      assert.deepEqual([unactivatedPost.status, (await unactivatedPost.json()).code],
-        [403, 'access.unactivated'], 'SHIELD-U2A-01 on a mutating route (before auth/context)');
-      pass('SHIELD-U2A-01: requireDomainAccess refuses non-U1 activation itself (GET+POST ط£â€”4 contexts)');
+      // A1 — SHIELD-U2A-01/02 (U2-F round 2 FINAL): zero UNACTIVATED rows
+      // remain, so the runtime probe proves the rings in their new order —
+      // the former round-2 rows PASS the activation gate and fail LATER:
+      // no token -> 401 auth.invalid (auth ring), C on a P-only row -> 403
+      // workspace.mode_mismatch (matrix ring), P+tab -> the probe echoes200
+      // (boundary admitted, no production provisioning in this probe). The refusal arm
+      // itself is pinned SYNTHETICALLY on a fabricated declaration in
+      // src/lib/domainAccess.test.ts.
+      const tokenless = await probePost('/users', undefined, undefined);
+      assert.equal(tokenless.status, 401,
+        `activation passed -> auth ring answers: ${JSON.stringify(tokenless.json)}`);
+      assert.equal(tokenless.json.code, 'auth.invalid');
+      const cOnP = await probePost('/users', ca, undefined);
+      assert.deepEqual([cOnP.status, cOnP.json.code], [403, 'workspace.mode_mismatch'],
+        'SHIELD-U2A-02: C on the P-only provisioning row is refused by the matrix ring');
+      const pRing = await probePost('/users', ge, t);
+      assert.equal(pRing.status, 200, 'P+tab reaches the probe echo');
+      assert.equal(pRing.json.access.mode, 'platform');
+      assert.equal(pRing.json.access.capability, 'admin');
+      const unknown = await probeGet('/unknown');
+      assert.deepEqual([unknown.status, unknown.json.code], [404, 'api.not_found'],
+        'unknown paths still die in the first ring');
+      pass('SHIELD-U2A-01/02: zero UNACTIVATED rows — activation admits, auth/matrix rings refuse (401/403), unknown 404');
 
       // A2 أ¢â‚¬â€‌ context attachment on an ADMITTED U1 declaration (SESSION row).
       const gp = await probeGet(`/auth/me?clientId=${seed.tenants[1]}`, ge, t); // before enter: platform, gen 1
@@ -435,12 +446,12 @@ async function main() {
       pass('SHIELD-U2A-02: context attachment blocks on workspace_tabs FOR UPDATE, completes after release');
     } finally { await new Promise<void>((resolve, reject) => probeServer.close(err => err ? reject(err) : resolve())); }
 
-    // --- B: every still-UNACTIVATED declaration stays denied (dispatcher) ---
-    // U2-B flipped 13 rows, U2-C 23 more, U2-D 11 and U2-E all fifteen
-    // evaluations/reviews rows (87 -> 74 -> 51 -> 40 -> 34 -> 25); the flipped
-    // rows are exercised END-TO-END through the real chain in sections H/I
-    // (the six E-1 reads in scripts/b17-domain-e1.ts, the nine E-2 writes in
-    // scripts/b17-domain-e2.ts).
+        // --- B: every still-UNACTIVATED declaration stays denied (dispatcher) ---
+    // U2-B flipped 13 rows, U2-C 23 more, U2-D 11, U2-E all fifteen
+    // evaluations/reviews rows and U2-F round 1 the 22 non-provisioning admin
+    // rows (87 -> 74 -> 51 -> 40 -> 34 -> 25 -> 3 -> 0); the flipped rows are
+    // exercised END-TO-END through the real chain in sections H/I and in
+    // scripts/b17-domain-e1.ts / -e2.ts / -f1.ts / -f2.ts / -f3.ts.
     let denied = 0;
     for (const route of LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED')) {
       for (const [token, tab] of [[undefined, undefined], [ge, t], [ca, undefined], [employee, undefined]] as const) {
@@ -450,9 +461,9 @@ async function main() {
         denied++;
       }
     }
-    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 25);
-    assert.equal(denied, 25 * 4);
-    pass('all 25 remaining unactivated business routes still 403 access.unactivated across 4 contexts');
+    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 0);
+    assert.equal(denied, 0);
+    pass('zero remaining unactivated rows (vacuous loop at 0; synthetic refusal pinned in domainAccess.test)');
 
     // --- C: the 8 active system/session routes keep their current behavior ---
     assert.deepEqual((await api('GET', '/db/status')).json, { configured: true, connected: true });
@@ -888,24 +899,34 @@ async function main() {
       'POST /evaluations/:id/return', 'PUT /evaluations/:id/correct',
       'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
       'POST /reviews/ge-final', 'POST /reviews/snapshots/:id/notes',
+      // U2-F round 1: the 22 NON-provisioning §3.4 admin declarations.
+      'GET /clients', 'POST /clients', 'GET /departments', 'PATCH /departments/:id/head',
+      'GET /users', 'GET /ge/overview', 'GET /clients/:id', 'PATCH /clients/:id',
+      'GET /clients/:id/services', 'POST /clients/:id/services',
+      'PATCH /clients/:id/services/:serviceId', 'DELETE /clients/:id/services/:serviceId',
+      'POST /services/link-all', 'GET /assignments', 'POST /assignments', 'DELETE /assignments',
+      'POST /assignments/na', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
+      'POST /staff-lists/:id/reject',       'GET /client/dashboard',
+      // U2-F round 2 (final): the provisioning triple.
+      'POST /users', 'PATCH /users/:id', 'POST /staff-lists/:id/approve',
     ];
     const u1Keys = LEGACY_ROUTES.filter(r => r.activation === 'U1').map(r => `${r.method} ${r.path}`).sort();
-    assert.equal(u1Keys.length, 70, '8 system/session + 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E flips');
+    assert.equal(u1Keys.length, 95, '8 system/session + 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F R1 + 3 U2-F R2');
     assert.deepEqual(u1Keys, [
       'GET /db/status', 'POST /db/migrate', 'GET /setup/status', 'POST /setup/admin',
       'POST /auth/login', 'POST /auth/logout', 'GET /auth/me', 'POST /auth/change-password',
       ...FLIPPED,
-    ].sort(), 'exactly the 8 system/session rows + 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E flips are U1; NO other row changed');
-    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 25, '87 -> 74 -> 51 -> 40 -> 34 -> 25 UNACTIVATED');
+    ].sort(), 'exactly the 8 system/session rows + 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 25 U2-F flips are U1; NO other row changed');
+    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 0, '87 -> 74 -> 51 -> 40 -> 34 -> 25 -> 3 -> 0 UNACTIVATED');
     for (const key of FLIPPED) {
       const [method, path] = key.split(' ');
       const route = LEGACY_ROUTES.find(r => r.method === method && r.path === path);
       assert.ok(route && route.activation === 'U1', `flipped row must be U1: ${key}`);
     }
     assert.deepEqual([...activeBusinessCapabilities()],
-      ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-      'activeBusinessCapabilities() tracks the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E flips truthfully');
-    pass('registry truth: exactly 62 flips (87 -> 25 UNACTIVATED), no other row changed, capabilities truthful (9)');
+      ['taxonomy', 'gri', 'evaluations', 'admin', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+      'activeBusinessCapabilities() tracks every flip through the U2-F final round truthfully');
+    pass('registry truth: exactly 87 flips (87 -> 0 UNACTIVATED), no other row changed, capabilities truthful (10)');
 
     // Fresh real sessions/tabs per آ§3 context (server-derived, never client-supplied).
     const wToken = await login('ge');
@@ -916,8 +937,8 @@ async function main() {
     assert.equal(wEnter.status, 200, JSON.stringify(wEnter.json));
     wTab.generation = wEnter.json.generation;
     assert.deepEqual(wEnter.json.capabilities,
-      ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-      'workspace envelope reports the landed capabilities');
+      ['taxonomy', 'gri', 'evaluations', 'admin', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+      'workspace envelope reports the landed capabilities (U2-F round 1 added admin)');
     const pToken = await login('ge');
     const pTabRes = await api('POST', '/workspace/tab', pToken, {});
     assert.equal(pTabRes.status, 201);
@@ -1520,7 +1541,7 @@ async function main() {
     pass('I7 W(B) zero links: services/items/standards empty (never all), dashboard hasData=false');
     pass('U2-C2 E2E: all 23 taxonomy/GRI routes exercised end-to-end — every §3 allowed context served, every disallowed context refused with its status/code');
 
-    console.log('B17 U2 regression proof complete: 62 routes flipped (87 -> 25 UNACTIVATED), sections B/H/I green, no release acceptance.');
+    console.log('B17 U2 regression proof complete: 87 routes flipped (87 -> 0 UNACTIVATED), sections B/H/I green, no release acceptance.');
 
   } finally {
     await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));

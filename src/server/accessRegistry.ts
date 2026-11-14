@@ -174,6 +174,21 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /staff-lists/:id/approve|P@T#provisioning-exception-explicit-T-checked-all-or-nothing-OTP-once-W-denied',
     'POST /staff-lists/:id/reject|P@T#explicit-T;W:R#bound-A-reason-submitted-list-gates-no-provisioning',
     'GET /client/dashboard|W:L+V;C:L+V#E-P-denied',
+  ], [
+    // U2-F (task §2): ALL TWENTY-FIVE §3.4 admin rows are retrofitted —
+    // round 1 flipped the 22 non-provisioning rows (25 -> 3), ROUND 2 (final)
+    // flips the provisioning triple behind the R2-A substrate + §3(2) lock-order
+    // proof (3 -> 0). Listed explicitly so a typo in a key fails closed
+    // (access.activation_unknown) instead of silently flipping, and so the
+    // matrix strings above stay transcribed data no flip may reword.
+    'GET /clients', 'POST /clients', 'GET /departments', 'PATCH /departments/:id/head',
+    'GET /users', 'POST /users', 'PATCH /users/:id', 'GET /ge/overview',
+    'GET /clients/:id', 'PATCH /clients/:id',
+    'GET /clients/:id/services', 'POST /clients/:id/services',
+    'PATCH /clients/:id/services/:serviceId', 'DELETE /clients/:id/services/:serviceId',
+    'POST /services/link-all', 'GET /assignments', 'POST /assignments', 'DELETE /assignments',
+    'POST /assignments/na', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
+    'POST /staff-lists/:id/approve', 'POST /staff-lists/:id/reject', 'GET /client/dashboard',
   ]),
   ...group('actions', [
     'GET /actions|W:L;C:L#own-company-item-or-service-linked-owner-department-in-company-all-departments',

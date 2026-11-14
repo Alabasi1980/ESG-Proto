@@ -15,7 +15,7 @@
 //
 // Coverage disclosed: §3.3 E-1 positives + negatives for the six flipped reads,
 // re-run green after E-2 flipped the nine write rows too (the current split is
-// 25 UNACTIVATED / 70 U1). It is NOT an independent security review.
+// 0 UNACTIVATED / 95 U1). It is NOT an independent security review.
 
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -126,12 +126,12 @@ async function main() {
   assert.equal(LEGACY_ROUTES.length, 95);
   for (const k of READS) assert.equal(byKey.get(k)?.activation, 'U1', `${k} must be activated`);
   for (const k of WRITES) assert.equal(byKey.get(k)?.activation, 'U1', `${k} activated by U2-E E-2`);
-  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 25, 'post-E-2 split: 25 UNACTIVATED');
-  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'U1').length, 70, 'post-E-2 split: 70 U1');
+  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 0, 'post-U2-F final split: 0 UNACTIVATED');
+  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'U1').length, 95, 'post-U2-F final split: 95 U1');
   assert.deepEqual([...activeBusinessCapabilities()],
-    ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-    'activeBusinessCapabilities() is truthful after the U2-E flips');
-  pass('R1 registry truth: the six E-1 reads still activated; current split 25 UNACTIVATED / 70 U1, capabilities truthful (9)');
+    ['taxonomy', 'gri', 'evaluations', 'admin', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+    'activeBusinessCapabilities() is truthful after the U2-F round-1 flips');
+  pass('R1 registry truth: the six E-1 reads still activated; current split 0 UNACTIVATED / 95 U1, capabilities truthful (10)');
 
   const census = async () => {
     const out: Record<string, number> = {};
@@ -319,7 +319,7 @@ async function main() {
     // (the nine E-2 write rows are activated now and are proved by
     // scripts/b17-domain-e2.ts; only the U2-F admin group remains denied.)
     const stillDenied = LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED');
-    assert.equal(stillDenied.length, 25, 'only the U2-F admin group is still denied');
+    assert.equal(stillDenied.length, 0, 'zero UNACTIVATED rows after U2-F round 2');
     let denied = 0;
     for (const route of stillDenied) {
       const path = route.path.replace(/:[^/]+/g, randomUUID());
@@ -329,8 +329,8 @@ async function main() {
         denied++;
       }
     }
-    assert.equal(denied, 25 * 4, 'every still-denied row refused in four contexts');
-    pass('P7 all 25 still-unactivated declarations still 403 access.unactivated across four contexts');
+    assert.equal(denied, 0, 'zero still-denied rows: the loop is vacuous at 0');
+    pass('P7: zero still-unactivated declarations remain (vacuous loop; the refusal ring is pinned synthetically in domainAccess.test)');
 
     // ---- P8: nothing moved — seed-only, non-destructive ----
     assert.deepEqual(await census(), before, 'no business row may be added or removed by this proof');
@@ -339,7 +339,7 @@ async function main() {
   } finally {
     await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
-  console.log('B17 U2-E E-1 proof complete: six reads proven end-to-end, current split 25/70, still-denied rows refused; NOT release acceptance.');
+  console.log('B17 U2-E E-1 proof complete: six reads proven end-to-end, current split 0/95 (U2-F final), still-denied rows refused; NOT release acceptance.');
 }
 main().catch(err => { console.error('B17_U2E_E1 proof FAILED:', err instanceof Error ? err.message : err); process.exitCode = 1; })
   .finally(async () => { await getPool().end(); });

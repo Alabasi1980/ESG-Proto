@@ -130,15 +130,15 @@ async function main() {
   // ---- R1 registry truth: EXACTLY the nine write rows flipped, 34 -> 25 ----
   const byKey = new Map(LEGACY_ROUTES.map(r => [`${r.method} ${r.path}`, r]));
   assert.equal(LEGACY_ROUTES.length, 95);
-  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 25, '34 -> 25 UNACTIVATED');
-  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'U1').length, 70, '61 -> 70 U1');
+  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 0, '3 -> 0 UNACTIVATED (U2-F final)');
+  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'U1').length, 95, '92 -> 95 U1');
   for (const k of WRITES) assert.equal(byKey.get(k)?.activation, 'U1', `${k} must be activated`);
   const remaining = LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED');
-  assert.ok(remaining.every(r => r.capability === 'admin'), 'only the U2-F admin group is still denied');
+  assert.ok(remaining.every(r => r.capability === 'admin'), 'no legacy row remains denied after the U2-F final flip');
   assert.deepEqual([...activeBusinessCapabilities()],
-    ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-    'activeBusinessCapabilities() is truthful after the E-2 flips');
-  pass('R1 registry truth: exactly nine writes flipped (34 -> 25), matrix/capability data untouched, capabilities truthful (9)');
+    ['taxonomy', 'gri', 'evaluations', 'admin', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+    'activeBusinessCapabilities() is truthful after the U2-F final flips');
+  pass('R1 registry truth: exactly nine writes flipped (34 -> 25), matrix/capability data untouched, capabilities truthful (final U2-F re-run: 0 UNACTIVATED / 10 capabilities)');
 
   // Non-destructive proof: the tenant/catalog surface must not move at all,
   // the workflow tables may only GROW, and the G-SHARED pair must stay
@@ -442,7 +442,7 @@ async function main() {
   } finally {
     await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));
   }
-  console.log('B17 U2-E E-2 proof complete: nine writes proven end-to-end, 34 -> 25 exact; NOT release acceptance.');
+  console.log('B17 U2-E E-2 proof complete: nine writes proven end-to-end, final re-run green with 0 UNACTIVATED (U2-F complete); NOT release acceptance.');
 }
 main().catch(err => { console.error('B17_U2E_E2 proof FAILED:', err instanceof Error ? (err.stack || err.message) : err); process.exitCode = 1; })
   .finally(async () => { await getPool().end(); });

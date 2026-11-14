@@ -9,7 +9,8 @@
 // as a non-bypass owner, plus the negatives §23 demands:
 //   R2  P catalog reads visible in BOTH P contexts; W/C/E still scoped (L/L+D)
 //   R3  catalog writes policy-reachable for P; W/C denied; client_services
-//       INSERT/UPDATE/DELETE impossible in every context (no implicit grant)
+//       writes reachable ONLY for the U2-F §3.4 link rows (target-bound /
+//       NULL-target config), never in a work context (no implicit grant)
 //   R4  P audit config branches (NULL-client catalog + target-T import) work;
 //       W and wrong-action/wrong-target inserts refused
 //   R5  answers/evaluations BLOBS unreachable under platform.config AND the
@@ -26,9 +27,9 @@
 //       for C at the RLS layer (no actions.ts pre-authorisation needed)
 //   R10 platform.config never appears on a request-reading line (server-set
 //       constant only — request input can never select purpose/target)
-// Registry truth (re-run after E-2): 25 UNACTIVATED = 74 - exactly the 23
+// Registry truth (re-run after U2-F final): 0 UNACTIVATED = 74 - exactly the 23
 // taxonomy/gri + 11 initiatives/reports + 15 evaluations/reviews flips;
-// capabilities truthful (9 entries), no other row moved.
+// + 25 U2-F admin flips; capabilities truthful (10 entries), no other row moved.
 //
 // NON-DESTRUCTIVE by contract: seed-only fixtures; every probe runs in its own
 // transaction and is ALWAYS rolled back; no business row is ever DELETEd
@@ -120,8 +121,8 @@ async function main() {
       ea = await mk('employee', 'employee', tenantA, deptA1);
     // R9 hidden-corrective tenant: same GRI service linked with
     // show_corrective=false, one action, its own client_admin. The flip cannot
-    // be done post-activation (client_services has NO update policy anywhere —
-    // itself part of R3), so both visibility states are seeded.
+    // be done post-activation (the only client_services UPDATE policy is the
+    // U2-F target-bound P@T one — never a seed path), so both states are seeded.
     const tenantH = (await c.query("INSERT INTO clients(code,name) VALUES('B17U2C1-H','Tenant H') RETURNING id")).rows[0].id as string;
     const deptH1 = (await c.query("INSERT INTO departments(client_id,code,name) VALUES($1,'one','One') RETURNING id", [tenantH])).rows[0].id as string;
     const caH = await mk('clienth', 'client_admin', tenantH);
@@ -237,7 +238,7 @@ async function main() {
   // ---- R1 registry truth (re-run after C2): exactly the 23 taxonomy/gri rows
   // are now flipped; no other row moved and capabilities stay truthful. ----
   const unactivated = LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED');
-  assert.equal(unactivated.length, 25, 'C2 + D + E1 + E2 flipped exactly 49 rows (74 -> 25)');
+  assert.equal(unactivated.length, 0, 'C2 + D + E1 + E2 + U2-F R1+R2 flipped all 74 rows (74 -> 0)');
   const u2c = LEGACY_ROUTES.filter(r => r.capability === 'taxonomy' || r.capability === 'gri');
   assert.equal(u2c.length, 23);
   assert.ok(u2c.every(r => r.activation === 'U1'), 'all 23 taxonomy/gri rows activated by C2');
@@ -245,9 +246,9 @@ async function main() {
   assert.equal(u2e.length, 15, 'the §3.3 evaluations group is fifteen declarations');
   assert.ok(u2e.every(r => r.activation === 'U1'), 'all fifteen evaluations/reviews rows activated by U2-E');
   assert.deepEqual([...activeBusinessCapabilities()],
-    ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-    'activeBusinessCapabilities() stays truthful (9 entries)');
-  pass('R1 registry truth (post-E2): 25 UNACTIVATED = 74 - 23 taxonomy/gri - 11 initiatives/reports - 15 evaluations/reviews, capabilities truthful');
+    ['taxonomy', 'gri', 'evaluations', 'admin', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+    'activeBusinessCapabilities() stays truthful (10 entries)');
+  pass('R1 registry truth (post-U2-F final): 0 UNACTIVATED = 74 - 23 taxonomy/gri - 11 initiatives/reports - 15 evaluations/reviews - 25 admin, capabilities truthful');
 
   // ---- Contexts (server-derived GUCs only; C2 will set these server-side) ----
   const scopeCtx: TenantContext = { purpose: 'work', role: 'ge_admin', userId: seed.ge, mode: 'platform', tenantId: null };
@@ -309,15 +310,27 @@ async function main() {
   expectRls(await probe(pool, cA, c => c.query(
     "INSERT INTO items(disclosure_id,code,requirement,priority,esg_class) VALUES($1,'R3-C','x','mid','general')",
     [seed.disc1])), 'R3 C INSERT items denied');
-  // client_services: no policy exists in ANY context -> no implicit grant.
-  for (const [label, ctx] of [['scope', scopeCtx], ['config(T)', cfgT], ['config-null', cfgNull]] as const) {
-    expectRls(await probe(pool, ctx, c => c.query(
-      'INSERT INTO client_services(client_id,service_id) VALUES($1,$2)', [seed.tenantA, seed.service])),
-      `R3 client_services INSERT denied (${label})`);
+  // client_services row scope — U2-F SHIELD-U2F-01 SUPERSEDES C1's "no policy
+  // exists anywhere" (task §3(1) pre-authorised §3.4 rows 12/13/14/15: ONLY the
+  // target-bound P@T link/flags/unlink and the NULL-target bulk link). What must
+  // STILL hold here: a work context never writes it, config(T) can touch only
+  // ITS OWN tenant's rows, and a NULL-target config context never writes single
+  // rows. (The sanctioned positives are proved end-to-end in b17-domain-f1.ts.)
+  expectRls(await probe(pool, scopeCtx, c => c.query(
+    'INSERT INTO client_services(client_id,service_id) VALUES($1,$2)', [seed.tenantA, seed.service])),
+    'R3 client_services INSERT denied (work scope)');
+  expectRls(await probe(pool, cfgT, c => c.query(
+    'INSERT INTO client_services(client_id,service_id) VALUES($1,$2)', [seed.tenantB, seed.service])),
+    'R3 client_services INSERT denied (config(T) on a foreign tenant row)');
+  for (const [label, ctx, subject] of [
+    ['scope', scopeCtx, seed.tenantA],
+    ['config(T)', cfgT, seed.tenantB],
+    ['config-null', cfgNull, seed.tenantA],
+  ] as const) {
     const upd = await probe(pool, ctx, c => c.query(
-      'UPDATE client_services SET show_gap=false WHERE client_id=$1', [seed.tenantA]));
+      'UPDATE client_services SET show_gap=false WHERE client_id=$1', [subject]));
     assert.equal(upd.ok?.rowCount ?? -1, 0, `R3 client_services UPDATE touches 0 rows (${label})`);
-    const del = await probe(pool, ctx, c => c.query('DELETE FROM client_services WHERE client_id=$1', [seed.tenantA]));
+    const del = await probe(pool, ctx, c => c.query('DELETE FROM client_services WHERE client_id=$1', [subject]));
     assert.equal(del.ok?.rowCount ?? -1, 0, `R3 client_services DELETE touches 0 rows (${label})`);
   }
   // Row-free membership check for C2's commit serviceId validation.
@@ -327,7 +340,7 @@ async function main() {
   assert.equal((await probe(pool, cfgB, one(
     "SELECT b17_content_fact('service',$1,$2) AS ok", [seed.tenantB, seed.service]))).ok?.ok, false,
     'R3 foreign tenant is not linked');
-  pass('R3 catalog writes reachable only for P contexts (both), W/C refused 42501, client_services mutation impossible everywhere, membership row-free');
+  pass('R3 catalog writes reachable only for P contexts (both), W/C refused 42501, client_services unreachable from work/foreign-target contexts, membership row-free');
 
   // ---- R4: P audit config branches ----
   noError(await probe(pool, scopeCtx, c => c.query(

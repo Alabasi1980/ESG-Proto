@@ -1104,9 +1104,14 @@ router.get('/evaluations', authMiddleware, requireDomainAccess, async (req: Auth
       // for the item — so a foreign-department answer already forced
       // `evaluation` to null upstream (and the raw detection query is in turn
       // filtered by RLS). It therefore never fires, and it can only ever
-      // under-report: it cannot widen a read. Fixing it would require widening
-      // b17_count_read to employees, which is NOT co-located with §10 ruling 1,
-      // so it is documented here instead of patched (behaviour safe).
+      // under-report: it cannot widen a read. A patch DOES exist —
+      // b17_content_fact('writable', tenant, item) already runs that foreign-
+      // answer NOT-EXISTS check under its own scope.internal switch and is
+      // callable from an employee work context (scope.ts) — but routing THIS
+      // read through it would change the accepted E-1 semantics from
+      // fail-closed-empty to a 403 refusal on shared items, which is a Tera
+      // behaviour decision, not a security necessity (Shield U2-E E3-02
+      // caveat, folded into U2-F round 1); documented here instead of patched.
       const ownDept = ownDepartment(access);
       if (ownDept && evaluation) {
         const foreign = await client.query(

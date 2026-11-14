@@ -19,6 +19,7 @@ import {
   classifyRoute,
   formatMatrix,
   parseMatrix,
+  type RouteDeclaration,
 } from '../server/accessRegistry.ts';
 import {
   assertRouteActivated,
@@ -177,15 +178,17 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-E E-2 activation split: 25 UNACTIVATED; exact 62 business flips + 8 system/session + 4 workspace', () => {
+test('U2-F final activation split: 0 UNACTIVATED; exact 87 business flips + 8 system/session + 4 workspace', () => {
   assert.equal(LEGACY_ROUTES.length, 95);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 25);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 70);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 0);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 95);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
-  // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E rows are flipped, and
-  // nothing else moved: the eight system/session rows plus those sixty-two
-  // are the complete U1 legacy set (no other registry row changed, task §2).
+  // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F round-1 + 3
+  // U2-F round-2 rows are flipped, and nothing else moved: the eight
+  // system/session rows plus those eighty-seven are the complete U1 legacy set
+  // (no other registry row changed, task §2). All 3 rows of the §3.4
+  // provisioning triple are now behind the R2-A substrate + lock-order proof.
   const FLIPPED = [
     'GET /audit-log',
     'GET /notifications', 'GET /notifications/unread-count',
@@ -215,8 +218,20 @@ test('U2-E E-2 activation split: 25 UNACTIVATED; exact 62 business flips + 8 sys
     'POST /evaluations/:id/return', 'PUT /evaluations/:id/correct',
     'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
     'POST /reviews/ge-final', 'POST /reviews/snapshots/:id/notes',
+    // U2-F round 1: the 22 NON-provisioning §3.4 admin declarations.
+    'GET /clients', 'POST /clients', 'GET /departments', 'PATCH /departments/:id/head',
+    'GET /users', 'GET /ge/overview', 'GET /clients/:id', 'PATCH /clients/:id',
+    'GET /clients/:id/services', 'POST /clients/:id/services',
+    'PATCH /clients/:id/services/:serviceId', 'DELETE /clients/:id/services/:serviceId',
+    'POST /services/link-all', 'GET /assignments', 'POST /assignments', 'DELETE /assignments',
+    'POST /assignments/na', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
+    'POST /staff-lists/:id/reject', 'GET /client/dashboard',
+    // U2-F round 2 (final): the provisioning triple behind the R2-A substrate
+    // (platformConfigContext + users INSERT/UPDATE + provisioning audit) and
+    // the §3(2) lock-order proof (parent §15).
+    'POST /users', 'PATCH /users/:id', 'POST /staff-lists/:id/approve',
   ];
-  assert.equal(FLIPPED.length, 62);
+  assert.equal(FLIPPED.length, 87);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -227,7 +242,7 @@ test('U2-E E-2 activation split: 25 UNACTIVATED; exact 62 business flips + 8 sys
   );
 });
 
-test('U2-E E-2: all fifteen §3.3 evaluations rows activated; only the U2-F admin group stays denied', () => {
+test('U2-F: all twenty-five §3.4 admin rows activated; zero UNACTIVATED legacy rows remain', () => {
   const EVALUATIONS = ['GET /queue', 'POST /evaluations', 'POST /evaluations/:id/submit',
     'POST /evaluations/:id/approve', 'POST /evaluations/:id/return', 'PUT /evaluations/:id/correct',
     'GET /evaluations', 'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
@@ -241,9 +256,9 @@ test('U2-E E-2: all fifteen §3.3 evaluations rows activated; only the U2-F admi
     assert.ok((byKey.get(key)?.matrix.length ?? 0) > 0, key);
   }
   const remaining = LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED');
-  assert.equal(remaining.length, 25, '34 → 25 exactly');
-  assert.ok(remaining.every((r) => r.capability === 'admin'),
-    `only the U2-F admin group is still denied, got: ${remaining.map((r) => `${r.method} ${r.path}`).join(', ')}`);
+  assert.equal(remaining.length, 0, 'U2-F round 2 completes the flip: 3 → 0 exactly');
+  assert.deepEqual(remaining.map((r) => `${r.method} ${r.path}`), [],
+    'no legacy declaration is denied any more (the §3.4 provisioning triple flipped last)');
 });
 
 test('U2-A matrix well-formedness: parse/format round-trip and tenant/tag invariants', () => {
@@ -288,26 +303,32 @@ const fakeCall = async (method: string, path: string) => {
 };
 
 test('SHIELD-U2A-01: requireDomainAccess itself refuses non-U1 activation before deriving any context', async () => {
-  // Only still-unactivated declarations may appear here; flipped rows (13 U2-B
-  // + 23 U2-C + 11 U2-D + 15 U2-E) are asserted through assertRouteActivated
-  // below instead.
-  for (const [method, path] of [['GET', '/ge/overview'], ['POST', '/clients'], ['GET', '/assignments'],
-    ['POST', '/staff-lists'], ['GET', '/unknown']] as const) {
-    const result = await fakeCall(method, path);
-    assert.equal(result.nexted, false, `${method} ${path} must not reach its handler`);
-    if (path === '/unknown') {
-      assert.deepEqual([result.statusCode, result.body.code], [404, 'api.not_found']);
-    } else {
-      assert.deepEqual([result.statusCode, result.body.code], [403, 'access.unactivated'],
-        `${method} ${path} must be refused by the wrapper itself (not only by dispatcher ordering)`);
-    }
-  }
-  // Activated declarations pass the wrapper's own gate (no throw), including the
-  // 12 current U1 rows and every future flip.
+  // U2-F round 2 drove the legacy UNACTIVATED set to ZERO, so no REAL
+  // declaration exercises this ring any more. The refusal itself must stay
+  // fail-closed for any future flip: prove it on a SYNTHETIC unactivated
+  // declaration (pure, no DB) plus the wrapper's own unknown-route arm.
+  const synthetic: RouteDeclaration = {
+    method: 'POST', path: '/synthetic-unactivated', activation: 'UNACTIVATED',
+    capability: 'admin', matrix: parseMatrix('P@T#synthetic-round-2-pin'),
+  };
+  assert.throws(() => assertRouteActivated(synthetic),
+    (err: { statusCode?: number; code?: string }) =>
+      err.statusCode === 403 && err.code === 'access.unactivated',
+    'a fabricated UNACTIVATED declaration must be refused by the wrapper itself');
+  const unknown = await fakeCall('GET', '/unknown');
+  assert.equal(unknown.nexted, false, '/unknown must not reach a handler');
+  assert.deepEqual([unknown.statusCode, unknown.body.code], [404, 'api.not_found']);
+  // Activated declarations pass the wrapper's own gate (no throw) — including
+  // the U2-F round-2 provisioning triple (POST /users, PATCH /users/:id,
+  // POST /staff-lists/:id/approve).
   for (const route of ACCESS_REGISTRY.filter(r => r.activation === 'U1')) {
     assert.doesNotThrow(() => assertRouteActivated(route), `${route.method} ${route.path}`);
   }
-  for (const route of LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED')) {
+  // Vacuous by design at 0 rows — the shape is retained so a future partial
+  // flip re-proves the refusal loop instead of silently skipping it.
+  const stillDenied = LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED');
+  assert.equal(stillDenied.length, 0, 'zero UNACTIVATED legacy rows after U2-F round 2');
+  for (const route of stillDenied) {
     assert.throws(() => assertRouteActivated(route), (err: { statusCode?: number; code?: string }) =>
       err.statusCode === 403 && err.code === 'access.unactivated', `${route.method} ${route.path}`);
   }

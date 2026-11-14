@@ -4,8 +4,9 @@
 // under src/server/routes/. Everything those routers share lives here so the
 // split stays a pure move + wiring (no behavior change):
 // - legacy RLS context builders (deny unless replaced with trusted access in U2)
-// - B11b scope/gate helpers (b11bRequireGeAdmin, b11bOwnTenantScope,
-//   b11bAssertTenantActive, b11bAssertPasswordFresh)
+// - B11b scope/gate helpers — all four (b11bOwnTenantScope,
+//   b11bAssertTenantActive, b11bRequireGeAdmin, b11bAssertPasswordFresh)
+//   RETIRED by U2-F, see below; only contextFromUser (auth-internal) remains
 // - F-03 FULL fresh-gate retrofit: assertPasswordFresh (single DB choke point)
 //   + requireFreshPassword (Express middleware). EVERY mutating data route
 //   carries the middleware; the ONLY exemptions are FRESH_GATE_ALLOWLIST.
@@ -82,50 +83,39 @@ export function platformConfigContext(req: AuthenticatedRequest, targetId: strin
 }
 
 // ----------------------------------------------------------------------
-// B11b scope/gate helpers (moved verbatim from routes.ts).
+// B11b scope/gate helpers — RETIRED (U2-F round 2). b11bRequireGeAdmin and
+// b11bAssertPasswordFresh had their last call sites on the three provisioning
+// rows; those now run the matrix wrapper (requireDomainAccess) + the F-03
+// middleware + platformConfigContext (adminProvisioning.ts), so both
+// definitions are deleted with zero call sites left — same rule that deleted
+// b11bOwnTenantScope/b11bAssertTenantActive in round 1 ("no helper is deleted
+// until its last call site is migrated"). The F-03 fresh gate itself is
+// assertPasswordFresh/requireFreshPassword below; requireDomainAccess →
+// assertFreshIdentity is THE fresh/suspend gate for every wrapped row.
 // ----------------------------------------------------------------------
 
-export function b11bRequireGeAdmin(user: AuthUser, res: Response): boolean {
-  if (user.role !== 'ge_admin') {
-    res.status(403).json({ error: 'Only platform administrators may perform this operation.' });
-    return false;
+// ----------------------------------------------------------------------
+// B17 U2-F E3-02 (folded from U2-E Shield finding, task §3(3)) — the WRITE
+// twin of evaluations.ts readFailure. Spec §4 {error, code}: an error WE
+// raised (integer statusCode AND no 5-char PostgreSQL SQLSTATE) passes its
+// own message + code (+ the suspended flag the suspend wall carries) through;
+// anything else — a raw PostgreSQL message/DETAIL or an SQLSTATE — collapses
+// to the route's static fallback with NO code, so a handler bug can never
+// become a database oracle. Use it in EVERY write catch this unit touches.
+// ----------------------------------------------------------------------
+export function writeFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode);
+  const pgDiagnostic = typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code);
+  if (own && !pgDiagnostic) {
+    const body: { error: string; code?: string; suspended?: boolean } = {
+      error: typeof err?.message === 'string' ? err.message : fallback,
+    };
+    if (typeof err?.code === 'string') body.code = err.code;
+    if (typeof err?.suspended === 'boolean') body.suspended = err.suspended;
+    res.status(err.statusCode as number).json(body);
+    return;
   }
-  return true;
-}
-
-/** Fail-closed forced-change gate (S-12): provisioned accounts change first. */
-export async function b11bAssertPasswordFresh(client: DbClient, userId: string): Promise<void> {
-  await assertPasswordFresh(client, userId);
-}
-
-/** Suspend wall (S-09): non-GE callers in a suspended tenant see no data. */
-export async function b11bAssertTenantActive(client: DbClient, clientId: string, role: string): Promise<void> {
-  if (role === 'ge_admin') return;
-  const r = await client.query('SELECT suspended FROM clients WHERE id = $1', [clientId]);
-  if (r.rows[0]?.suspended === true) {
-    throw Object.assign(new Error('This tenant is suspended. Contact the platform administrator.'), {
-      statusCode: 403,
-      code: 'tenant.suspended',
-      suspended: true,
-    });
-  }
-}
-
-export function b11bOwnTenantScope(
-  user: AuthUser,
-  explicit: unknown
-): { clientId: string } | { error: string; status: number } {
-  const named = typeof explicit === 'string' && explicit.trim() ? explicit.trim() : null;
-  if (user.role === 'ge_admin') {
-    if (named) return { clientId: named };
-    if (user.clientId) return { clientId: user.clientId };
-    return { error: 'No tenant selected. As a platform admin, choose a tenant (clientId).', status: 400 };
-  }
-  if (named && named !== user.clientId) {
-    return { error: 'Cross-tenant access is forbidden.', status: 403 };
-  }
-  if (!user.clientId) return { error: 'No tenant context for this user.', status: 400 };
-  return { clientId: user.clientId };
+  res.status(500).json({ error: fallback });
 }
 
 // ----------------------------------------------------------------------
@@ -196,7 +186,10 @@ export async function requireFreshPassword(
       res.status(403).json({ error: err.message, code: err.code });
       return;
     }
-    res.status(err?.statusCode || 500).json({ error: err?.message || 'Password-freshness check failed' });
+    // U2-F round 3 (Shield Low-2): E3-02 semantics on the fresh-gate path too —
+    // a raw PostgreSQL message must never be echoed here. Own status/code pass
+    // through writeFailure; anything else collapses to the static fallback.
+    writeFailure(res, err, 'Password-freshness check failed');
   }
 }
 

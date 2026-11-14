@@ -85,9 +85,9 @@ async function main() {
   const before = await census();
   pass('D0 fresh loopback PG18, non-superuser/NOBYPASSRLS owner, FORCE RLS, both offline versions twice safe');
 
-  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length,25);
+  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length,0);
   assert.ok(LEGACY_ROUTES.filter(r => ['initiatives','reports'].includes(r.capability)).every(r => r.activation === 'U1'));
-  assert.deepEqual(activeBusinessCapabilities(),['taxonomy','gri','evaluations','actions','initiatives','reports','storage','audit','notifications']);
+  assert.deepEqual(activeBusinessCapabilities(),['taxonomy','gri','evaluations','admin','actions','initiatives','reports','storage','audit','notifications']);
   const app = express(); app.use(jsonInput,cookieParser()); app.use('/api',apiRouter); app.use(globalJsonErrorHandler);
   const server = app.listen(0,'127.0.0.1'); await new Promise<void>(resolve => server.once('listening',resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');

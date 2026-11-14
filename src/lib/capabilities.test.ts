@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { LEGACY_ROUTES, ACCESS_REGISTRY, classifyRoute, assertRegistryCoverage } from '../server/accessRegistry.ts';
 import { activeBusinessCapabilities, permittedPages, validBinding, type AccessContext } from './capabilities.ts';
 
-test('B17 exact route inventory: all 95 legacy declarations classified once; 25 business routes still unactivated', () => {
+test('B17 exact route inventory: all 95 legacy declarations classified once; 0 unactivated (U2-F round 2 complete)', () => {
   const files = ['src/server/taxonomy.ts', ...readdirSync('src/server/routes')
     .filter(name => name.endsWith('.ts')).map(name => `src/server/routes/${name}`)];
   const actual = files.flatMap(file => [...readFileSync(file,'utf8').matchAll(/router\.(get|post|put|patch|delete)\('([^']+)'/g)]
@@ -12,7 +12,11 @@ test('B17 exact route inventory: all 95 legacy declarations classified once; 25 
   assert.equal(actual.length, 95);
   assert.deepEqual(actual, LEGACY_ROUTES.map(route => `${route.method} ${route.path}`).sort());
   assert.equal(new Set(actual).size, actual.length);
-  assert.equal(LEGACY_ROUTES.filter(route => route.activation === 'UNACTIVATED').length, 25);
+  // U2-F: round 1 flipped the 22 non-provisioning rows (25 -> 3); round 2 (final)
+  // flipped the provisioning triple behind the R2-A substrate + lock-order proof.
+  const remaining = LEGACY_ROUTES.filter(route => route.activation === 'UNACTIVATED');
+  assert.equal(remaining.length, 0);
+  assert.deepEqual(remaining.map(route => `${route.method} ${route.path}`), []);
   for (const route of LEGACY_ROUTES) {
     const path = route.path.replace(/:[^/]+/g, 'resource');
     assert.equal(classifyRoute(route.method, path), route);
@@ -20,11 +24,12 @@ test('B17 exact route inventory: all 95 legacy declarations classified once; 25 
   }
   assert.equal(classifyRoute('GET', '/unknown'), undefined);
   assert.equal(classifyRoute('POST', '/workspace/not-enter'), undefined);
-  // آ§19(3): tracked truthfully from registry activation, in first-appearance
-  // order â€” U2-C added 'taxonomy' + 'gri' ahead of the U2-B capabilities;
-  // U2-E E-1 added 'evaluations' between 'gri' and 'actions'.
+  // §19(3): tracked truthfully from registry activation, in first-appearance
+  // order — U2-C added 'taxonomy' + 'gri' ahead of the U2-B capabilities;
+  // U2-E E-1 added 'evaluations' between 'gri' and 'actions';
+  // U2-F round 1 added 'admin' right after 'evaluations' (the §3.4 group).
   assert.deepEqual(activeBusinessCapabilities(),
-    ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications']);
+    ['taxonomy', 'gri', 'evaluations', 'admin', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications']);
   assert.equal(activeBusinessCapabilities().includes('system'), false);
   assert.equal(activeBusinessCapabilities().includes('session'), false);
 });

@@ -285,13 +285,21 @@ CREATE FUNCTION b17_platform_config() RETURNS boolean LANGUAGE sql STABLE
 -- server-set only); that single branch makes exactly those rows trimmable. The
 -- inbox reads keep their own-row identity check, and the scope half is unchanged.
 DROP POLICY b17_notifications ON notifications;
+-- SHIELD-U2F-01 (task §3(1)): the P@T fan-out/trim branches. A platform
+-- configuration transaction (server-set purpose 'platform.config' + explicit
+-- target T) may mark/trim exactly the inbox rows the notify INSERT trigger
+-- flagged inside that same transaction, and only inside T; the actor-identity
+-- row filter and every other scope branch above are unchanged, and no read
+-- endpoint ever runs under this purpose (only admin config handlers do).
 CREATE POLICY b17_notifications ON notifications FOR SELECT USING
   ((user_id::text=b17_setting('current_actor_id')
-    OR (b17_setting('current_purpose')='work'
+    OR (b17_setting('current_purpose') IN ('work','platform.config')
       AND user_id::text=b17_setting('notify_trim_target')))
    AND (
     (b17_platform_scope() AND client_id IS NULL)
-    OR (b17_work_tenant(client_id) AND b17_setting('current_mode')<>'employee')));
+    OR (b17_work_tenant(client_id) AND b17_setting('current_mode')<>'employee')
+    OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+      AND client_id::text=b17_setting('target_id'))));
 -- read / read-all may mark ONLY the rows the same scope already admits, and
 -- may not move a row out of that scope (user_id / client_id are immutable here).
 CREATE POLICY b17_notifications_update ON notifications FOR UPDATE USING
@@ -311,9 +319,16 @@ CREATE POLICY b17_notifications_update ON notifications FOR UPDATE USING
 -- recipients inside that same tenant scope — own inbox rows only, never
 -- platform rows, never another tenant's rows. WF-04, the cap limit itself and
 -- recipient resolution stay handler-owned (neither duplicated nor weakened).
+-- SHIELD-U2F-01 (task §3(1)): the U2-B0 "platform fan-out has no caller until
+-- U2-F" branch — a P@T configuration transaction (assignment create, staff
+-- reject) fans out to recipients of EXPLICIT TARGET T only. Same membership
+-- check as the work branch; the trim DELETE/SELECT above carry the twin.
 CREATE POLICY b17_notifications_insert ON notifications FOR INSERT WITH CHECK (
-  b17_work_tenant(client_id)
-  AND EXISTS(SELECT 1 FROM users u WHERE u.id=user_id AND u.client_id=client_id));
+  (b17_work_tenant(client_id)
+    AND EXISTS(SELECT 1 FROM users u WHERE u.id=user_id AND u.client_id=client_id))
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id')
+    AND EXISTS(SELECT 1 FROM users u WHERE u.id=user_id AND u.client_id=client_id)));
 -- Cap-trim DELETE (SHIELD-U2B3-01, task §23 item 5): the policy now carries
 -- the recipient-row identity itself — the actor's own rows, or the exact inbox
 -- this transaction's INSERT trigger marked (notify_trim_target) — instead of
@@ -322,9 +337,11 @@ CREATE POLICY b17_notifications_insert ON notifications FOR INSERT WITH CHECK (
 -- identity-bound; membership and own-tenant scope are unchanged.
 CREATE POLICY b17_notifications_delete ON notifications FOR DELETE USING (
   (user_id::text=b17_setting('current_actor_id')
-    OR (b17_setting('current_purpose')='work'
+    OR (b17_setting('current_purpose') IN ('work','platform.config')
       AND user_id::text=b17_setting('notify_trim_target')))
-  AND b17_work_tenant(client_id)
+  AND (b17_work_tenant(client_id)
+    OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+      AND client_id::text=b17_setting('target_id')))
   AND EXISTS(SELECT 1 FROM users u WHERE u.id=user_id AND u.client_id=client_id));
 
 -- Cap-trim signal (§19(1)): every notifications INSERT marks its recipient in
@@ -358,6 +375,12 @@ CREATE POLICY b17_domain_users_read ON users FOR SELECT USING (
   (b17_setting('current_purpose')='work' AND (
     (b17_platform_scope() AND client_id IS NULL)
     OR b17_work_tenant(client_id)))
+  -- SHIELD-U2F-01 (task §3(1)): the §3.4 P@T tenant-user reads (GET /users?clientId,
+  -- GET /departments head join, GET /clients/:id roster, GET /staff-lists name join).
+  -- Server-set explicit target only; a GE platform account (client_id IS NULL) is
+  -- never admitted here, and the work branch above is untouched.
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+      AND client_id::text=b17_setting('target_id'))
   OR (b17_setting('current_purpose') IS NULL
     AND b17_setting('current_session_id') IS NULL
     AND b17_setting('current_actor_id') IS NOT NULL
@@ -478,6 +501,24 @@ CREATE POLICY b17_audit_insert ON audit_log FOR INSERT WITH CHECK (
       AND ((action='IMPORT_GRI_DISCLOSURES' AND entity_type='standards')
         OR (action='ESG_PROFILE_IMPORTED' AND entity_type='esg_profile')
         OR (action='REPORT_SETTINGS_SAVED' AND entity_type='report_settings')))
+    -- SHIELD-U2F-01 (task §3(1)): the §3.4 admin configuration audit rows.
+    -- Targetless branch = tenant creation + the explicit bulk link + a
+    -- bulk link — both with a NULL target; target-
+    -- bound branch = every action a P@T row may take on EXPLICIT TARGET T
+    -- (suspend/rename, head designation, link/flag/unlink, assign/unassign,
+    -- staff reject, and — round 2 — USER_CREATED/USER_DEACTIVATED/
+    -- USER_REACTIVATED/STAFF_LIST_APPROVED provisioning rows). Append-only and
+    -- actor-bound above; OTPs/hashes are never in any payload.
+    OR (b17_platform_config() AND (
+      (b17_setting('target_id') IS NULL
+        AND action IN ('CREATE_CLIENT','LINK_SERVICE_ALL_TENANTS'))
+      OR (b17_setting('target_id') IS NOT NULL
+        AND client_id::text=b17_setting('target_id')
+        AND action IN ('CLIENT_SUSPENDED','CLIENT_UNSUSPENDED','CLIENT_UPDATED',
+          'DEPARTMENT_HEAD_ASSIGNED','DEPARTMENT_HEAD_CLEARED','LINK_CLIENT_SERVICE',
+          'UPDATE_CLIENT_SERVICE_FLAGS','UNLINK_CLIENT_SERVICE','ASSIGN_ITEM',
+          'UNASSIGN_ITEM','STAFF_LIST_REJECTED','USER_CREATED','USER_DEACTIVATED',
+          'USER_REACTIVATED','STAFF_LIST_APPROVED'))))
     OR b17_work_tenant(client_id)));
 -- U2-B0 adds row scope only. Handlers remain UNACTIVATED.
 -- U2-B round 3 adds only the server-side notify fan-out/trim policies and the
@@ -585,7 +626,7 @@ DECLARE n integer; old_purpose text;
 BEGIN
   IF ref IS NULL OR kind IS NULL OR kind NOT IN ('standard.disclosures','disclosure.items',
     'item.answers','item.evaluations','item.assignments','item.evidence','item.actions',
-    'tenant.unmapped_assignments')
+    'tenant.unmapped_assignments','tenant.item.answers','tenant.item.evaluations')
   THEN RAISE EXCEPTION 'b17.count_args'; END IF;
   IF kind = 'tenant.unmapped_assignments' THEN
     -- SHIELD-U2E-E3 (task §10 ruling 1): the §8 whole-tenant freeze preflight.
@@ -601,6 +642,19 @@ BEGIN
         AND b17_setting('current_user_role')='ge_admin'
         AND b17_setting('current_mode')='consultant'
         AND ref::text = b17_setting('current_tenant_id')),false)
+    THEN RAISE EXCEPTION 'b17.count_context'; END IF;
+  ELSIF kind IN ('tenant.item.answers','tenant.item.evaluations') THEN
+    -- SHIELD-U2F-01 (task §3(1)): the §3.4 DELETE /assignments blocker counts.
+    -- Ref is the ITEM; the tenant is the server-set explicit target T of the
+    -- P@T configuration context, never a request value. Admitted ONLY there —
+    -- so a platform configuration row can never read another tenant's blockers,
+    -- and the work/W context can never reach this branch (it keeps the plain
+    -- catalog kinds and the tenant preflight kind unchanged). One integer back,
+    -- so spec §5's "no P SELECT answer/evaluation blobs" holds by construction.
+    IF NOT coalesce((b17_setting('current_purpose')='platform.config'
+        AND b17_setting('current_actor_id') IS NOT NULL
+        AND b17_setting('current_user_role')='ge_admin'
+        AND b17_setting('target_id') IS NOT NULL),false)
     THEN RAISE EXCEPTION 'b17.count_context'; END IF;
   ELSIF NOT coalesce((b17_setting('current_purpose')='platform.config'
       AND b17_setting('current_actor_id') IS NOT NULL
@@ -621,6 +675,12 @@ BEGIN
       WHEN 'tenant.unmapped_assignments' THEN (
         SELECT count(*)::int FROM assignments a
         WHERE a.client_id=ref AND NOT b17_content_fact('linked',ref,a.item_id))
+      -- SHIELD-U2F-01: tenant-scoped blockers for DELETE /assignments — the same
+      -- item counted ONLY inside the explicit target T of the configuration context.
+      WHEN 'tenant.item.answers' THEN (SELECT count(*)::int FROM answers a
+        WHERE a.item_id=ref AND a.client_id::text=b17_setting('target_id'))
+      WHEN 'tenant.item.evaluations' THEN (SELECT count(*)::int FROM evaluations e
+        WHERE e.item_id=ref AND e.client_id::text=b17_setting('target_id'))
     END INTO n;
   EXCEPTION WHEN OTHERS THEN
     PERFORM set_config('app.current_purpose',coalesce(old_purpose,''),true);
@@ -829,3 +889,178 @@ CREATE POLICY b17_snapshot_notes_insert ON snapshot_notes FOR INSERT WITH CHECK 
   AND created_by::text=b17_setting('current_actor_id')
   AND EXISTS(SELECT 1 FROM review_snapshots s
     WHERE s.id=snapshot_id AND s.client_id=snapshot_notes.client_id));
+
+-- ===========================================================================
+-- B17 U2-F round 1 — SHIELD-U2F-01: admin §3.4 substrate for exactly the 22
+-- NON-provisioning rows (task §3(1) pre-authorised; b17Readiness refingerprint).
+-- Provisioning (POST /users, PATCH /users/:id, POST /staff-lists/:id/approve)
+-- is ROUND 2 and gains no policy here beyond the shared staff_lists UPDATE row
+-- scope its reject sibling already needs.
+--
+-- Three SERVER-SELECTED contexts, never a request-selected purpose:
+--   (A) purpose 'work'          = readContext(req): W/C/E own tenant only
+--       (b17_work_tenant). P never runs here after this unit: its targetless
+--       reads use (C), which keeps c-proof's "answers unreachable under the
+--       platform summary/work context" invariant literally true.
+--   (B) purpose 'platform.config' + explicit target T = platformConfigContext(req, T):
+--       the enumerated P@T configuration exception (§5 "configuration exceptions
+--       are enumerated").
+--   (C) purpose 'platform.config' + NULL target = platformConfigContext(req, null):
+--       global tenant creation, the EXPLICIT bulk link (§3.4 row 15: never
+--       automatic/startup/backfill — the route is the only caller) and the §6
+--       fixed-aggregate reads of GET /clients progress + GET /ge/overview.
+-- ROW SCOPE ONLY, exactly the B0/C1/E-2 discipline: no new SECURITY DEFINER
+-- (sanctioned set stays b17_catalog_child_count + b17_content_fact), no PUBLIC
+-- grant, no schema replay, no DELETE on answers/evaluations/approvals/clients/
+-- departments/users, no UPDATE on answers/evaluations/snapshots beyond the E-2
+-- policies. Freeze (is_scope_frozen triggers), version/OD-08/actor gates, the
+-- OTP-once rule, the 50-row inbox cap, append-only audit and every §3 handler
+-- guard stay in the handler/trigger layer and are neither duplicated nor
+-- weakened here.
+-- ===========================================================================
+
+-- Fixed-aggregate summary reads (§5: "summary read over assignments/answers/
+-- snapshot coverage for fixed aggregates"): ONLY the NULL-target platform
+-- configuration context (C) reaches these — never a work-purpose context, never
+-- a target-bound one. Handlers project count/pair columns only: GET /clients
+-- progress never selects answers.value/correction_history (f1 proves the JSON
+-- carries no score/gap/value field) and /ge/overview only counts. W/C/E keep
+-- their unchanged b17_scope policies; no P context anywhere is admitted to
+-- evaluations at all (scores stay out of every §3.4 projection).
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['assignments','answers','review_snapshots','client_services'] LOOP
+    EXECUTE format('CREATE POLICY b17_admin_summary_read ON public.%I FOR SELECT USING
+      (b17_platform_config() AND b17_setting(''target_id'') IS NULL
+       AND b17_setting(''current_mode'')=''platform'')', t);
+  END LOOP;
+END $$;
+
+-- clients: the P list/overview read (C), the RETURNING of POST /clients and the
+-- INSERT..SELECT source of the explicit bulk link (C); target-bound read is
+-- already b17_config_clients_read (C1) and target-bound write is this UPDATE.
+CREATE POLICY b17_admin_clients_read ON clients FOR SELECT USING
+  (b17_platform_config() AND b17_setting('target_id') IS NULL);
+CREATE POLICY b17_admin_clients_insert ON clients FOR INSERT WITH CHECK (
+  b17_platform_config() AND b17_setting('target_id') IS NULL
+  AND b17_setting('current_mode')='platform');
+CREATE POLICY b17_admin_clients_update ON clients FOR UPDATE
+  USING (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND id::text=b17_setting('target_id'))
+  WITH CHECK (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND id::text=b17_setting('target_id'));
+
+-- client_services: §3.4 rows 12/13/14/15. The C1 comment ("platform
+-- configuration can never INSERT/UPDATE/DELETE a subscription") is superseded
+-- by this unit's explicit pre-authorisation: a LINK is the enumerated §3.4
+-- configuration exception, still target-bound for P@T, still the explicit
+-- bulk route only for a NULL target, still never automatic. business rows
+-- (assignments/answers/evaluations) are untouched by an unlink — visibility is
+-- revoked by the mapping predicate alone (b17_item_visible / linked fact).
+CREATE POLICY b17_admin_links_insert ON client_services FOR INSERT WITH CHECK (
+  b17_platform_config() AND b17_setting('current_mode')='platform'
+  AND (b17_setting('target_id') IS NULL
+    OR (b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'))));
+-- (The row-15 idempotency pre-filter reads the current links through
+-- b17_admin_summary_read's NULL-target branch above — same context, one row
+-- scope. A work context and a target-bound context both stay denied for the
+-- contexts c-proof pins.)
+CREATE POLICY b17_admin_links_update ON client_services FOR UPDATE
+  USING (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'))
+  WITH CHECK (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
+CREATE POLICY b17_admin_links_delete ON client_services FOR DELETE USING
+  (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
+
+-- assignments: INSERT is the C1 target-bound policy; DELETE (§3.4 row 18) is
+-- target-bound only, and the answer/evaluation blockers are read through the
+-- count-only definer (tenant.item.* kinds), never as rows.
+CREATE POLICY b17_admin_assignments_delete ON assignments FOR DELETE USING
+  (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
+
+-- staff_lists + rows (§3.4 rows 20/21/22/24): C/W draft+submit+reject under
+-- their own work tenant, P reject under explicit T (round-2 approve reuses the
+-- SAME target-bound branch), and the NULL-target read for /ge/overview's
+-- pending-staff total. WITH CHECK pins W/C to submitted/rejected, so a
+-- work context can never mint 'approved' (provisioning) directly.
+CREATE POLICY b17_admin_staff_read ON staff_lists FOR SELECT USING
+  (b17_platform_config() AND (b17_setting('target_id') IS NULL
+    OR client_id::text=b17_setting('target_id')));
+CREATE POLICY b17_admin_staff_insert ON staff_lists FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode') IN ('consultant','client')
+  AND submitted_by::text=b17_setting('current_actor_id')
+  AND status='draft');
+CREATE POLICY b17_admin_staff_update ON staff_lists FOR UPDATE
+  USING (
+    (b17_work_tenant(client_id) AND b17_setting('current_mode') IN ('consultant','client'))
+    OR (b17_platform_config() AND b17_setting('current_mode')='platform'
+      AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id')))
+  WITH CHECK (
+    (b17_work_tenant(client_id) AND b17_setting('current_mode') IN ('consultant','client')
+      AND status IN ('submitted','rejected'))
+    OR (b17_platform_config() AND b17_setting('current_mode')='platform'
+      AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id')));
+CREATE POLICY b17_admin_staff_rows_read ON staff_list_rows FOR SELECT USING
+  (EXISTS(SELECT 1 FROM staff_lists s WHERE s.id=list_id
+    AND b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND s.client_id::text=b17_setting('target_id')));
+CREATE POLICY b17_admin_staff_rows_insert ON staff_list_rows FOR INSERT WITH CHECK (
+  b17_setting('current_purpose')='work'
+  AND b17_setting('current_mode') IN ('consultant','client')
+  AND EXISTS(SELECT 1 FROM staff_lists s WHERE s.id=list_id
+    AND b17_work_tenant(s.client_id) AND s.status='draft'
+    AND s.submitted_by::text=b17_setting('current_actor_id'))
+  AND EXISTS(SELECT 1 FROM departments d WHERE d.id=staff_list_rows.department_id));
+
+-- N/A shortcut (§3.4 row 19): W R+L ONLY. The E draft INSERTs above stay
+-- employee-only; this is the disjoint consultant+GE branch, pinned to an N/A
+-- row (never a fresh score), the actor's own signature, a linked item and a
+-- RETAINED assignment of that department (the handler refuses first with its
+-- existing 403/409 guards). P/C/E have no row on this declaration, and no
+-- work context can insert a scored evaluation through it.
+CREATE POLICY b17_answers_na_insert ON answers FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode')='consultant'
+  AND b17_setting('current_user_role')='ge_admin'
+  AND b17_item_visible(client_id,item_id)
+  AND submitted_by::text=b17_setting('current_actor_id')
+  AND status='submitted'
+  AND EXISTS(SELECT 1 FROM assignments a WHERE a.client_id=answers.client_id
+    AND a.item_id=answers.item_id AND a.department_id=answers.department_id));
+CREATE POLICY b17_evaluations_na_insert ON evaluations FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode')='consultant'
+  AND b17_setting('current_user_role')='ge_admin'
+  AND b17_item_visible(client_id,item_id)
+  AND evaluator_id::text=b17_setting('current_actor_id')
+  AND not_applicable AND score IS NULL AND na_reason IS NOT NULL
+  AND EXISTS(SELECT 1 FROM assignments a WHERE a.client_id=evaluations.client_id
+    AND a.item_id=evaluations.item_id));
+
+-- ===========================================================================
+-- B17 U2-F ROUND 2 — SHIELD-U2F-01 extension: §3.4 PROVISIONING rows
+-- 6 (POST /users), 7 (PATCH /users/:id) and 23 (approve). Row scope only, same
+-- discipline: no new SECURITY DEFINER (sanctioned set unchanged), no PUBLIC
+-- grant, b17.sql untouched. This is what R2-B of the Shield review required —
+-- under the legacy purpose-NULL context users INSERT was denied outright
+-- (b17_bootstrap is auth.bootstrap-only and forbids a department), users UPDATE
+-- was denied (b17_users_lock is auth.*-only) and the dupe pre-check read only
+-- the actor's own row; all three rows now run platformConfigContext(req, T)
+-- (T = the required explicit clientId; never a targetless provisioning context)
+-- so the pre-check sees the
+-- target tenant's users and the 23505 unique-email backstop stays global.
+-- The b17_revoke_inactive trigger keeps its own auth.revoke GUCs (b17.sql
+-- unchanged); its FOR UPDATE re-enters the row lock the handler took BEFORE the
+-- users UPDATE (parent §15 lock order, proven in scripts/b17-domain-f3.ts).
+-- ===========================================================================
+CREATE POLICY b17_admin_users_insert ON users FOR INSERT WITH CHECK (
+  b17_platform_config() AND b17_setting('current_mode')='platform'
+  AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
+CREATE POLICY b17_admin_users_update ON users FOR UPDATE
+  USING (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'))
+  WITH CHECK (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
