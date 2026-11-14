@@ -11,7 +11,13 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // U2-D: PG18 recomputation after narrow library/mapping, W selection,
 // target+linked Profile/settings policies, closed audit additions and the
 // item.actions count repair. Sanctioned definer set/owner ACLs unchanged.
-export const B17_CONTENT_SHAPE = '3b40916e614a7743f9d2d5a0fed34908';
+// U2-E E-1: recomputed after the review_snapshots/snapshot_notes W-only SELECT
+// substrate (SHIELD-U2E-E1).
+// U2-E E-2: recomputed after the E-0 write substrate + the §9(a) item-local
+// history branch (SHIELD-U2E-E2), the §10 ruling-1 tenant preflight kind and
+// the ruling-3 approvals provenance pin (SHIELD-U2E-E3); definer set/owner
+// ACLs still unchanged (no new SECURITY DEFINER).
+export const B17_CONTENT_SHAPE = '8c8f60bf7af9cbc5bd6f483b5b0dc715';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

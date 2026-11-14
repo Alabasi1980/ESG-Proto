@@ -57,13 +57,26 @@ export function formatMatrix(rules: readonly ContextRule[]): string {
   }).join(';');
 }
 
-const group = (capability: string, entries: readonly string[], active = false): RouteDeclaration[] =>
-  entries.map((entry) => {
+// `active` is either a blanket boolean (every declaration of the group) or the
+// EXACT set of `METHOD path` keys to flip (U2-E E-1: six evaluations READ rows
+// only, task §2 — the nine write rows of the same group stay UNACTIVATED).
+// An unknown key is a typo, never a silent no-op: it fails closed here.
+const group = (capability: string, entries: readonly string[],
+  active: boolean | readonly string[] = false): RouteDeclaration[] => {
+  const named: readonly string[] | null = Array.isArray(active) ? active as readonly string[] : null;
+  const flipped = new Set<string>();
+  const rows: RouteDeclaration[] = entries.map((entry) => {
     const [route, matrix] = entry.split('|');
     if (!matrix) throw new Error(`access.matrix_missing:${route}`);
     const [method, path] = route.split(' ');
-    return { method, path, capability, activation: active ? 'U1' : 'UNACTIVATED', matrix: parseMatrix(matrix) };
+    const key = `${method} ${path}`;
+    const on = active === true || (named !== null && named.includes(key));
+    if (on) flipped.add(key);
+    return { method, path, capability, activation: on ? 'U1' : 'UNACTIVATED', matrix: parseMatrix(matrix) };
   });
+  if (named && flipped.size !== named.length) throw new Error('access.activation_unknown');
+  return rows;
+};
 
 // One row per existing declaration, deliberately separate from future role eligibility.
 // Matrix strings transcribed from B17_TECHNICAL_SPEC.md §3 (§4 for workspace rows).
@@ -123,6 +136,17 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'GET /reviews/snapshots|W#own-tenant-only-safe-metadata-for-inaccessible-mixed-snapshots',
     'GET /reviews/snapshots/:id|W:R#full-blob-only-if-entire-payload-item-set-L-else-403-scope.not_visible',
     'POST /reviews/snapshots/:id/notes|W:R#append-only-2000-char-cap-same-full-scope-authorization',
+  ], [
+    // U2-E E-2 (task §2): ALL fifteen §3.3 evaluations/reviews declarations are
+    // now retrofitted (6 reads in E-1 + 9 writes here) — 34 → 25 UNACTIVATED.
+    // Listed explicitly so the flip set stays auditable and a typo in a key
+    // fails closed (access.activation_unknown) instead of silently flipping.
+    'GET /queue', 'POST /evaluations', 'POST /evaluations/:id/submit',
+    'POST /evaluations/:id/approve', 'POST /evaluations/:id/return',
+    'PUT /evaluations/:id/correct', 'GET /evaluations',
+    'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
+    'GET /client-review', 'GET /reviews/ge-check', 'POST /reviews/ge-final',
+    'GET /reviews/snapshots', 'GET /reviews/snapshots/:id', 'POST /reviews/snapshots/:id/notes',
   ]),
   ...group('admin', [
     'GET /clients|P#searchable-safe-per-linked-service-progress;C#own-minimal-company-row-not-enumeration',

@@ -114,16 +114,97 @@ test('U2-B0 action scope is W create / W+C update with no WF-04 logic in SQL', (
     assert.ok(!create.includes(state) && !update.includes(state), `no WF-04 state in policies: ${state}`);
 });
 
-test('U2-B0 audit scope is P platform-events / W A-filtered / C-E denied, business INSERT under work', () => {
+test('U2-B0+E2 audit scope is P platform-events / W A-filtered / C-E general-log denied, business INSERT under work', () => {
   const read = section('CREATE POLICY b17_audit_read', 'DROP POLICY b17_audit_insert');
   assert.ok(read.includes('b17_platform_scope() AND client_id IS NULL'), 'P platform events only');
   assert.ok(read.includes("b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'"), 'W A-filtered');
-  assert.ok(!read.includes("'client'") && !read.includes("'employee'"), 'C/E denied');
+  // §9(a) ruling (SHIELD-U2E-E2-HISTORY): the ONLY C/E admission is the narrow
+  // ITEM-LOCAL history branch — purpose-bound, entity-whitelisted and
+  // ownership-resolved. There is no other C/E path through the general feed.
+  assert.equal((read.match(/entity_type='evaluations'/g) ?? []).length, 1,
+    'exactly one entity-whitelisted item-local history branch');
+  assert.ok(read.includes("b17_setting('current_purpose')='work'"), 'history branch is purpose-bound');
+  assert.ok(read.includes("b17_content_fact('evaluation',e.client_id,e.id)"),
+    'E needs own-department provenance (G-SHARED fail-closed)');
+  assert.ok(read.includes('b17_item_visible(e.client_id,e.item_id)'), 'ownership resolved to a linked item');
+  assert.ok(!read.includes("'client'"), 'no client-mode branch outside the history grant');
   const insert = section('CREATE POLICY b17_audit_insert', '-- U2-B0 adds row scope only');
   assert.ok(insert.includes("IN ('auth.login','auth.password','auth.bootstrap')"), 'U1 auth branch retained');
   assert.ok(insert.includes("action IN ('WORKSPACE_ENTER','WORKSPACE_EXIT')"), 'U1 workspace branch retained');
   assert.ok(insert.includes('OR b17_work_tenant(client_id)'), 'business INSERT under work context');
   assert.ok(insert.includes("user_id::text=b17_setting('current_actor_id')"), 'actor-bound');
+});
+
+test('U2-E E-2 write substrate: only the §3.3 contexts gain INSERT/UPDATE, no DELETE, no new definer', () => {
+  const sql = readFileSync(new URL('../db/b17-content.sql', import.meta.url), 'utf8');
+  // Exactly these five tables gain a write policy (task §4.1 / SHIELD-U2E-E2).
+  for (const [table, cmd, policy] of [
+    ['answers', 'INSERT', 'b17_answers_draft_insert'],
+    ['answers', 'UPDATE', 'b17_answers_workflow_update'],
+    ['evaluations', 'INSERT', 'b17_evaluations_draft_insert'],
+    ['evaluations', 'UPDATE', 'b17_evaluations_workflow_update'],
+    ['approvals', 'INSERT', 'b17_approvals_insert'],
+    ['review_snapshots', 'INSERT', 'b17_review_snapshots_insert'],
+    ['snapshot_notes', 'INSERT', 'b17_snapshot_notes_insert'],
+  ] as const) {
+    assert.ok(sql.includes(`CREATE POLICY ${policy} ON ${table} FOR ${cmd}`), `${policy} must exist`);
+  }
+  // Nothing else in the tenant surface mutates: no DELETE anywhere on them,
+  // no UPDATE on the immutable snapshot tables, client_services still frozen.
+  for (const [table, cmd] of [
+    ['answers', 'DELETE'], ['evaluations', 'DELETE'], ['approvals', 'UPDATE'], ['approvals', 'DELETE'],
+    ['review_snapshots', 'UPDATE'], ['review_snapshots', 'DELETE'],
+    ['snapshot_notes', 'UPDATE'], ['snapshot_notes', 'DELETE'],
+    ['client_services', 'INSERT'], ['client_services', 'UPDATE'], ['client_services', 'DELETE'],
+    ['assignments', 'UPDATE'], ['assignments', 'DELETE'], ['departments', 'DELETE'],
+  ] as const)
+    assert.ok(!sql.includes(`ON ${table} FOR ${cmd}`), `no ${cmd} policy on ${table}`);
+  // G-SHARED stays fail-closed: the draft INSERTs are own-department/actor
+  // bound, and the UPDATE policies carry the provenance facts (the INSERT path
+  // cannot re-read the table it is writing — see the note in b17-content.sql).
+  for (const [policy, pred] of [
+    ['b17_answers_draft_insert', "department_id::text=b17_setting('current_user_department_id')"],
+    ['b17_answers_draft_insert', "submitted_by::text=b17_setting('current_actor_id')"],
+    ['b17_evaluations_draft_insert', "evaluator_id::text=b17_setting('current_actor_id')"],
+    ['b17_evaluations_draft_insert', "b17_item_visible(client_id,item_id)"],
+    ['b17_evaluations_workflow_update', "b17_content_fact('evaluation',client_id,id)"],
+    ['b17_answers_workflow_update', "b17_content_fact('assigned',client_id,item_id)"],
+  ] as const)
+    assert.ok(sql.slice(sql.indexOf(`CREATE POLICY ${policy}`)).includes(pred),
+      `${policy} keeps ${pred}`);
+  // No new definer: the E-2 delta adds zero SECURITY DEFINER functions, so the
+  // sanctioned set (b17_catalog_child_count, b17_content_fact) is untouched.
+  assert.equal((sql.match(/SECURITY DEFINER\s*\nSET search_path/g) ?? []).length, 2);
+});
+
+test('U2-E E-3: truthful §8 preflight kind (ruling 1) + approvals provenance pin (ruling 3)', () => {
+  const sql = readFileSync(new URL('../db/b17-content.sql', import.meta.url), 'utf8');
+  // Ruling 1 / SHIELD-U2E-E3: a closed-list kind whose guard admits EXACTLY the
+  // W + ge_admin + consultant + own-bound-tenant context.
+  assert.equal((sql.match(/tenant\.unmapped_assignments/g) ?? []).length, 3,
+    'the kind appears exactly three times: closed kind list, guard, CASE arm');
+  assert.ok(sql.includes("ref::text = b17_setting('current_tenant_id')"),
+    'the preflight is pinned to the caller own bound tenant (never a foreign T)');
+  assert.ok(sql.includes("b17_setting('current_mode')='consultant'"),
+    'the preflight is W (consultant) only — not a platform context');
+  assert.ok(sql.includes("NOT b17_content_fact('linked',ref,a.item_id)"),
+    'the count sees UNMAPPED assignments through the linked fact (not through b17_item_visible)');
+  // The platform.config kinds keep their own guard: a P context must not reach
+  // the tenant kind and the tenant context must not reach the catalog kinds.
+  assert.ok(/kind = 'tenant\.unmapped_assignments' THEN[\s\S]{0,2000}?RAISE EXCEPTION 'b17\.count_context'; END IF;\s*ELSIF/
+    .test(sql),
+    'the tenant kind fails closed outside its own context (before the catalog guard)');
+  assert.ok(/ELSIF NOT coalesce\(\(b17_setting\('current_purpose'\)='platform\.config'[\s\S]{0,500}?b17\.count_context/.test(sql),
+    'the catalog kinds keep the platform.config guard');
+  // Ruling 3 / SHIELD-U2E-E2-01: approvals stamps an answer the caller can see.
+  const approvals = sql.slice(sql.indexOf('CREATE POLICY b17_approvals_insert'));
+  assert.ok(approvals.includes('b17_item_visible(a.client_id,a.item_id)'), 'approvals is item-visible pinned');
+  assert.ok(approvals.includes("a.department_id::text=b17_setting('current_user_department_id')"),
+    'approvals carries the own-department pin for E');
+  assert.ok(approvals.includes("b17_content_fact('assigned',a.client_id,a.item_id)"),
+    'approvals carries the assigned-item fact for E');
+  assert.ok(!/CREATE POLICY \w+ ON approvals FOR (UPDATE|DELETE)/.test(sql),
+    'approvals stays append-only (no UPDATE/DELETE policy)');
 });
 
 test('U2-B0 readiness fingerprints cover the policy delta and keep refusal paths', () => {
@@ -166,11 +247,12 @@ test('U2-C1 substrate: catalog P policies, platform.config target policies, audi
         `catalog ${cmd} policy loop covers ${table}`);
   }
   assert.ok(sql.includes('WITH CHECK (b17_platform_scope() OR b17_platform_config())'));
-  // Tenant tables gain NO new mutation surface: client_services never gets any
-  // policy (no implicit grant), answers/evaluations get no write policy.
+  // U2-C1 itself gained NO mutation surface: client_services never gets any
+  // policy (no implicit grant), assignments/departments stay read-only. The
+  // answers/evaluations write policies below are the SEPARATE, §4.1-authorized
+  // U2-E E-2 E-0 delta and are pinned by their own test above.
   for (const [table, cmd] of [['client_services', 'INSERT'], ['client_services', 'UPDATE'], ['client_services', 'DELETE'],
-    ['answers', 'INSERT'], ['answers', 'UPDATE'], ['answers', 'DELETE'],
-    ['evaluations', 'INSERT'], ['evaluations', 'UPDATE'], ['evaluations', 'DELETE'],
+    ['answers', 'DELETE'], ['evaluations', 'DELETE'],
     ['assignments', 'UPDATE'], ['assignments', 'DELETE'], ['departments', 'DELETE']] as const)
     assert.ok(!sql.includes(`ON ${table} FOR ${cmd}`), `no ${cmd} policy on ${table}`);
   // D2 target-bound configuration: only platform.config with explicit target.

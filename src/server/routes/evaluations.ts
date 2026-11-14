@@ -12,7 +12,6 @@ import {
 import {
   authMiddleware,
   type AuthenticatedRequest,
-  type AuthUser,
 } from '../auth.ts';
 import {
   clientApproveGate,
@@ -24,10 +23,8 @@ import {
 } from '../../lib/approvalChain.ts';
 import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../../lib/scoring.ts';
 import {
-  contextFromUser,
+  readContext,
   requireFreshPassword,
-  b11bAssertPasswordFresh,
-  b11bAssertTenantActive,
   isFrozenScope,
   frozenWriteError,
   toFrozenError,
@@ -41,8 +38,49 @@ import {
   B16_PRELIMINARY_LABEL_AR,
   type DbClient,
 } from './_shared.ts';
+import { requireDomainAccess } from '../access.ts';
+import {
+  LINKED_ITEM_SQL,
+  SCOPED_ITEM_SQL,
+  assertEmployeeEvaluationWritable,
+  assertOwnDepartmentRows,
+  assertVisibleItem,
+  linkedItemsOnly,
+  optionalScopeId,
+  ownDepartment,
+  ownTenant,
+  scopeError,
+  scopeId,
+  scopedAnswers,
+  scopedEvaluations,
+  snapshotPayloadFullyLinked,
+} from '../scope.ts';
 
 const router = express.Router();
+
+/** JSON `code` for the spec §4 `{error, code}` contract: our own scope/auth
+ * codes only. A raw PostgreSQL diagnostic code (5 alnum chars, e.g. 42501) is
+ * never echoed back — a handler bug must not turn into a DB oracle. */
+const errCode = (err: any): string | undefined =>
+  typeof err?.code === 'string' && !/^[0-9A-Z]{5}$/.test(err.code) ? err.code : undefined;
+
+/** Spec §4 `{error, code}` treatment for the SIX read catches (§10 ruling 4,
+ * Shield-04): an error we raised ourselves (statusCode set, our own scope/auth
+ * code) passes through with its message; anything else — a raw PostgreSQL
+ * message or SQLSTATE — collapses to the route's generic fallback with NO code
+ * echoed, so a handler bug can never become a database oracle. */
+function readFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode);
+  const pgDiagnostic = typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code);
+  if (own && !pgDiagnostic) {
+    res.status(err.statusCode as number).json({
+      error: typeof err?.message === 'string' ? err.message : fallback,
+      code: errCode(err),
+    });
+    return;
+  }
+  res.status(500).json({ error: fallback });
+}
 
 // ----------------------------------------------------------------------
 // 6B. Evaluation Workflow (FIX BATCH 3)
@@ -83,35 +121,6 @@ function queueStatusFor(row: {
   if (s === 'client_approved') return 'client_approved';
   if (s === 'submitted' || s === 'approved' || s === 'returned') return s;
   return 'draft';
-}
-
-/** Tenant scope for evaluation endpoints. ge_admin may name a client explicitly. */
-function evalClientScope(user: AuthUser, explicit?: unknown): string | null {
-  if (typeof explicit === 'string' && explicit.trim()) {
-    if (user.role !== 'ge_admin' && explicit.trim() !== user.clientId) {
-      return null; // cross-tenant access — caller rejects with 403
-    }
-    return explicit.trim();
-  }
-  return user.clientId ?? null;
-}
-
-/**
- * Department scope for evaluation reads/writes. Employees are pinned to
- * their own department: naming any other department is a 403, not a filter.
- */
-function evalDepartmentScope(user: AuthUser, explicit?: unknown): { departmentId: string } | { error: string } {
-  const named = typeof explicit === 'string' && explicit.trim() ? explicit.trim() : null;
-  if (user.role === 'employee') {
-    if (!user.departmentId) return { error: 'Your user account has no department assignment.' };
-    if (named && named !== user.departmentId) {
-      return { error: 'Employees may only access items assigned to their own department.' };
-    }
-    return { departmentId: user.departmentId };
-  }
-  if (named) return { departmentId: named };
-  if (user.departmentId) return { departmentId: user.departmentId };
-  return { error: 'A departmentId is required for this operation.' };
 }
 
 /**
@@ -260,50 +269,53 @@ async function itemCodeFor(db: DbClient, itemId: string): Promise<string> {
 
 // A1. Department queue: items assigned to the caller's department with
 // current evaluation + answer state. Employees are pinned to their own
-// department; client_admin sees the tenant queue (optional departmentId
-// filter); ge_admin sees all (optional clientId + departmentId filters).
-router.get('/queue', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// department; client_admin/consultant see the tenant queue (optional
+// departmentId filter). U2-E E-1 (§3.3 `W:L;C:L;E:L+D#tenant-always-resolved-
+// never-nullable`): the tenant always comes from the server-derived access
+// context — a supplied clientId is a comparison only — and every row passes
+// the scope.ts linked (+ own-department for E) predicate. The forced-change
+// gate and suspend wall now come from requireDomainAccess (assertFreshIdentity),
+// which is why the legacy b11b users/clients reads are gone from this handler:
+// they cannot resolve a platform identity under the bound 'work' purpose.
+router.get('/queue', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const namedDept = typeof req.query.departmentId === 'string' && req.query.departmentId.trim()
-      ? req.query.departmentId.trim()
-      : null;
-    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim()
-      ? req.query.clientId.trim()
-      : null;
+    const access = req.access!;
+    // §9(b): a supplied departmentId is a UUID or a 400 — never a raw 22P02
+    // escaping as a 500 from the uuid column comparison below.
+    const namedDept = optionalScopeId(req.query.departmentId);
+    const tenantId = ownTenant(access, req.query.clientId);
 
-    if (user.role === 'employee' && !user.departmentId) {
-      return res.status(400).json({ error: 'Your user account has no department assignment.' });
-    }
-    if (user.role === 'employee' && namedDept && namedDept !== user.departmentId) {
-      return res.status(403).json({ error: 'Employees may only access items assigned to their own department.' });
-    }
-    if (user.role === 'client_admin' && namedClient && namedClient !== user.clientId) {
-      return res.status(403).json({ error: 'Client administrators may only access their own tenant queue.' });
-    }
-    if (!user.clientId && user.role !== 'ge_admin') {
-      return res.status(400).json({ error: 'No tenant context for this user.' });
-    }
-
-    const deptFilter = user.role === 'employee' ? user.departmentId! : namedDept;
-    const clientFilter = user.role === 'ge_admin' ? namedClient : null;
-
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
-      // B11b (S-09/S-12): forced-change gate + suspend wall on the queue.
-      await b11bAssertPasswordFresh(client, user.id);
-      if (user.clientId && user.role !== 'ge_admin') {
-        await b11bAssertTenantActive(client, user.clientId, user.role);
+    if (access.mode === 'employee') {
+      if (!access.departmentId) {
+        return res.status(400).json({ error: 'Your user account has no department assignment.' });
       }
-      const params: any[] = [];
-      let where = '';
+      if (namedDept && namedDept !== access.departmentId) {
+        return res.status(403).json({
+          error: 'Employees may only access items assigned to their own department.',
+          code: 'scope.department_mismatch',
+        });
+      }
+    }
+    // §9(c): the E department pin is an EXPLICIT handler-level predicate on the
+    // assignment row itself (`a.department_id = own`), asserted again on every
+    // returned row — it does not rest on FORCE RLS or on the imported
+    // EMPLOYEE_ITEM_SQL string. W/C keep departmentId as a narrowing filter
+    // only, never as authorization.
+    const ownDept = ownDepartment(access);
+    const deptFilter = ownDept ?? namedDept;
+
+    const rows = await withTenantContext(readContext(req), async (client) => {
+      // Fixed parameter contract of the scope.ts predicates: $1 trusted tenant,
+      // $2 optional linked service (NULL = any linked service), $3 own E
+      // department. An unlinked/unassigned row can never enter the set. The
+      // parameter list must match the highest $n the chosen predicate uses.
+      const params: any[] = ownDept ? [tenantId, null, ownDept] : [tenantId, null];
+      let where = ' AND a.client_id = $1';
       if (deptFilter) {
         params.push(deptFilter);
         where += ` AND a.department_id = $${params.length}`;
       }
-      if (clientFilter) {
-        params.push(clientFilter);
-        where += ` AND a.client_id = $${params.length}`;
-      }
+      const scoped = ownDept ? SCOPED_ITEM_SQL : LINKED_ITEM_SQL;
       const result = await client.query(
         `SELECT i.id AS item_id, i.code, i.requirement, i.priority, i.weight,
                 i.esg_class, i.topic, i.objective,
@@ -323,28 +335,34 @@ router.get('/queue', authMiddleware, async (req: AuthenticatedRequest, res: Resp
          LEFT JOIN evaluations e ON e.item_id = i.id AND e.client_id = a.client_id
          LEFT JOIN answers ans ON ans.item_id = i.id AND ans.client_id = a.client_id
                               AND ans.department_id = a.department_id
-         WHERE 1 = 1${where}
+         WHERE ${scoped}${where}
          ORDER BY s.code ASC, d.code ASC, i.code ASC`
         ,
         params
       );
       return result.rows.map((row) => ({ ...row, status: queueStatusFor(row) }));
     });
+    // §9(c) defence-in-depth: refuse (never filter) if any E row leaked.
+    assertOwnDepartmentRows(access, rows);
 
     res.json({ items: rows, count: rows.length });
   } catch (err: any) {
     console.error('Queue fetch error:', err);
-    res
-      .status(err.statusCode || 500)
-      .json({ error: err.message || 'Failed to fetch evaluation queue', code: err.code, suspended: err.suspended });
+    readFailure(res, err, 'Failed to fetch evaluation queue');
   }
 });
 
 // A2. Create-or-update DRAFT evaluation + answer in one transaction.
 // Body: exactly one of {score} XOR {notEvaluated:true} XOR {notApplicable:true, naReason}.
-router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-2 (§3.3 `E:L+D#draft-save-only-no-C-W-P-fresh-evaluation`): the §3
+// matrix refuses C/W/P before this handler; the B16 bilingual refusals below
+// stay as defence-in-depth. Tenant and department are server-derived
+// (scope.ts ownTenant / ownDepartment) and every supplied id is a UUID or a
+// 400 before any SQL (§9(b)).
+router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
+    const access = req.access!;
     // B16-B1: employees own-dept ONLY. client_admin files nothing (confirm at
     // client scope instead); ge_admin never files fresh evaluations (GE rates
     // via reasoned correction, never by fresh evaluation).
@@ -355,11 +373,14 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
       return res.status(403).json({ error: B16_GE_CREATE_EVAL_REFUSAL });
     }
     const body = req.body ?? {};
-    const { itemId, score, notEvaluated, notApplicable, naReason, evidenceNote } = body;
+    const { score, notEvaluated, notApplicable, naReason, evidenceNote } = body;
 
-    if (!itemId || typeof itemId !== 'string') {
+    // §9(b): malformed itemId is a 400 scope.id_invalid BEFORE any SQL.
+    const itemId = typeof body.itemId === 'string' && body.itemId.trim() ? body.itemId.trim() : null;
+    if (!itemId) {
       return res.status(400).json({ error: 'itemId is required.' });
     }
+    scopeId(itemId, true);
 
     const modeCount = [
       score !== undefined && score !== null,
@@ -394,18 +415,24 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
       finalNotEvaluated = true;
     }
 
-    const clientId = evalClientScope(user, body.clientId);
-    if (!clientId) {
-      return res.status(403).json({ error: 'Cross-tenant evaluation writes are forbidden.' });
+    // §3.3: tenant is always the caller's own (a supplied clientId compares,
+    // never selects); the department is always the caller's own for E.
+    const clientId = ownTenant(access, body.clientId);
+    const ownDept = ownDepartment(access);
+    if (!ownDept) {
+      return res.status(403).json({ error: 'Your user account has no department assignment.', code: 'scope.department_mismatch' });
     }
-    const deptScope = evalDepartmentScope(user, body.departmentId);
-    if ('error' in deptScope) {
-      return res.status(user.role === 'employee' ? 403 : 400).json({ error: deptScope.error });
+    const namedDept = optionalScopeId(body.departmentId);
+    if (namedDept && namedDept !== ownDept) {
+      return res.status(403).json({
+        error: 'Employees may only access items assigned to their own department.',
+        code: 'scope.department_mismatch',
+      });
     }
-    const departmentId = deptScope.departmentId;
+    const departmentId = ownDept;
     const note = typeof evidenceNote === 'string' ? evidenceNote : '';
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(readContext(req), async (client) => {
       const assignRes = await client.query(
         'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
         [clientId, itemId, departmentId]
@@ -413,6 +440,10 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
       if ((assignRes.rowCount ?? 0) === 0) {
         throw Object.assign(new Error('This item is not assigned to the department.'), { statusCode: 403 });
       }
+      // G-SHARED fail-closed (U2D round-4 predicate): an ambiguous pair is
+      // refused BEFORE the ON CONFLICT upsert can replace another department's
+      // evaluator/answer — 409 scope.shared_ambiguous, no rekey.
+      await assertEmployeeEvaluationWritable(client, access, itemId);
 
       // B9-B (WF-05): frozen scope refuses evaluation writes.
       if (await isFrozenScope(client, clientId, itemId)) {
@@ -453,21 +484,36 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
         }
       }
 
-      const evalRes = await client.query(
-        `INSERT INTO evaluations (client_id, item_id, evaluator_id, score, not_evaluated, not_applicable, na_reason, justification)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT (client_id, item_id) DO UPDATE SET
-            evaluator_id = EXCLUDED.evaluator_id,
-            score = EXCLUDED.score,
-            not_evaluated = EXCLUDED.not_evaluated,
-            not_applicable = EXCLUDED.not_applicable,
-            na_reason = EXCLUDED.na_reason,
-            justification = EXCLUDED.justification,
-            version = evaluations.version + 1,
-            updated_at = NOW()
-          RETURNING *`,
-        [clientId, itemId, user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null]
+      // Pair write WITHOUT `ON CONFLICT` and WITHOUT `RETURNING`:
+      //  - RETURNING is denied because PostgreSQL applies the SELECT policies
+      //    to it and a brand-new evaluation has no answer yet, so
+      //    b17_content_fact('evaluation', ...) is false (the answer row below
+      //    is what makes it provable);
+      //  - `ON CONFLICT ... DO UPDATE` on this table evaluates the UPDATE row
+      //    policy against the row being written, which has the same problem on
+      //    the first save. An explicit UPDATE-then-INSERT keeps both paths on
+      //    their own policy: UPDATE only ever touches an EXISTING, provable
+      //    pair, INSERT only ever creates one. assertEmployeeEvaluationWritable
+      //    above holds the per-pair advisory lock, so the two steps cannot race.
+      const updated = await client.query(
+        `UPDATE evaluations
+            SET evaluator_id = $1, score = $2, not_evaluated = $3, not_applicable = $4,
+                na_reason = $5, justification = $6, version = version + 1, updated_at = NOW()
+          WHERE client_id = $7 AND item_id = $8`,
+        [user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null, clientId, itemId]
       );
+      if ((updated.rowCount ?? 0) === 0) {
+        if (existingEval.rows[0]) {
+          // The pair exists but RLS will not admit it to this caller: an
+          // ambiguous/foreign-department evaluation. Fail closed, never rekey.
+          throw scopeError(409, 'scope.shared_ambiguous');
+        }
+        await client.query(
+          `INSERT INTO evaluations (client_id, item_id, evaluator_id, score, not_evaluated, not_applicable, na_reason, justification)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [clientId, itemId, user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null]
+        );
+      }
 
       // Draft upsert: never resets correction_history on conflict — the
       // trigger guards submitted rows and history only ever grows via A5.
@@ -483,6 +529,14 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
           RETURNING *`,
         [clientId, itemId, departmentId, user.id, note]
       );
+
+      // Read the evaluation back NOW that its answer row exists (see above).
+      const evalRes = await client.query(
+        'SELECT * FROM evaluations WHERE client_id = $1 AND item_id = $2', [clientId, itemId]
+      );
+      if (!evalRes.rows[0]) {
+        throw Object.assign(new Error('Evaluation not found after save.'), { statusCode: 500 });
+      }
 
       await recordAuditLog(client, {
         clientId,
@@ -509,7 +563,7 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, async (req: Au
     if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
     console.error('Evaluation save error:', err);
     const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to save evaluation draft' });
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to save evaluation draft', code: errCode(err) });
   }
 });
 
@@ -546,12 +600,13 @@ export function submitActorGate(input: SubmitActorGateInput): SubmitActorGate {
   return { ok: false, status: 403, error: SUBMIT_REFUSAL };
 }
 
-router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    const evaluationId = req.params.id;
+    // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
+    const evaluationId = scopeId(req.params.id, true)!;
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(readContext(req), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
       if (user.id !== evaluation.evaluator_id) {
@@ -654,7 +709,7 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, asy
         return res.status(409).json({ error: err.message, ...err.conflictPayload });
       }
       const mappedSubmit = toFrozenError(err);
-      res.status(mappedSubmit.statusCode || 500).json({ error: mappedSubmit.message || 'Failed to submit evaluation' });
+      res.status(mappedSubmit.statusCode || 500).json({ error: mappedSubmit.message || 'Failed to submit evaluation', code: errCode(err) });
     }
   });
 
@@ -677,13 +732,14 @@ async function handleEvaluationDecision(
 ) {
   try {
     const user = req.user!;
-    const evaluationId = req.params.id;
+    // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
+    const evaluationId = scopeId(req.params.id, true)!;
     const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
     if (decision === 'return' && !comment) {
       return res.status(400).json({ error: 'A return comment is required so the department knows what to rework.' });
     }
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(readContext(req), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
       if (!answer) {
@@ -822,25 +878,30 @@ async function handleEvaluationDecision(
         return res.status(409).json({ error: err.message, ...err.conflictPayload });
       }
       const mappedDecision = toFrozenError(err);
-      res.status(mappedDecision.statusCode || 500).json({ error: mappedDecision.message || 'Failed to record evaluation decision' });
+      res.status(mappedDecision.statusCode || 500).json({ error: mappedDecision.message || 'Failed to record evaluation decision', code: errCode(err) });
     }
 }
 
-router.post('/evaluations/:id/approve', authMiddleware, requireFreshPassword, (req: AuthenticatedRequest, res: Response) =>
-  handleEvaluationDecision(req, res, 'approve')
+router.post('/evaluations/:id/approve', authMiddleware, requireFreshPassword, requireDomainAccess,
+  (req: AuthenticatedRequest, res: Response) => handleEvaluationDecision(req, res, 'approve')
 );
 
-router.post('/evaluations/:id/return', authMiddleware, requireFreshPassword, (req: AuthenticatedRequest, res: Response) =>
-  handleEvaluationDecision(req, res, 'return')
+router.post('/evaluations/:id/return', authMiddleware, requireFreshPassword, requireDomainAccess,
+  (req: AuthenticatedRequest, res: Response) => handleEvaluationDecision(req, res, 'return')
 );
 
 // A5. Post-submit correction: appended revision only. Requires a reason;
 // grows answers.correction_history (trigger-enforced) and stamps
 // evaluations.previous_score. Drafts must use POST /api/evaluations.
-router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-2 (§3.3 `W:R+L;E:R+L+D#author-reason-version-prefinal-rules-C-P-denied`):
+// the §3 matrix refuses C/P before this handler; W corrects a linked own-tenant
+// evaluation, E corrects its own-department authored one.
+router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    const evaluationId = req.params.id;
+    const access = req.access!;
+    // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
+    const evaluationId = scopeId(req.params.id, true)!;
     const body = req.body ?? {};
     const { newScore, notEvaluated, notApplicable, naReason, reason } = body;
 
@@ -879,8 +940,11 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, asy
       afterNotEvaluated = true;
     }
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(readContext(req), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+      // R + L (W) / R + L + D (E) at the handler boundary as well as under
+      // FORCE RLS: an unlinked or foreign-department pair is a generic 404.
+      await assertVisibleItem(client, access, evaluation.item_id);
 
       // B16-B3: author (own, any pre-final state) + ge_admin always, with
       // reason. client_admin → 403 (use return instead).
@@ -977,37 +1041,43 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, asy
     if (err?.statusCode === 409 && err?.conflictPayload) {
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
     }
-    res.status(err.statusCode || 500).json({ error: toFrozenError(err).message || 'Failed to correct evaluation' });
+    res.status(err.statusCode || 500).json({ error: toFrozenError(err).message || 'Failed to correct evaluation', code: errCode(err) });
   }
 });
 
 // A6. Full history for one item: current evaluation + answers in scope +
 // related audit_log revision entries (submit / approve / return / correct).
-router.get('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-1 (§3.3 `W:R+L;C:R+L;E:R+L+D#item-history-not-general-audit-or-
+// foreign-department`): tenant is server-derived (comparison only), the item
+// must pass the scope.ts L (+ D for E) predicate, E receives ONLY its own
+// department's answers (G-SHARED), and the history stays entity-scoped to this
+// item — it is never the general audit feed.
+router.get('/evaluations', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
+    const access = req.access!;
     const itemId = req.query.itemId;
     if (!itemId || typeof itemId !== 'string') {
       return res.status(400).json({ error: 'itemId query parameter is required.' });
     }
-
-    const clientId = evalClientScope(user, req.query.clientId);
-    if (!clientId && user.role !== 'ge_admin') {
-      return res.status(400).json({ error: 'No tenant context for this user.' });
-    }
-    if (user.role === 'employee') {
-      if (!user.departmentId) {
+    ownTenant(access, req.query.clientId);
+    if (access.mode === 'employee') {
+      if (!access.departmentId) {
         return res.status(400).json({ error: 'Your user account has no department assignment.' });
       }
-      const namedDept = typeof req.query.departmentId === 'string' && req.query.departmentId.trim()
-        ? req.query.departmentId.trim()
-        : null;
-      if (namedDept && namedDept !== user.departmentId) {
-        return res.status(403).json({ error: 'Employees may only access items assigned to their own department.' });
+      // §9(b): malformed departmentId is a 400 BEFORE it can be compared.
+      const namedDept = optionalScopeId(req.query.departmentId);
+      if (namedDept && namedDept !== access.departmentId) {
+        return res.status(403).json({
+          error: 'Employees may only access items assigned to their own department.',
+          code: 'scope.department_mismatch',
+        });
       }
     }
+    const id = scopeId(itemId, true)!;
 
-    const data = await withTenantContext(contextFromUser(user), async (client) => {
+    const data = await withTenantContext(readContext(req), async (client) => {
+      // L (+ D for E) at the handler boundary as well as under FORCE RLS.
+      await assertVisibleItem(client, access, id);
       const itemRes = await client.query(
         `SELECT i.id, i.code, i.requirement, i.priority, i.weight, i.esg_class, i.topic,
                 d.code AS disclosure_code, s.code AS standard_code
@@ -1015,32 +1085,36 @@ router.get('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res
          JOIN disclosures d ON d.id = i.disclosure_id
          JOIN standards s ON s.id = d.standard_id
          WHERE i.id = $1`,
-        [itemId]
+        [id]
       );
       if (!itemRes.rows[0]) {
         throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       }
 
-      if (user.role === 'employee') {
-        const assignRes = await client.query(
-          'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
-          [clientId, itemId, user.departmentId]
+      const evaluation = (await scopedEvaluations(client, access, id))[0] ?? null;
+      const answers = await scopedAnswers(client, access, id);
+      // §9(c) MUST-FIX: the E department pin is an explicit handler-level
+      // predicate on the rows about to be served (defence-in-depth beside
+      // FORCE RLS), plus the G-SHARED provenance check on the evaluation row:
+      // a leak is REFUSED, never silently filtered.
+      assertOwnDepartmentRows(access, answers);
+      // §10 ruling 6 (Shield-02): this second G-SHARED guard is DELIBERATELY
+      // fail-closed-empty, not a bug. `evaluation` is only non-null when
+      // b17_content_fact('evaluation') held, which requires EXACTLY ONE answer
+      // for the item — so a foreign-department answer already forced
+      // `evaluation` to null upstream (and the raw detection query is in turn
+      // filtered by RLS). It therefore never fires, and it can only ever
+      // under-report: it cannot widen a read. Fixing it would require widening
+      // b17_count_read to employees, which is NOT co-located with §10 ruling 1,
+      // so it is documented here instead of patched (behaviour safe).
+      const ownDept = ownDepartment(access);
+      if (ownDept && evaluation) {
+        const foreign = await client.query(
+          'SELECT 1 FROM answers WHERE client_id = $1 AND item_id = $2 AND department_id <> $3 LIMIT 1',
+          [access.tenantId, id, ownDept]
         );
-        if ((assignRes.rowCount ?? 0) === 0) {
-          throw Object.assign(new Error('This item is not assigned to your department.'), { statusCode: 403 });
-        }
+        if ((foreign.rowCount ?? 0) > 0) throw scopeError(403, 'scope.shared_ambiguous');
       }
-
-      const evalQuery = clientId
-        ? client.query('SELECT * FROM evaluations WHERE client_id = $1 AND item_id = $2', [clientId, itemId])
-        : client.query('SELECT * FROM evaluations WHERE item_id = $1', [itemId]);
-      const evalRes = await evalQuery;
-      const evaluation = evalRes.rows[0] ?? null;
-
-      const ansQuery = clientId
-        ? client.query('SELECT * FROM answers WHERE client_id = $1 AND item_id = $2 ORDER BY updated_at ASC', [clientId, itemId])
-        : client.query('SELECT * FROM answers WHERE item_id = $1 ORDER BY updated_at ASC', [itemId]);
-      const ansRes = await ansQuery;
 
       let history: any[] = [];
       if (evaluation) {
@@ -1056,13 +1130,13 @@ router.get('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res
         history = histRes.rows;
       }
 
-      return { item: itemRes.rows[0], evaluation, answers: ansRes.rows, history };
+      return { item: itemRes.rows[0], evaluation, answers, history };
     });
 
     res.json(data);
   } catch (err: any) {
     console.error('Evaluation history error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch evaluation history' });
+    readFailure(res, err, 'Failed to fetch evaluation history');
   }
 });
 
@@ -1077,21 +1151,31 @@ router.get('/evaluations', authMiddleware, async (req: AuthenticatedRequest, res
 // incomplete ones.
 // ----------------------------------------------------------------------
 
-// B9-A1. Client approve: client_admin (own tenant) or ge_admin (any tenant).
-// Allowed ONLY when every assignment/department evaluation for the SAME
-// DISCLOSURE is at least dept-approved; otherwise 409 naming departments.
-router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// B9-A1. Client approve: client_admin (own tenant) only — the §3 matrix
+// (`C:R+L#own-company-all-departments-...-OD-08`) refuses P/W/E before this
+// handler, so GE can never early-approve. Allowed ONLY when every
+// assignment/department evaluation for the SAME DISCLOSURE is at least
+// dept-approved; otherwise 409 naming departments.
+router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only tenant or platform administrators may client-approve evaluations.' });
+    const access = req.access!;
+    // §10 ruling 2 (Shield-06): OD-08 — GE never early-approves. The §3 matrix
+    // (`C:R+L`) already refuses P/W before this handler; this is the explicit
+    // handler-level twin so the rule does not rest on the dispatcher alone.
+    if (user.role !== 'client_admin') {
+      return res.status(403).json({ error: 'Only client administrators may client-approve evaluations.' });
     }
-    const evaluationId = req.params.id;
+    // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
+    const evaluationId = scopeId(req.params.id, true)!;
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(readContext(req), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+      // R + L for C: own company and a linked item, asserted at the handler
+      // boundary as well as under FORCE RLS.
+      await assertVisibleItem(client, access, evaluation.item_id);
 
-      if (user.role === 'client_admin' && evaluation.client_id !== user.clientId) {
+      if (evaluation.client_id !== access.tenantId) {
         throw Object.assign(new Error('Client administrators may only client-approve their own tenant.'), {
           statusCode: 403,
         });
@@ -1212,28 +1296,36 @@ router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassw
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
     }
     const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to client-approve evaluation' });
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to client-approve evaluation', code: errCode(err) });
   }
 });
 
-// B9-A2. Client return: client_admin (own tenant) or ge_admin (any tenant).
+// B9-A2. Client return: client_admin (own tenant) only — the §3 matrix
+// (`C:R+L#own-company-...-OD-08`) refuses P/W/E before this handler.
 // Comment is required; the item goes back to dept scope with reason preserved.
-router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only tenant or platform administrators may return evaluations from client scope.' });
+    const access = req.access!;
+    // §10 ruling 2 (Shield-06): OD-08 — GE never early-returns at client scope
+    // either. The §3 matrix (`C:R+L`) already refuses P/W before this handler.
+    if (user.role !== 'client_admin') {
+      return res.status(403).json({ error: 'Only client administrators may return evaluations from client scope.' });
     }
-    const evaluationId = req.params.id;
+    // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
+    const evaluationId = scopeId(req.params.id, true)!;
     const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
     if (!comment) {
       return res.status(400).json({ error: 'A return comment is required so the department knows what to rework.' });
     }
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    const result = await withTenantContext(readContext(req), async (client) => {
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
+      // R + L for C: own company and a linked item, asserted at the handler
+      // boundary as well as under FORCE RLS.
+      await assertVisibleItem(client, access, evaluation.item_id);
 
-      if (user.role === 'client_admin' && evaluation.client_id !== user.clientId) {
+      if (evaluation.client_id !== access.tenantId) {
         throw Object.assign(new Error('Client administrators may only return evaluations in their own tenant.'), {
           statusCode: 403,
         });
@@ -1323,29 +1415,21 @@ router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPasswo
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
     }
     const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to return evaluation from client scope' });
+    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to return evaluation from client scope', code: errCode(err) });
   }
 });
 
 // B9-A3. Client-review queue: pending client approval grouped by disclosure,
-// with a completeness bar per group. client_admin sees own tenant; ge_admin
-// may name any tenant explicitly.
-router.get('/client-review', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// with a completeness bar per group. U2-E E-1 (§3.3 `W:L;C:L#no-tenant-
+// selector-in-view`): own server-derived tenant only — a supplied clientId is
+// a comparison (403 on mismatch), never a selector. E/P are refused by the §3
+// matrix inside requireDomainAccess, and every row passes the linked predicate.
+router.get('/client-review', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    if (user.role !== 'client_admin' && user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only tenant or platform administrators may view the client-review queue.' });
-    }
-    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
-    if (user.role === 'client_admin' && namedClient && namedClient !== user.clientId) {
-      return res.status(403).json({ error: 'Client administrators may only access their own tenant queue.' });
-    }
-    const tenantId = user.role === 'ge_admin' ? namedClient ?? user.clientId ?? null : user.clientId ?? null;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
-    }
+    const access = req.access!;
+    const tenantId = ownTenant(access, req.query.clientId);
 
-    const groups = await withTenantContext(contextFromUser(user), async (client) => {
+    const groups = await withTenantContext(readContext(req), async (client) => {
       const rowsRes = await client.query(
         `SELECT d.id AS disclosure_id, d.code AS disclosure_code, d.title AS disclosure_title,
                 s.code AS standard_code,
@@ -1360,9 +1444,9 @@ router.get('/client-review', authMiddleware, async (req: AuthenticatedRequest, r
           JOIN departments dep ON dep.id = a.department_id
           LEFT JOIN answers ans ON ans.client_id = a.client_id AND ans.item_id = a.item_id AND ans.department_id = a.department_id
           LEFT JOIN evaluations e ON e.client_id = a.client_id AND e.item_id = a.item_id
-          WHERE a.client_id = $1
+          WHERE a.client_id = $1 AND ${LINKED_ITEM_SQL}
           ORDER BY s.code ASC, d.code ASC, dep.name ASC`,
-        [tenantId]
+        [tenantId, null]
       );
       const byDisclosure = new Map<string, any>();
       for (const r of rowsRes.rows) {
@@ -1421,7 +1505,7 @@ router.get('/client-review', authMiddleware, async (req: AuthenticatedRequest, r
     res.json({ tenantId, groups, count: groups.length });
   } catch (err: any) {
     console.error('Client-review queue error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch client-review queue' });
+    readFailure(res, err, 'Failed to fetch client-review queue');
   }
 });
 
@@ -1509,20 +1593,20 @@ async function loadGeScopeRows(
 }
 
 // B9-B4. GE final-review completeness checklist (read-only).
-router.get('/reviews/ge-check', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-1 (§3.3 `W:R+L#existing-disclosure-tenant-scope-types`): W only (the
+// §3 matrix refuses P/C/E before the handler), the tenant is the server-derived
+// own tenant (no tenant selector — a supplied clientId is a comparison only),
+// and the disclosure/tenant scope types are kept unchanged. The checklist shows
+// LINKED items only; ge-final keeps its own whole-scope §8 preflight, so an
+// unmapped item is refused there rather than dropped here.
+router.get('/reviews/ge-check', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    if (user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only platform administrators may run the GE final review.' });
-    }
+    const access = req.access!;
     const scopeRaw = req.query.scope;
     if (!isGeFinalScope(scopeRaw)) {
       return res.status(400).json({ error: 'scope must be disclosure or tenant.' });
     }
-    const clientId = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
-    if (!clientId) {
-      return res.status(400).json({ error: 'No tenant selected. Choose a tenant (clientId) to review.' });
-    }
+    const clientId = ownTenant(access, req.query.clientId);
     const scopeRef =
       scopeRaw === 'tenant'
         ? clientId
@@ -1532,9 +1616,12 @@ router.get('/reviews/ge-check', authMiddleware, async (req: AuthenticatedRequest
     if (!scopeRef) {
       return res.status(400).json({ error: 'scopeRef (disclosure id) is required for disclosure scope.' });
     }
+    // An id is an id: malformed input is a 400 before any SQL, never a 500.
+    scopeId(scopeRef, true);
 
-    const data = await withTenantContext(contextFromUser(user), async (client) => {
-      const { items } = await loadGeScopeRows(client, clientId, scopeRaw, scopeRef);
+    const data = await withTenantContext(readContext(req), async (client) => {
+      const { items: scoped } = await loadGeScopeRows(client, clientId, scopeRaw, scopeRef);
+      const items = await linkedItemsOnly(client, access, scoped);
       const gate = geFinalGate(
         items.map((it) => ({
           itemId: it.itemId,
@@ -1563,16 +1650,22 @@ router.get('/reviews/ge-check', authMiddleware, async (req: AuthenticatedRequest
     res.json(data);
   } catch (err: any) {
     console.error('GE check error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to run GE final checklist' });
+    readFailure(res, err, 'Failed to run GE final checklist');
   }
 });
 
-// B9-B1. GE final + freeze (ge_admin only): requires all in-scope evaluations
+// B9-B1. GE final + freeze (W only): requires all in-scope evaluations
 // client-approved (or N/A with reason); stamps FinalApproval (approvals
 // level='ge') and creates an immutable snapshot row.
-router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-2 (§3.3 `W:R+L#...-freeze-whole-scope-preflight`): the §3 matrix
+// refuses P/C/E before this handler, the tenant is the server-derived own
+// tenant, and BF-01 holds ONE shared tenant advisory lock across the §8
+// count-only preflight + freeze + snapshot so a concurrent POST /gri/commit
+// provisioning can never interleave with a freeze.
+router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
+    const access = req.access!;
     if (user.role !== 'ge_admin') {
       return res.status(403).json({ error: 'Only platform administrators may freeze a GE final review.' });
     }
@@ -1581,10 +1674,9 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, async (re
       return res.status(400).json({ error: 'scope must be disclosure or tenant.' });
     }
     const scope = body.scope;
-    const clientId = typeof body.clientId === 'string' && body.clientId.trim() ? body.clientId.trim() : null;
-    if (!clientId) {
-      return res.status(400).json({ error: 'No tenant selected. Choose a tenant (clientId) to freeze.' });
-    }
+    // §3.3: own tenant only — a supplied clientId is a comparison, never a
+    // selector (403 scope.tenant_mismatch on a foreign one).
+    const clientId = ownTenant(access, body.clientId);
     const scopeRef =
       scope === 'tenant'
         ? clientId
@@ -1594,11 +1686,19 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, async (re
     if (!scopeRef) {
       return res.status(400).json({ error: 'scopeRef (disclosure id) is required for disclosure scope.' });
     }
+    // §9(b): a malformed scopeRef is a 400 BEFORE any SQL.
+    scopeId(scopeRef, true);
     if (typeof body.confirm !== 'boolean' || body.confirm !== true) {
       return res.status(400).json({ error: 'Explicit confirmation is required: pass { confirm: true } to freeze.' });
     }
 
-    const result = await withTenantContext(contextFromUser(user), async (client) => {
+    // ONE trusted work transaction holds the whole operation (BF-01).
+    const result = await withTenantContext(readContext(req), async (client) => {
+      // BF-01: the shared tenant lock — byte-identical key to the provisioning
+      // section of POST /gri/commit (spec §8 vs concurrent provisioning).
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1717005))',
+        [`b17.freeze:${clientId}`]);
+
       const tenantRes = await client.query('SELECT id FROM clients WHERE id = $1', [clientId]);
       if (!tenantRes.rows[0]) {
         throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
@@ -1613,6 +1713,19 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, async (re
           statusCode: 409,
         });
       }
+
+      // §8 whole-tenant preflight, count-only, INSIDE the BF-01 lock (task §10
+      // ruling 1): the count runs through the count-only definer's dedicated
+      // `tenant.unmapped_assignments` kind, whose scope.internal branch SEES
+      // unmapped/unlinked assignments that the handler's own W RLS hides — the
+      // previous inline query was structurally always 0, so 409 scope.unmapped
+      // was dead code and a visible-subset freeze could commit. Payload stays
+      // the FULL authorized scope: an unmapped row refuses the freeze outright,
+      // it is never filtered out of it. linkedItemsOnly (the checklist read)
+      // must never narrow this count.
+      const unmapped = await client.query(
+        "SELECT b17_catalog_child_count('tenant.unmapped_assignments', $1) AS n", [clientId]);
+      if ((unmapped.rows[0]?.n ?? 0) > 0) throw scopeError(409, 'scope.unmapped');
 
       const { items } = await loadGeScopeRows(client, clientId, scope, scopeRef);
       if (items.length === 0) {
@@ -1736,27 +1849,22 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, async (re
     res.status(201).json(result);
   } catch (err: any) {
     console.error('GE final error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to freeze GE final review' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to freeze GE final review', code: errCode(err) });
   }
 });
 
 // B9-B4. Snapshot list + viewer (frozen numbers + hash + actor + time).
-router.get('/reviews/snapshots', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-1 (§3.3 `W#own-tenant-only-safe-metadata-for-inaccessible-mixed-
+// snapshots`): own tenant only (comparison-only clientId) and the payload is
+// served ONLY when the entire payload item set is linked. A mixed/inaccessible
+// snapshot keeps its stored metadata — including the untouched content_hash —
+// and simply loses the payload: never a partial payload, never a rewritten hash.
+router.get('/reviews/snapshots', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
-    if (user.role !== 'ge_admin' && namedClient && namedClient !== user.clientId) {
-      return res.status(403).json({ error: 'Cross-tenant snapshot access is forbidden.' });
-    }
-    const tenantId = user.role === 'ge_admin' ? namedClient ?? user.clientId ?? null : user.clientId ?? null;
-    if (!tenantId && user.role === 'ge_admin') {
-      return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
-    }
-    if (!tenantId) {
-      return res.status(400).json({ error: 'No tenant context for this user.' });
-    }
+    const access = req.access!;
+    const tenantId = ownTenant(access, req.query.clientId);
 
-    const rows = await withTenantContext(contextFromUser(user), async (client) => {
+    const rows = await withTenantContext(readContext(req), async (client) => {
       const result = await client.query(
         `SELECT s.id, s.client_id, s.scope_type, s.scope_ref, s.payload, s.content_hash,
                 s.created_by, u.name AS created_by_name, s.created_at,
@@ -1767,34 +1875,50 @@ router.get('/reviews/snapshots', authMiddleware, async (req: AuthenticatedReques
           ORDER BY s.created_at DESC`,
         [tenantId]
       );
-      return result.rows;
+      const rows: any[] = [];
+      for (const row of result.rows) {
+        if (await snapshotPayloadFullyLinked(client, access, row.payload)) {
+          rows.push(row);
+          continue;
+        }
+        const metadata = { ...row };
+        delete metadata.payload;
+        rows.push(metadata);
+      }
+      return rows;
     });
 
     res.json({ tenantId, items: rows, count: rows.length });
   } catch (err: any) {
     console.error('Snapshots list error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch snapshots' });
+    readFailure(res, err, 'Failed to fetch snapshots');
   }
 });
 
-router.get('/reviews/snapshots/:id', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-1 (§3.3 `W:R#full-blob-only-if-entire-payload-item-set-L-else-403-
+// scope.not_visible`): R is the own-tenant row (FORCE RLS hides a foreign
+// snapshot → generic 404) and the full immutable blob is served only when the
+// ENTIRE payload item set is linked; otherwise 403 scope.not_visible. No
+// partial blob and no hash rewrite, ever.
+router.get('/reviews/snapshots/:id', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const data = await withTenantContext(contextFromUser(user), async (client) => {
+    const access = req.access!;
+    const id = scopeId(req.params.id, true)!;
+    const data = await withTenantContext(readContext(req), async (client) => {
       const snapRes = await client.query(
         `SELECT s.id, s.client_id, s.scope_type, s.scope_ref, s.payload, s.content_hash,
                 s.created_by, u.name AS created_by_name, s.created_at
           FROM review_snapshots s
           LEFT JOIN users u ON u.id = s.created_by
           WHERE s.id = $1`,
-        [req.params.id]
+        [id]
       );
       const snapshot = snapRes.rows[0];
       if (!snapshot) {
-        throw Object.assign(new Error('Snapshot not found.'), { statusCode: 404 });
+        throw scopeError(404, 'scope.not_found');
       }
-      if (user.role !== 'ge_admin' && snapshot.client_id !== user.clientId) {
-        throw Object.assign(new Error('Cross-tenant snapshot access is forbidden.'), { statusCode: 403 });
+      if (!(await snapshotPayloadFullyLinked(client, access, snapshot.payload))) {
+        throw scopeError(403, 'scope.not_visible');
       }
       const notesRes = await client.query(
         `SELECT n.id, n.note, n.created_by, u.name AS created_by_name, n.created_at
@@ -1810,14 +1934,19 @@ router.get('/reviews/snapshots/:id', authMiddleware, async (req: AuthenticatedRe
     res.json(data);
   } catch (err: any) {
     console.error('Snapshot view error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch snapshot' });
+    readFailure(res, err, 'Failed to fetch snapshot');
   }
 });
 
 // B9-B2. Post-freeze append-only note: the ONLY write allowed on frozen scope.
-router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword, async (req: AuthenticatedRequest, res: Response) => {
+// U2-E E-2 (§3.3 `W:R#append-only-2000-char-cap-same-full-scope-authorization`):
+// W only (matrix), own tenant only (R), append-only, existing 2,000-char cap.
+router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = req.user!;
+    const access = req.access!;
+    // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
+    const snapshotId = scopeId(req.params.id, true)!;
     const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
     if (!note) {
       return res.status(400).json({ error: 'note is required.' });
@@ -1826,19 +1955,27 @@ router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword
       return res.status(400).json({ error: 'note must be at most 2000 characters.' });
     }
 
-    const created = await withTenantContext(contextFromUser(user), async (client) => {
-      const snapRes = await client.query('SELECT id, client_id FROM review_snapshots WHERE id = $1', [req.params.id]);
+    const created = await withTenantContext(readContext(req), async (client) => {
+      const snapRes = await client.query(
+        'SELECT id, client_id, payload FROM review_snapshots WHERE id = $1', [snapshotId]);
       const snapshot = snapRes.rows[0];
       if (!snapshot) {
-        throw Object.assign(new Error('Snapshot not found.'), { statusCode: 404 });
+        throw scopeError(404, 'scope.not_found');
       }
-      if (user.role !== 'ge_admin' && snapshot.client_id !== user.clientId) {
-        throw Object.assign(new Error('Cross-tenant snapshot access is forbidden.'), { statusCode: 403 });
+      // R (own tenant): FORCE RLS already hides a foreign snapshot above, this
+      // comparison is the handler-level twin of it.
+      if (snapshot.client_id !== access.tenantId) throw scopeError(403, 'scope.tenant_mismatch');
+      // §10 ruling 5 (Shield-05): "same full-scope authorization" as GET /:id —
+      // you may not annotate a blob you cannot read. A payload whose item set is
+      // not entirely linked is refused outright (append-only + the 2,000-char
+      // cap below are unchanged for every snapshot you CAN read).
+      if (!(await snapshotPayloadFullyLinked(client, access, snapshot.payload))) {
+        throw scopeError(403, 'scope.not_visible');
       }
       const insRes = await client.query(
         `INSERT INTO snapshot_notes (snapshot_id, client_id, note, created_by)
           VALUES ($1, $2, $3, $4) RETURNING *`,
-        [snapshot.id, snapshot.client_id, note, user.id]
+        [snapshot.id, snapshot.client_id, note, access.actorId]
       );
 
       await recordAuditLog(client, {
@@ -1856,7 +1993,7 @@ router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword
     res.status(201).json(created);
   } catch (err: any) {
     console.error('Snapshot note error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to add snapshot note' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to add snapshot note', code: errCode(err) });
   }
 });
 

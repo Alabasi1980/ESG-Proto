@@ -297,6 +297,21 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
         // INSERT ... ON CONFLICT DO NOTHING, so re-imports change nothing.
         let departmentsUpserted = 0;
         let assignmentsCreated = 0;
+        // BF-01 (spec §8, task §4.2) — ONE lock line: the SAME tenant-level
+        // advisory key ge-final takes around its count-only whole-tenant
+        // preflight + freeze + snapshot. Holding it here serialises assignment
+        // provisioning against a concurrent freeze of this tenant, so a freeze
+        // can never observe a half-provisioned scope (and vice versa). No
+        // behaviour change beyond that serialization.
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1717005))',
+          [`b17.freeze:${effectiveClientId}`]);
+        // §10 ruling 1(b) — re-read the freeze state INSIDE the lock, BEFORE
+        // provisioning. The pre-lock read above is only the per-row skip hint;
+        // without this recheck a ge-final committing between that read and this
+        // lock would let assignments land in an already-frozen tenant (the
+        // reverse window Shield recorded as E2-03).
+        const frozenInLock = await client.query('SELECT is_scope_frozen($1) AS frozen', [effectiveClientId]);
+        if (frozenInLock.rows[0]?.frozen === true) deptToItemIds.clear();
         if (deptToItemIds.size > 0) {
           for (const [deptCode, entry] of deptToItemIds) {
             const deptRes = await client.query(

@@ -327,10 +327,10 @@ async function main() {
     // locked tab read). In production the dispatcher runs the same gates first.
     const probe = express.Router();
     const echo = (req: any, res: any) => res.json({ access: req.access });
-    probe.get('/queue', requireDomainAccess, echo);            // UNACTIVATED
+    probe.get('/ge/overview', requireDomainAccess, echo);   // UNACTIVATED
     probe.get('/auth/me', requireDomainAccess, echo);          // U1, SESSION row
     probe.post('/workspace/enter', requireDomainAccess, echo); // U1, P-only row
-    probe.post('/evaluations', requireDomainAccess, echo);     // UNACTIVATED
+    probe.post('/clients', requireDomainAccess, echo);         // UNACTIVATED (U2-F admin)
     const probeApp = express();
     probeApp.use(jsonInput); probeApp.use(cookieParser()); probeApp.use('/api', probe);
     const probeServer = probeApp.listen(0, '127.0.0.1');
@@ -352,11 +352,11 @@ async function main() {
       // context, before any context derivation (no tab, session or DB work).
       for (const [token, tabArg] of [[undefined, undefined], [ge, t], [ca, undefined],
         [employee, undefined]] as const) {
-        const r = await probeGet('/queue', token, tabArg);
+        const r = await probeGet('/ge/overview', token, tabArg);
         assert.deepEqual([r.status, r.json.code], [403, 'access.unactivated'],
           'SHIELD-U2A-01: requireDomainAccess must refuse an UNACTIVATED route itself');
       }
-      const unactivatedPost = await fetch(pbase + '/evaluations', { method: 'POST',
+      const unactivatedPost = await fetch(pbase + '/clients', { method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: `token=${ca}` } });
       assert.deepEqual([unactivatedPost.status, (await unactivatedPost.json()).code],
         [403, 'access.unactivated'], 'SHIELD-U2A-01 on a mutating route (before auth/context)');
@@ -436,8 +436,11 @@ async function main() {
     } finally { await new Promise<void>((resolve, reject) => probeServer.close(err => err ? reject(err) : resolve())); }
 
     // --- B: every still-UNACTIVATED declaration stays denied (dispatcher) ---
-    // U2-B flipped 13 rows and U2-C flipped 23 more (87 -> 74 -> 51); the 36
-    // flipped rows are exercised END-TO-END through the real chain in sections H/I.
+    // U2-B flipped 13 rows, U2-C 23 more, U2-D 11 and U2-E all fifteen
+    // evaluations/reviews rows (87 -> 74 -> 51 -> 40 -> 34 -> 25); the flipped
+    // rows are exercised END-TO-END through the real chain in sections H/I
+    // (the six E-1 reads in scripts/b17-domain-e1.ts, the nine E-2 writes in
+    // scripts/b17-domain-e2.ts).
     let denied = 0;
     for (const route of LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED')) {
       for (const [token, tab] of [[undefined, undefined], [ge, t], [ca, undefined], [employee, undefined]] as const) {
@@ -447,9 +450,9 @@ async function main() {
         denied++;
       }
     }
-    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 40);
-    assert.equal(denied, 40 * 4);
-    pass('all 40 remaining unactivated business routes still 403 access.unactivated across 4 contexts');
+    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 25);
+    assert.equal(denied, 25 * 4);
+    pass('all 25 remaining unactivated business routes still 403 access.unactivated across 4 contexts');
 
     // --- C: the 8 active system/session routes keep their current behavior ---
     assert.deepEqual((await api('GET', '/db/status')).json, { configured: true, connected: true });
@@ -590,11 +593,15 @@ async function main() {
       0, 'W never reads platform events');
     assert.equal(await count(consultant, 'SELECT count(*)::int n FROM audit_log WHERE client_id=$1',
       [seed.tenants[1]]), 0, 'W never reads B audit rows');
-    assert.equal(await count(clientCtx, 'SELECT count(*)::int n FROM audit_log WHERE client_id=$1',
-      [seed.tenants[0]]), 0, 'C denied the audit log');
-    assert.equal(await count(employeeCtx, 'SELECT count(*)::int n FROM audit_log WHERE client_id=$1',
-      [seed.tenants[0]]), 0, 'E denied the audit log');
-    served.push('audit read scope P platform / W A-filtered served, C/E denied');
+    // §9(a): C/E read NO general audit feed — the ONLY thing the new
+    // item-local history branch can ever admit is entity_type='evaluations'
+    // for an own-tenant, ownership-resolved evaluation (proved end-to-end in
+    // scripts/b17-domain-e2.ts). Everything else stays denied for C and E.
+    assert.equal(await count(clientCtx, "SELECT count(*)::int n FROM audit_log WHERE client_id=$1 AND entity_type<>'evaluations'",
+      [seed.tenants[0]]), 0, 'C denied the GENERAL audit log');
+    assert.equal(await count(employeeCtx, "SELECT count(*)::int n FROM audit_log WHERE client_id=$1 AND entity_type<>'evaluations'",
+      [seed.tenants[0]]), 0, 'E denied the GENERAL audit log');
+    served.push('audit read scope P platform / W A-filtered served, C/E general log denied');
 
     // ط¢آ§3.6 storage reads + the ط¢آ§3.5 actions read scope.
     assert.equal(await count(consultant, 'SELECT count(*)::int n FROM answers WHERE client_id=$1',
@@ -873,24 +880,32 @@ async function main() {
       'POST /initiatives/select', 'DELETE /initiatives/select/:id',
       'POST /esg-profile/import', 'GET /esg-profile',
       'GET /report-settings', 'PUT /report-settings', 'GET /reports/index', 'GET /reports/export',
+      // U2-E E-1: the six evaluations/reviews READ declarations.
+      'GET /queue', 'GET /evaluations', 'GET /client-review',
+      'GET /reviews/ge-check', 'GET /reviews/snapshots', 'GET /reviews/snapshots/:id',
+      // U2-E E-2: the nine evaluations/reviews WRITE declarations.
+      'POST /evaluations', 'POST /evaluations/:id/submit', 'POST /evaluations/:id/approve',
+      'POST /evaluations/:id/return', 'PUT /evaluations/:id/correct',
+      'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
+      'POST /reviews/ge-final', 'POST /reviews/snapshots/:id/notes',
     ];
     const u1Keys = LEGACY_ROUTES.filter(r => r.activation === 'U1').map(r => `${r.method} ${r.path}`).sort();
-    assert.equal(u1Keys.length, 55, '8 system/session + 13 U2-B + 23 U2-C + 11 U2-D flips');
+    assert.equal(u1Keys.length, 70, '8 system/session + 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E flips');
     assert.deepEqual(u1Keys, [
       'GET /db/status', 'POST /db/migrate', 'GET /setup/status', 'POST /setup/admin',
       'POST /auth/login', 'POST /auth/logout', 'GET /auth/me', 'POST /auth/change-password',
       ...FLIPPED,
-    ].sort(), 'exactly the 8 system/session rows + 13 U2-B + 23 U2-C flips are U1; NO other row changed');
-    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 40, '87 -> 74 -> 51 -> 40 UNACTIVATED');
+    ].sort(), 'exactly the 8 system/session rows + 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E flips are U1; NO other row changed');
+    assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length, 25, '87 -> 74 -> 51 -> 40 -> 34 -> 25 UNACTIVATED');
     for (const key of FLIPPED) {
       const [method, path] = key.split(' ');
       const route = LEGACY_ROUTES.find(r => r.method === method && r.path === path);
       assert.ok(route && route.activation === 'U1', `flipped row must be U1: ${key}`);
     }
     assert.deepEqual([...activeBusinessCapabilities()],
-      ['taxonomy', 'gri', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-      'activeBusinessCapabilities() tracks the 13 U2-B + 23 U2-C flips truthfully');
-    pass('registry truth: exactly 47 flips (87 -> 40 UNACTIVATED), no other row changed, capabilities truthful (8)');
+      ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+      'activeBusinessCapabilities() tracks the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E flips truthfully');
+    pass('registry truth: exactly 62 flips (87 -> 25 UNACTIVATED), no other row changed, capabilities truthful (9)');
 
     // Fresh real sessions/tabs per آ§3 context (server-derived, never client-supplied).
     const wToken = await login('ge');
@@ -901,7 +916,7 @@ async function main() {
     assert.equal(wEnter.status, 200, JSON.stringify(wEnter.json));
     wTab.generation = wEnter.json.generation;
     assert.deepEqual(wEnter.json.capabilities,
-      ['taxonomy', 'gri', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+      ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
       'workspace envelope reports the landed capabilities');
     const pToken = await login('ge');
     const pTabRes = await api('POST', '/workspace/tab', pToken, {});
@@ -1505,7 +1520,7 @@ async function main() {
     pass('I7 W(B) zero links: services/items/standards empty (never all), dashboard hasData=false');
     pass('U2-C2 E2E: all 23 taxonomy/GRI routes exercised end-to-end — every §3 allowed context served, every disallowed context refused with its status/code');
 
-    console.log('B17 U2 regression proof complete: 47 routes flipped (87 -> 40 UNACTIVATED), sections B/H/I green, no release acceptance.');
+    console.log('B17 U2 regression proof complete: 62 routes flipped (87 -> 25 UNACTIVATED), sections B/H/I green, no release acceptance.');
 
   } finally {
     await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve()));

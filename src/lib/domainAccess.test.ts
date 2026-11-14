@@ -177,15 +177,15 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-D activation split: 40 UNACTIVATED; exact 47 business flips + 8 system/session + 4 workspace', () => {
+test('U2-E E-2 activation split: 25 UNACTIVATED; exact 62 business flips + 8 system/session + 4 workspace', () => {
   assert.equal(LEGACY_ROUTES.length, 95);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 40);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 55);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 25);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 70);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
-  // Exactly the 13 U2-B + 23 U2-C rows are flipped, and nothing else moved:
-  // the eight system/session rows plus those thirty-six are the complete U1
-  // legacy set (no other registry row changed, task §22).
+  // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E rows are flipped, and
+  // nothing else moved: the eight system/session rows plus those sixty-two
+  // are the complete U1 legacy set (no other registry row changed, task §2).
   const FLIPPED = [
     'GET /audit-log',
     'GET /notifications', 'GET /notifications/unread-count',
@@ -207,8 +207,16 @@ test('U2-D activation split: 40 UNACTIVATED; exact 47 business flips + 8 system/
     'POST /initiatives/select', 'DELETE /initiatives/select/:id',
     'POST /esg-profile/import', 'GET /esg-profile',
     'GET /report-settings', 'PUT /report-settings', 'GET /reports/index', 'GET /reports/export',
+    // U2-E E-1: the six evaluations/reviews READ declarations.
+    'GET /queue', 'GET /evaluations', 'GET /client-review',
+    'GET /reviews/ge-check', 'GET /reviews/snapshots', 'GET /reviews/snapshots/:id',
+    // U2-E E-2: the nine evaluations/reviews WRITE declarations.
+    'POST /evaluations', 'POST /evaluations/:id/submit', 'POST /evaluations/:id/approve',
+    'POST /evaluations/:id/return', 'PUT /evaluations/:id/correct',
+    'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
+    'POST /reviews/ge-final', 'POST /reviews/snapshots/:id/notes',
   ];
-  assert.equal(FLIPPED.length, 47);
+  assert.equal(FLIPPED.length, 62);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -217,6 +225,25 @@ test('U2-D activation split: 40 UNACTIVATED; exact 47 business flips + 8 system/
       ...FLIPPED,
     ].sort(),
   );
+});
+
+test('U2-E E-2: all fifteen §3.3 evaluations rows activated; only the U2-F admin group stays denied', () => {
+  const EVALUATIONS = ['GET /queue', 'POST /evaluations', 'POST /evaluations/:id/submit',
+    'POST /evaluations/:id/approve', 'POST /evaluations/:id/return', 'PUT /evaluations/:id/correct',
+    'GET /evaluations', 'POST /evaluations/:id/client-approve', 'POST /evaluations/:id/client-return',
+    'GET /client-review', 'GET /reviews/ge-check', 'POST /reviews/ge-final',
+    'GET /reviews/snapshots', 'GET /reviews/snapshots/:id', 'POST /reviews/snapshots/:id/notes'];
+  const byKey = new Map(LEGACY_ROUTES.map((r) => [`${r.method} ${r.path}`, r]));
+  assert.equal(EVALUATIONS.length, 15, 'the §3.3 evaluations group is still fifteen declarations');
+  for (const key of EVALUATIONS) {
+    assert.equal(byKey.get(key)?.activation, 'U1', `${key} must be activated`);
+    // Matrix strings are transcribed data, never reworded by a flip.
+    assert.ok((byKey.get(key)?.matrix.length ?? 0) > 0, key);
+  }
+  const remaining = LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED');
+  assert.equal(remaining.length, 25, '34 → 25 exactly');
+  assert.ok(remaining.every((r) => r.capability === 'admin'),
+    `only the U2-F admin group is still denied, got: ${remaining.map((r) => `${r.method} ${r.path}`).join(', ')}`);
 });
 
 test('U2-A matrix well-formedness: parse/format round-trip and tenant/tag invariants', () => {
@@ -262,8 +289,9 @@ const fakeCall = async (method: string, path: string) => {
 
 test('SHIELD-U2A-01: requireDomainAccess itself refuses non-U1 activation before deriving any context', async () => {
   // Only still-unactivated declarations may appear here; flipped rows (13 U2-B
-  // + 23 U2-C) are asserted through assertRouteActivated below instead.
-  for (const [method, path] of [['GET', '/queue'], ['POST', '/evaluations'], ['GET', '/assignments'],
+  // + 23 U2-C + 11 U2-D + 15 U2-E) are asserted through assertRouteActivated
+  // below instead.
+  for (const [method, path] of [['GET', '/ge/overview'], ['POST', '/clients'], ['GET', '/assignments'],
     ['POST', '/staff-lists'], ['GET', '/unknown']] as const) {
     const result = await fakeCall(method, path);
     assert.equal(result.nexted, false, `${method} ${path} must not reach its handler`);

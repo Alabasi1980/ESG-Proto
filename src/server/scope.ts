@@ -196,3 +196,99 @@ export async function scopedActions(client: pg.PoolClient, access: AccessContext
       SELECT 1 FROM client_services c WHERE c.client_id=a.client_id AND c.service_id=a.service_id)
       ELSE b17_item_visible(a.client_id,a.item_id,a.service_id) END) ORDER BY a.id`, [access.tenantId])).rows;
 }
+
+// ---------------------------------------------------------------------------
+// B17 U2-E E-1 — three narrowly-scoped helpers for the six evaluations/reviews
+// READ declarations (task §2). Each one states the §3 tag it enforces; none of
+// them resolves a tenant from request input and none of them can widen a set.
+// ---------------------------------------------------------------------------
+
+/** `L`/tenant rule (U2 retirement §2): the tenant is ALWAYS the caller's OWN
+ * server-derived tenant. A supplied id is a COMPARISON only — mismatch is 403
+ * `scope.tenant_mismatch`, malformed is 400 `scope.id_invalid`, an absent own
+ * tenant fails closed with 400 `scope.tenant_required`. No P row exists on any
+ * of the six reads, so this helper never resolves a platform target. */
+export function ownTenant(access: AccessContext, supplied?: unknown): string {
+  assertWorkScope(access);
+  const named = optionalScopeId(supplied);
+  if (named && named !== access.tenantId) throw scopeError(403,'scope.tenant_mismatch');
+  if (!access.tenantId) throw scopeError(400,'scope.tenant_required');
+  return access.tenantId;
+}
+
+/** §9(b) MUST-FIX (U2-D F1 class): a supplied id must be a well-formed UUID
+ * BEFORE it can reach SQL, otherwise a raw 22P02 escapes as a 500. Empty /
+ * absent means "not supplied" and returns null; array/number/object and any
+ * malformed string are AMBIGUOUS, never ignored → 400 `scope.id_invalid`. */
+export function optionalScopeId(supplied: unknown): string | null {
+  if (supplied === undefined || supplied === null) return null;
+  if (typeof supplied !== 'string') throw scopeError(400,'scope.id_invalid');
+  const raw = supplied.trim();
+  if (!raw) return null;
+  return scopeId(raw, true);
+}
+
+/** §9(c) MUST-FIX: the caller's OWN department, server-derived. Employees get
+ * their pinned department (an employee context without one is refused, never
+ * widened); W/C get null — they have no department scope at all. */
+export function ownDepartment(access: AccessContext): string | null {
+  assertWorkScope(access);
+  if (access.mode !== 'employee') return null;
+  if (!access.departmentId) throw scopeError(403,'scope.department_mismatch');
+  return access.departmentId;
+}
+
+/** §9(c) MUST-FIX: explicit handler-level department predicate for the rows an
+ * employee is about to be served (defence-in-depth beside FORCE RLS and beside
+ * the SQL predicate). W/C rows are never department-pinned, so this is a no-op
+ * for them; an employee row carrying any other department is REFUSED with 403,
+ * never silently filtered out of the response. */
+export function assertOwnDepartmentRows<T extends { department_id?: string | null }>(
+  access: AccessContext, rows: readonly T[]): void {
+  const own = ownDepartment(access);
+  if (own === null) return;
+  if (rows.some(row => row.department_id !== own)) throw scopeError(403,'scope.department_mismatch');
+}
+
+/** `L` filter for the GE final checklist read: keep only items linked to the
+ * caller's tenant. Applied by GET /reviews/ge-check ONLY — ge-final keeps its
+ * own whole-scope §8 preflight, so this must never narrow the shared
+ * scope-row loader (an unmapped item has to be REFUSED there, not dropped). */
+export async function linkedItemsOnly<T extends { itemId: string }>(
+  client: pg.PoolClient, access: AccessContext, items: readonly T[]): Promise<T[]> {
+  assertWorkScope(access);
+  if (!items.length) return [];
+  const ids = [...new Set(items.map(item => item.itemId))];
+  const visible = new Set<string>((await client.query(
+    `SELECT i.id FROM items i WHERE i.id = ANY($3::uuid[]) AND ${LINKED_ITEM_SQL}`,
+    [access.tenantId, null, ids])).rows.map(row => String(row.id)));
+  return items.filter(item => visible.has(item.itemId));
+}
+
+/** §3.3 snapshot reads: the FULL payload is served only when the ENTIRE item
+ * set inside it is linked to the caller's tenant. A mixed, unlinked,
+ * unparseable or item-less payload is INACCESSIBLE — the list route drops the
+ * payload (metadata only) and the by-id route refuses 403 `scope.not_visible`.
+ * Never a partial payload and never a rewritten content hash. */
+export async function snapshotPayloadFullyLinked(
+  client: pg.PoolClient, access: AccessContext, payload: unknown): Promise<boolean> {
+  assertWorkScope(access);
+  let parsed: unknown = payload;
+  if (typeof payload === 'string') {
+    try { parsed = JSON.parse(payload); } catch { return false; }
+  }
+  if (!parsed || typeof parsed !== 'object') return false;
+  const items = (parsed as { items?: unknown }).items;
+  if (!Array.isArray(items) || items.length === 0) return false;
+  const ids: string[] = [];
+  for (const entry of items) {
+    const id = entry && typeof entry === 'object' ? (entry as { itemId?: unknown }).itemId : undefined;
+    if (typeof id !== 'string' || !UUID.test(id)) return false;
+    ids.push(id);
+  }
+  const unique = [...new Set(ids)];
+  const visible = new Set<string>((await client.query(
+    `SELECT i.id FROM items i WHERE i.id = ANY($3::uuid[]) AND ${LINKED_ITEM_SQL}`,
+    [access.tenantId, null, unique])).rows.map(row => String(row.id)));
+  return ids.every(id => visible.has(id));
+}

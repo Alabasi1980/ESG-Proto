@@ -97,3 +97,57 @@ test('B12 S-23: inbox cap is 50 and the ten fan-out types exist', () => {
     'staff.rejected',
   ]);
 });
+
+// U2-E E-2 (task §2/§9): source-shape guarantees for the evaluations write
+// path. The two PostgreSQL row-security traps below were found empirically by
+// the E-2 harness and are pinned here so they cannot come back:
+//  - INSERT ... RETURNING: PG applies the SELECT policies to the RETURNING
+//    clause, and a brand-new evaluation has no answer yet, so
+//    b17_content_fact('evaluation', ...) is false and the row is denied;
+//  - INSERT ... ON CONFLICT: the UPDATE row policy is evaluated against the row
+//    being written, which the first draft save cannot satisfy.
+test('U2-E E-2: evaluations.ts writes avoid the RETURNING/ON CONFLICT RLS traps and mount the §3 wrapper', () => {
+  const src = fs.readFileSync(path.join(ROUTES_DIR, 'evaluations.ts'), 'utf8');
+  assert.ok(!/INSERT INTO evaluations[\s\S]{0,600}?RETURNING/.test(src),
+    'no INSERT ... RETURNING on the evaluations pair upsert');
+  assert.ok(!/INSERT INTO evaluations[\s\S]{0,600}?ON CONFLICT/.test(src),
+    'no INSERT ... ON CONFLICT on the evaluations pair upsert');
+  // Every §3.3 declaration (fifteen) carries requireDomainAccess on its line.
+  const declarations = src.split('\n').filter(line => /router\.(get|post|put)\('/.test(line));
+  assert.equal(declarations.length, 15, 'the §3.3 evaluations group is fifteen declarations');
+  for (const line of declarations)
+    assert.ok(line.includes('requireDomainAccess'), `wrapper missing: ${line.trim().slice(0, 90)}`);
+  // Legacy context builders are fully retired from this file (E-1 reads +
+  // E-2 writes).
+  for (const legacy of ['contextFromUser', 'evalClientScope', 'evalDepartmentScope'])
+    assert.ok(!src.includes(legacy), `${legacy} must be gone from evaluations.ts`);
+  // BF-01: exactly one shared-lock line, and it is the tenant-level key.
+  const locks = [...src.matchAll(/pg_advisory_xact_lock\(hashtextextended\(\$1,(\d+)\)\)/g)];
+  assert.equal(locks.length, 1, 'exactly one advisory lock line in evaluations.ts (ge-final)');
+  assert.equal(locks[0][1], '1717005', 'the BF-01 shared tenant lock seed');
+});
+
+// U2-E E-3 (§10 rulings 2, 4 and 5): source-shape twins for the three handler
+// repairs that the §3 matrix would otherwise be the only defence for.
+test('U2-E E-3: client-* refuse non-client_admin, read catches are sanitized, notes shares the read gate', () => {
+  const src = fs.readFileSync(path.join(ROUTES_DIR, 'evaluations.ts'), 'utf8');
+  // Ruling 2 (Shield-06): OD-08 at handler level, not only in the dispatcher.
+  assert.equal((src.match(/user\.role !== 'client_admin'/g) ?? []).length, 2,
+    'client-approve and client-return each carry the explicit client_admin guard');
+  // Ruling 4 (Shield-04): the six READ catches go through readFailure; no catch
+  // anywhere may echo a raw err.code (a PostgreSQL SQLSTATE) to the client.
+  assert.equal((src.match(/readFailure\(res, err,/g) ?? []).length, 6,
+    'all six read catches use the sanitized readFailure treatment');
+  assert.ok(!/code:\s*err\.code/.test(src), 'no catch may echo err.code directly');
+  // Ruling 5 (Shield-05): notes applies the IDENTICAL full-visibility gate as
+  // GET /reviews/snapshots/:id — same argument, same predicate.
+  assert.equal(
+    (src.match(/snapshotPayloadFullyLinked\(client, access, snapshot\.payload\)/g) ?? []).length, 2,
+    'GET /:id and POST /:id/notes share the identical full-visibility gate');
+  // Ruling 1(b): the GRI-commit freeze recheck must come AFTER the lock line.
+  const gri = fs.readFileSync(path.join(ROUTES_DIR, 'gri.ts'), 'utf8');
+  const lockAt = gri.indexOf('pg_advisory_xact_lock(hashtextextended($1,1717005))');
+  const recheckAt = gri.indexOf("SELECT is_scope_frozen($1) AS frozen", lockAt);
+  assert.ok(lockAt > 0, 'gri.ts takes the BF-01 lock');
+  assert.ok(recheckAt > lockAt, 'the freeze recheck must run INSIDE (after) the lock, not before it');
+});

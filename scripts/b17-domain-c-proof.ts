@@ -16,7 +16,8 @@
 //       platform summary context (direct reads, updates and scope.counts misuse)
 //   R6  freeze fact true under platform.config(T) only — foreign T, tenant-NULL
 //       summary and targetless config all false; W regression stays true;
-//       raw review_snapshots rows still invisible everywhere
+//       raw review_snapshots rows invisible under every P context (the U2-E E-1
+//       W-only SELECT substrate deliberately does not admit them)
 //   R7  D1 counts truthful vs PRE-activation truth (incl. cross-tenant child);
 //       denied contexts RAISE (never 0); bad kind/null ref raise
 //   R8  notifications DELETE user_id identity (SHIELD-U2B3-01): whole-table
@@ -25,8 +26,9 @@
 //       for C at the RLS layer (no actions.ts pre-authorisation needed)
 //   R10 platform.config never appears on a request-reading line (server-set
 //       constant only — request input can never select purpose/target)
-// Registry truth (post-C2 re-run): 51 UNACTIVATED = 74 - exactly the 23
-// taxonomy/gri flips; capabilities truthful (6 entries), no other row moved.
+// Registry truth (re-run after E-2): 25 UNACTIVATED = 74 - exactly the 23
+// taxonomy/gri + 11 initiatives/reports + 15 evaluations/reviews flips;
+// capabilities truthful (9 entries), no other row moved.
 //
 // NON-DESTRUCTIVE by contract: seed-only fixtures; every probe runs in its own
 // transaction and is ALWAYS rolled back; no business row is ever DELETEd
@@ -235,14 +237,17 @@ async function main() {
   // ---- R1 registry truth (re-run after C2): exactly the 23 taxonomy/gri rows
   // are now flipped; no other row moved and capabilities stay truthful. ----
   const unactivated = LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED');
-  assert.equal(unactivated.length, 40, 'C2 + D flipped exactly 34 rows (74 -> 40)');
+  assert.equal(unactivated.length, 25, 'C2 + D + E1 + E2 flipped exactly 49 rows (74 -> 25)');
   const u2c = LEGACY_ROUTES.filter(r => r.capability === 'taxonomy' || r.capability === 'gri');
   assert.equal(u2c.length, 23);
   assert.ok(u2c.every(r => r.activation === 'U1'), 'all 23 taxonomy/gri rows activated by C2');
+  const u2e = LEGACY_ROUTES.filter(r => r.capability === 'evaluations');
+  assert.equal(u2e.length, 15, 'the §3.3 evaluations group is fifteen declarations');
+  assert.ok(u2e.every(r => r.activation === 'U1'), 'all fifteen evaluations/reviews rows activated by U2-E');
   assert.deepEqual([...activeBusinessCapabilities()],
-    ['taxonomy', 'gri', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
-    'activeBusinessCapabilities() stays truthful (6 entries)');
-  pass('R1 registry truth (post-D): 40 UNACTIVATED = 74 - 23 taxonomy/gri - 11 initiatives/reports, capabilities truthful');
+    ['taxonomy', 'gri', 'evaluations', 'actions', 'initiatives', 'reports', 'storage', 'audit', 'notifications'],
+    'activeBusinessCapabilities() stays truthful (9 entries)');
+  pass('R1 registry truth (post-E2): 25 UNACTIVATED = 74 - 23 taxonomy/gri - 11 initiatives/reports - 15 evaluations/reviews, capabilities truthful');
 
   // ---- Contexts (server-derived GUCs only; C2 will set these server-side) ----
   const scopeCtx: TenantContext = { purpose: 'work', role: 'ge_admin', userId: seed.ge, mode: 'platform', tenantId: null };
@@ -398,7 +403,7 @@ async function main() {
   assert.equal(await probe(pool, cfgT, count(
     'SELECT count(*)::int n FROM review_snapshots WHERE client_id=$1', [seed.tenantA])).then(p => p.ok), 0,
     'R6 raw snapshot rows stay invisible even under config(T)');
-  pass('R6 freeze true under platform.config(T) only; foreign T, tenant-NULL summary, targetless config all false; W stays true; raw snapshots invisible');
+  pass('R6 freeze true under platform.config(T) only; foreign T, tenant-NULL summary, targetless config all false; W stays true; raw snapshots invisible under config(T)');
 
   // ---- R7: D1 counts truthful vs pre-activation truth; denied contexts RAISE ----
   const kinds = [['standard.disclosures', seed.std1, t.standardDisclosures],
@@ -504,7 +509,7 @@ async function main() {
   pass('non-destructive: clients/departments/users/assignments/answers/client_services counts unchanged');
 
   await pool.end();
-  console.log('U2-C1 SUBSTRATE PROOF COMPLETE (re-run post-C2): R1-R9 green, exactly 23 taxonomy/gri flips, catalog/P context negatives held.');
+  console.log('U2-C1 SUBSTRATE PROOF COMPLETE (re-run post-E1): R1-R9 green, exactly 23 taxonomy/gri flips, catalog/P context negatives held.');
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

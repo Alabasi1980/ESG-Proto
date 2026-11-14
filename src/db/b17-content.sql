@@ -218,6 +218,27 @@ CREATE POLICY b17_actions ON actions FOR SELECT USING(b17_work_tenant(client_id)
 DROP POLICY b17_scope ON profile_assessments;
 DROP POLICY b17_scope ON review_snapshots;
 DROP POLICY b17_scope ON snapshot_notes;
+
+-- ===========================================================================
+-- B17 U2-E E-1 — review-snapshot READ substrate (task §4.1 pre-authorized;
+-- delta name for Shield: SHIELD-U2E-E1 snapshot SELECT policies).
+--
+-- The two DROPs above left review_snapshots/snapshot_notes with NO SELECT
+-- policy, so no §3.3 snapshot read could ever return a row. This restores ONLY
+-- the W (consultant + ge_admin, own tenant) SELECT side the two read
+-- declarations need: GET /reviews/snapshots and GET /reviews/snapshots/:id.
+-- C/E/P are refused (they have no §3 row), the 'scope.internal' branch above
+-- keeps serving the is_scope_frozen/b17_content_fact('frozen') checks, and the
+-- handler-side ENTIRE-payload-linked gate still withholds a mixed/inaccessible
+-- blob (403 scope.not_visible) or drops it from the list (metadata only).
+-- NO write policy: the notes INSERT and the ge-final snapshot INSERT stay
+-- E-2 substrate. profile_assessments stays unavailable on purpose.
+-- ===========================================================================
+CREATE POLICY b17_scope ON review_snapshots FOR SELECT USING
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant');
+CREATE POLICY b17_scope ON snapshot_notes FOR SELECT USING
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant');
+
 -- ---------------------------------------------------------------------------
 -- B17 U2-B0 — four-domain §3 policy substrate: notifications, evidence
 -- attachments, actions, audit_log. ROW SCOPE ONLY. WF-04 transition/reason
@@ -405,11 +426,29 @@ CREATE POLICY b17_actions_update ON actions FOR UPDATE USING
       OR b17_content_fact('corrective',client_id,item_id,service_id)));
 
 -- audit_log: P reads platform events only (client_id IS NULL), W reads its own
--- tenant's A log, C/E are denied. Append-only stays in trg_block_audit_log_mod.
+-- tenant's A log. C/E read NO general log — the ONLY extra branch below is the
+-- §9(a) item-local history grant (SHIELD-U2E-E2-HISTORY), and it is:
+--   (1) purpose-bound  : exactly the server-selected 'work' purpose;
+--   (2) entity-whitelisted: exactly entity_type='evaluations' — never the feed;
+--   (3) ownership-resolved BEFORE output: own tenant, the referenced evaluation
+--       must exist for THAT tenant with a LINKED item, and for E it must also
+--       pass the own-department provenance fact (G-SHARED fail-closed, so a
+--       shared/foreign-department item yields no history rows at all);
+--   (4) /audit-log unchanged: its §3.6 P/W-only matrix rows still refuse C/E
+--       before any handler runs, so this branch creates NO general-log access.
+-- Append-only stays in trg_block_audit_log_mod.
 DROP POLICY b17_audit_read ON audit_log;
 CREATE POLICY b17_audit_read ON audit_log FOR SELECT USING (
   (b17_platform_scope() AND client_id IS NULL)
-  OR (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'));
+  OR (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant')
+  OR (b17_setting('current_purpose')='work'
+      AND entity_type='evaluations'
+      AND b17_work_tenant(client_id)
+      AND EXISTS(SELECT 1 FROM evaluations e
+        WHERE e.id=entity_id AND e.client_id=audit_log.client_id
+          AND b17_item_visible(e.client_id,e.item_id)
+          AND (b17_setting('current_mode')<>'employee'
+               OR b17_content_fact('evaluation',e.client_id,e.id)))));
 -- Business audit is appended with the work that produced it (§5 atomicity:
 -- write and audit commit or roll back together). The U1 auth/session and
 -- workspace branches are retained unchanged.
@@ -545,9 +584,25 @@ SET search_path=pg_catalog,public,pg_temp AS $$
 DECLARE n integer; old_purpose text;
 BEGIN
   IF ref IS NULL OR kind IS NULL OR kind NOT IN ('standard.disclosures','disclosure.items',
-    'item.answers','item.evaluations','item.assignments','item.evidence','item.actions')
+    'item.answers','item.evaluations','item.assignments','item.evidence','item.actions',
+    'tenant.unmapped_assignments')
   THEN RAISE EXCEPTION 'b17.count_args'; END IF;
-  IF NOT coalesce((b17_setting('current_purpose')='platform.config'
+  IF kind = 'tenant.unmapped_assignments' THEN
+    -- SHIELD-U2E-E3 (task §10 ruling 1): the §8 whole-tenant freeze preflight.
+    -- Admitted for EXACTLY this context — purpose 'work' + GE + consultant mode
+    -- + ref IS the caller's OWN bound tenant. Not a general work-context row
+    -- read (the kind list is closed and this returns one integer), and not a P
+    -- bypass (platform.config never satisfies this branch). The count itself
+    -- uses b17_content_fact('linked') below, whose scope.internal branch sees
+    -- the mapping chain that b17_scope/b17_item_visible hide from the handler's
+    -- own W context — the exact defect this kind exists to close.
+    IF NOT coalesce((b17_setting('current_purpose')='work'
+        AND b17_setting('current_actor_id') IS NOT NULL
+        AND b17_setting('current_user_role')='ge_admin'
+        AND b17_setting('current_mode')='consultant'
+        AND ref::text = b17_setting('current_tenant_id')),false)
+    THEN RAISE EXCEPTION 'b17.count_context'; END IF;
+  ELSIF NOT coalesce((b17_setting('current_purpose')='platform.config'
       AND b17_setting('current_actor_id') IS NOT NULL
       AND b17_setting('current_user_role')='ge_admin'),false)
   THEN RAISE EXCEPTION 'b17.count_context'; END IF;
@@ -563,6 +618,9 @@ BEGIN
       WHEN 'item.actions' THEN (SELECT count(*)::int FROM actions a WHERE a.item_id=ref)
       WHEN 'item.evidence' THEN (SELECT count(*)::int FROM evidence_attachments f
         JOIN answers a ON a.id=f.answer_id WHERE a.item_id=ref)
+      WHEN 'tenant.unmapped_assignments' THEN (
+        SELECT count(*)::int FROM assignments a
+        WHERE a.client_id=ref AND NOT b17_content_fact('linked',ref,a.item_id))
     END INTO n;
   EXCEPTION WHEN OTHERS THEN
     PERFORM set_config('app.current_purpose',coalesce(old_purpose,''),true);
@@ -631,3 +689,143 @@ DO $$ DECLARE t text; BEGIN
       USING (b17_domain_config(client_id,service_id)) WITH CHECK (b17_domain_config(client_id,service_id))',t);
   END LOOP;
 END $$;
+
+-- ===========================================================================
+-- B17 U2-E E-2 — E-0 WRITE substrate (task §4.1 pre-authorized; delta name
+-- for Shield: SHIELD-U2E-E2 write policies).
+--
+-- ROW SCOPE ONLY, exactly the B0/C1/C2 discipline: no new SECURITY DEFINER,
+-- no PUBLIC grant, REVOKE-PUBLIC/owner-only/sanctioned-set untouched, no
+-- schema replay. Each policy admits ONLY the §3.3 context that row of the
+-- matrix names. Everything that is NOT row scope stays in the handler /
+-- trigger layer and is neither duplicated nor weakened here: WF-05 freeze
+-- (is_scope_frozen triggers), version lockstep + 400/409 conflict payloads,
+-- the answers correction-history trigger, the append-only audit trigger, the
+-- 2,000-character note cap and the OD-08 actor gates.
+-- ===========================================================================
+
+-- answers INSERT = the E draft save ONLY (POST /evaluations is E L+D).
+-- Status is pinned to 'draft' so no other workflow state can be minted by an
+-- INSERT, and the row must be the caller's OWN department with the caller's
+-- OWN signature on a linked + retained-assignment item.
+-- G-SHARED NOTE: b17_content_fact('writable', ...) is deliberately NOT used
+-- here. answers/evaluations use ON CONFLICT ... DO UPDATE, and PostgreSQL
+-- evaluates WITH CHECK for that path AFTER the row is written, so a fact that
+-- re-reads the very table being written sees the new row and denies its own
+-- insert. The ambiguity guard therefore lives where it can be evaluated
+-- correctly: the handler refuses FIRST with 409 scope.shared_ambiguous
+-- (assertEmployeeEvaluationWritable), the UPDATE policies below carry the
+-- own-department/provenance facts, and answers is UNIQUE(client,item,department)
+-- so a foreign-department answer can never be overwritten by this upsert.
+CREATE POLICY b17_answers_draft_insert ON answers FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode')='employee'
+  AND b17_item_visible(client_id,item_id)
+  AND department_id::text=b17_setting('current_user_department_id')
+  AND b17_content_fact('assigned',client_id,item_id)
+  AND submitted_by::text=b17_setting('current_actor_id')
+  AND status='draft');
+
+-- answers UPDATE = the four matrix-authorised transitions: E on its OWN
+-- department (submit / dept approve / return / reasoned correction), C across
+-- OWN COMPANY (client-approve / client-return), W as the scoped consultant
+-- (reasoned correction). WITH CHECK repeats USING so an update can never move
+-- a row out of the caller's own scope.
+CREATE POLICY b17_answers_workflow_update ON answers FOR UPDATE
+  USING (
+    b17_work_tenant(client_id)
+    AND b17_item_visible(client_id,item_id)
+    AND ((b17_setting('current_mode')='employee'
+          AND department_id::text=b17_setting('current_user_department_id')
+          AND b17_content_fact('assigned',client_id,item_id))
+      OR (b17_setting('current_mode')='client'
+          AND b17_content_fact('department',client_id,department_id))
+      OR (b17_setting('current_mode')='consultant'
+          AND b17_setting('current_user_role')='ge_admin')))
+  WITH CHECK (
+    b17_work_tenant(client_id)
+    AND b17_item_visible(client_id,item_id)
+    AND ((b17_setting('current_mode')='employee'
+          AND department_id::text=b17_setting('current_user_department_id')
+          AND b17_content_fact('assigned',client_id,item_id))
+      OR (b17_setting('current_mode')='client'
+          AND b17_content_fact('department',client_id,department_id))
+      OR (b17_setting('current_mode')='consultant'
+          AND b17_setting('current_user_role')='ge_admin')));
+
+-- evaluations INSERT = the E draft save ONLY. Same ON CONFLICT/WITH CHECK
+-- reasoning as answers: on the INSERT path there is BY DEFINITION no existing
+-- (client,item) row — if one existed the unique index would have taken the
+-- DO UPDATE path instead — so the pair is unambiguous here; a conflicting
+-- (possibly foreign-department) row reaches the UPDATE policy below, whose
+-- b17_content_fact('evaluation', ...) refuses it unless the caller can prove
+-- it as its own department. No rekey, G-SHARED fail-closed.
+CREATE POLICY b17_evaluations_draft_insert ON evaluations FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode')='employee'
+  AND b17_item_visible(client_id,item_id)
+  AND b17_content_fact('assigned',client_id,item_id)
+  AND evaluator_id::text=b17_setting('current_actor_id'));
+
+-- evaluations UPDATE = the lockstep version bumps and the reasoned correction
+-- only: E on an evaluation it can prove as its own department, C on own
+-- company, W as the scoped consultant. Nothing here creates or re-keys a pair.
+CREATE POLICY b17_evaluations_workflow_update ON evaluations FOR UPDATE
+  USING (
+    b17_work_tenant(client_id)
+    AND b17_item_visible(client_id,item_id)
+    AND ((b17_setting('current_mode')='employee'
+          AND b17_content_fact('evaluation',client_id,id))
+      OR b17_setting('current_mode')='client'
+      OR (b17_setting('current_mode')='consultant'
+          AND b17_setting('current_user_role')='ge_admin')))
+  WITH CHECK (
+    b17_work_tenant(client_id)
+    AND b17_item_visible(client_id,item_id)
+    AND ((b17_setting('current_mode')='employee'
+          AND b17_content_fact('evaluation',client_id,id))
+      OR b17_setting('current_mode')='client'
+      OR (b17_setting('current_mode')='consultant'
+          AND b17_setting('current_user_role')='ge_admin')));
+
+-- approvals INSERT = append-only stamps at the three OD-08 levels, each by the
+-- caller's own actor and only on an answer of the caller's own tenant that the
+-- caller can actually SEE (§10 ruling 3 / SHIELD-U2E-E2-01): item-visible for
+-- every mode, plus the own-department provenance pin for E — the same fact
+-- family the answers/evaluations UPDATE policies use. No UPDATE/DELETE policy
+-- exists: approvals are append-only by construction.
+CREATE POLICY b17_approvals_insert ON approvals FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND approver_id::text=b17_setting('current_actor_id')
+  AND EXISTS(SELECT 1 FROM answers a
+    WHERE a.id=answer_id AND a.client_id=approvals.client_id
+      AND b17_item_visible(a.client_id,a.item_id)
+      AND ((b17_setting('current_mode')='employee'
+            AND a.department_id::text=b17_setting('current_user_department_id')
+            AND b17_content_fact('assigned',a.client_id,a.item_id))
+        OR (b17_setting('current_mode')='client'
+            AND b17_content_fact('department',a.client_id,a.department_id))
+        OR (b17_setting('current_mode')='consultant'
+            AND b17_setting('current_user_role')='ge_admin')))
+  AND ((b17_setting('current_mode')='employee' AND level='department')
+    OR (b17_setting('current_mode')='client' AND level='client')
+    OR (b17_setting('current_mode')='consultant'
+        AND b17_setting('current_user_role')='ge_admin' AND level='ge')));
+
+-- review_snapshots INSERT = the W GE-final freeze only. No UPDATE/DELETE
+-- policy: the snapshot is immutable and its content_hash is never rewritten.
+CREATE POLICY b17_review_snapshots_insert ON review_snapshots FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode')='consultant'
+  AND b17_setting('current_user_role')='ge_admin'
+  AND created_by::text=b17_setting('current_actor_id'));
+
+-- snapshot_notes INSERT = the W append-only post-freeze note only (the route
+-- owns the 2,000-character cap). No UPDATE/DELETE policy: notes are append-only.
+CREATE POLICY b17_snapshot_notes_insert ON snapshot_notes FOR INSERT WITH CHECK (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_mode')='consultant'
+  AND b17_setting('current_user_role')='ge_admin'
+  AND created_by::text=b17_setting('current_actor_id')
+  AND EXISTS(SELECT 1 FROM review_snapshots s
+    WHERE s.id=snapshot_id AND s.client_id=snapshot_notes.client_id));

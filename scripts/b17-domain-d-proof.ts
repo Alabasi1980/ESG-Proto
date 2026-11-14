@@ -1,4 +1,4 @@
-// Real dispatcher/handlers + nonbypass PG18 FORCE RLS. Fresh loopback scratch
+﻿// Real dispatcher/handlers + nonbypass PG18 FORCE RLS. Fresh loopback scratch
 // only, fixture INSERTs and API operations on those fixtures; never live/.env.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -85,9 +85,9 @@ async function main() {
   const before = await census();
   pass('D0 fresh loopback PG18, non-superuser/NOBYPASSRLS owner, FORCE RLS, both offline versions twice safe');
 
-  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length,40);
+  assert.equal(LEGACY_ROUTES.filter(r => r.activation === 'UNACTIVATED').length,25);
   assert.ok(LEGACY_ROUTES.filter(r => ['initiatives','reports'].includes(r.capability)).every(r => r.activation === 'U1'));
-  assert.deepEqual(activeBusinessCapabilities(),['taxonomy','gri','actions','initiatives','reports','storage','audit','notifications']);
+  assert.deepEqual(activeBusinessCapabilities(),['taxonomy','gri','evaluations','actions','initiatives','reports','storage','audit','notifications']);
   const app = express(); app.use(jsonInput,cookieParser()); app.use('/api',apiRouter); app.use(globalJsonErrorHandler);
   const server = app.listen(0,'127.0.0.1'); await new Promise<void>(resolve => server.once('listening',resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -279,7 +279,7 @@ async function main() {
         // Disclosure rows de-duplicate per item by FIRST row, ordered by random
         // fixture department UUIDs: the surviving D-SCORE department row may or
         // may not carry the answer. Assert the security invariant independent of
-        // that pick — location contains ONLY stored answer text, in 1 or 2 rows.
+        // that pick â€” location contains ONLY stored answer text, in 1 or 2 rows.
         const locationParts = ok.location.split(' | ');
         assert.ok(locationParts.length >= 1 && locationParts.every((seg: string) => seg === seed.csvText.location),
           `location must contain only stored answer text, got ${JSON.stringify(ok.location)}`);
@@ -383,7 +383,7 @@ async function main() {
     for (const key of expectedAllowed) assert.ok(allowed.has(key),`Missing positive ${key}`);
     assert.equal(expectedAllowed.length,18);
     pass('D6 RLS no-context/foreign/blob denial; policy/ACL/ledger drift refuses+recovers; integer count/restored purpose; protected rows/grants unchanged');
-    pass('D7 all 18 allowed contexts across exact eleven routes exercised; 51->40; full scoped proof complete, NOT independent review');
+    pass('D7 all 18 allowed contexts across exact eleven routes exercised; 51->40->34->25; full scoped proof complete, NOT independent review');
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve())); await oracle.end(); await pool.end();
   }
