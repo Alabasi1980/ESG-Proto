@@ -111,10 +111,10 @@ const MainApp: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
-          <span className="text-xs text-slate-400">Loading ESG GRI Platform...</span>
+          <RefreshCw className="w-8 h-8 text-brand animate-spin" />
+          <span className="text-xs text-muted">Loading ESG GRI Platform...</span>
         </div>
       </div>
     );
@@ -132,10 +132,10 @@ const MainApp: React.FC = () => {
   // action until the password is replaced; suspended tenants see no data.
   if (suspended) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
-        <div className="max-w-md w-full p-8 bg-white rounded-2xl border border-rose-200 text-center">
+      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+        <div className="max-w-md w-full p-8 bg-surface-2 rounded-2xl border border-danger text-center">
           <h2 className="font-bold text-base">Tenant suspended</h2>
-          <p className="text-xs text-slate-500 mt-2">This tenant is suspended. Contact the platform administrator.</p>
+          <p className="text-xs text-muted mt-2">This tenant is suspended. Contact the platform administrator.</p>
         </div>
       </div>
     );
@@ -168,12 +168,12 @@ const MainApp: React.FC = () => {
       }
     };
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
-        <form onSubmit={submitChange} className="max-w-md w-full p-8 bg-white rounded-2xl border space-y-3">
+      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+        <form onSubmit={submitChange} className="max-w-md w-full p-8 bg-surface-2 rounded-2xl border space-y-3">
           <h2 className="font-bold text-base">{t.auth.forcedChangeTitle}</h2>
-          <p className="text-xs text-slate-500">{t.auth.forcedChangeDesc}</p>
-          <p className="text-[11px] text-slate-400">{t.auth.passwordComplexityHint}</p>
-          {gateMsg && <p className="text-xs text-rose-600">{gateMsg}</p>}
+          <p className="text-xs text-muted">{t.auth.forcedChangeDesc}</p>
+          <p className="text-[11px] text-muted">{t.auth.passwordComplexityHint}</p>
+          {gateMsg && <p className="text-xs text-danger">{gateMsg}</p>}
           <input
             type="password"
             required
@@ -191,7 +191,7 @@ const MainApp: React.FC = () => {
             placeholder={t.auth.newPassword}
             className="w-full px-3 py-2 rounded-xl text-xs border"
           />
-          <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">
+          <button type="submit" className="w-full py-2.5 rounded-xl bg-brand text-brand-ink text-xs font-bold">
             {t.auth.changeAndContinue}
           </button>
         </form>
@@ -200,7 +200,7 @@ const MainApp: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-surface text-text overflow-hidden font-sans">
       {/* Sidebar with RTL and Tenant Context */}
       <Sidebar
         activeTab={activeTab}
@@ -219,7 +219,7 @@ const MainApp: React.FC = () => {
 
         {/* B12 (S-01): inactivity warning — bilingual notice + countdown. */}
         {idleWarning && user && (
-          <div className="mx-4 sm:mx-6 lg:mx-8 mt-4 p-4 rounded-2xl border border-amber-300 bg-amber-50 text-amber-900 text-xs flex items-center gap-3">
+          <div className="mx-4 sm:mx-6 lg:mx-8 mt-4 p-4 rounded-2xl border border-warning bg-warning-soft text-warning text-xs flex items-center gap-3">
             <TimerOff className="w-5 h-5 shrink-0" />
             <div className="flex-1">
               <p className="font-bold">{t.idle.warningTitle}</p>
@@ -232,13 +232,13 @@ const MainApp: React.FC = () => {
                 lastActivityRef.current = Date.now();
                 setIdleWarning(false);
               }}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold"
+              className="px-3 py-1.5 rounded-xl bg-warning text-brand-ink font-bold"
             >
               {t.idle.staySignedIn}
             </button>
             <button
               onClick={() => logout()}
-              className="px-3 py-1.5 rounded-xl border border-amber-400 font-bold"
+              className="px-3 py-1.5 rounded-xl border border-warning font-bold"
             >
               {t.idle.signOutNow}
             </button>

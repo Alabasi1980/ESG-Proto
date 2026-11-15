@@ -1,0 +1,97 @@
+/* themes.css — Runtime theme overrides (TASK-PROTO-H02a, values frozen from H01).
+ * WHY one attribute selector per theme on the root: single build, instant switch
+ * (THEME_TOKENS.md §3) — the server-enforced theme (H01 §5) sets data-theme
+ * before first paint; no `dark:` variants (TOKEN_MAPPING.md §3.2). */
+
+[data-theme="ge"] {
+  /* Verbatim from THEME_01_GE.md §2 (= @theme defaults in tokens.css). */
+  --surface: #F4F6F4;
+  --surface-2: #FFFFFF;
+  --surface-3: #E9EFEA;
+  --border: #DDE5DE;
+  --border-strong: #B9C7BC;
+  --text: #152331;
+  --muted: #55666F;
+  --brand: #038947;
+  --brand-strong: #026B38;
+  --brand-soft: #E2F1E7;
+  --brand-ink: #FFFFFF;
+  --accent: #F16B3B;
+  --accent-soft: #FCE8D9;
+  --success: #038947;
+  --success-soft: #E2F1E7;
+  --warning: #B45309;
+  --warning-soft: #FEF3C7;
+  --danger: #BE123C;
+  --danger-soft: #FFE4E6;
+  --info: #0369A1;
+  --info-soft: #E0F2FE;
+  --sidebar-bg: #152331;
+  --sidebar-text: #E9EEF0;
+  --sidebar-muted: #8FA0AC;
+  --sidebar-active: #038947;
+  --sidebar-active-text: #FFFFFF;
+  --focus-ring: #038947;
+}
+
+[data-theme="abyss"] {
+  /* Verbatim from THEME_02_ABYSS.md §2 (dark-first, hover lightens). */
+  --surface: #0B1319;
+  --surface-2: #152331;
+  --surface-3: #1D2D3A;
+  --border: #253A4B;
+  --border-strong: #3A5266;
+  --text: #EFF4F1;
+  --muted: #9DB0BC;
+  --brand: #46B275;
+  --brand-strong: #5CC184;
+  --brand-soft: rgb(70 178 117 / .16);
+  --brand-ink: #052E1C;
+  --accent: #F16B3B;
+  --accent-soft: rgb(241 107 59 / .16);
+  --success: #46B275;
+  --success-soft: rgb(70 178 117 / .16);
+  --warning: #FBBF24;
+  --warning-soft: rgb(251 191 36 / .14);
+  --danger: #FB7185;
+  --danger-soft: rgb(251 113 133 / .14);
+  --info: #38BDF8;
+  --info-soft: rgb(56 189 248 / .14);
+  --sidebar-bg: #080E13;
+  --sidebar-text: #E6EDEA;
+  --sidebar-muted: #7E93A1;
+  --sidebar-active: #46B275;
+  --sidebar-active-text: #052E1C;
+  --focus-ring: #AFD139;
+}
+
+[data-theme="stone"] {
+  /* Verbatim from THEME_03_STONE.md §2 (accent #C2571F approved as-is). */
+  --surface: #F7F6F3;
+  --surface-2: #FFFFFF;
+  --surface-3: #ECEAE4;
+  --border: #E0DDD5;
+  --border-strong: #B9B4A6;
+  --text: #1D2422;
+  --muted: #5C6560;
+  --brand: #152331;
+  --brand-strong: #0B141C;
+  --brand-soft: #E7EBEE;
+  --brand-ink: #FFFFFF;
+  --accent: #C2571F;
+  --accent-soft: #F9E7D7;
+  --success: #038947;
+  --success-soft: #E2F1E7;
+  --warning: #B45309;
+  --warning-soft: #FEF3C7;
+  --danger: #BE123C;
+  --danger-soft: #FFE4E6;
+  --info: #3A6B7C;
+  --info-soft: #E4EDEF;
+  --sidebar-bg: #FFFFFF;
+  --sidebar-text: #2A3431;
+  --sidebar-muted: #7A847F;
+  --sidebar-active: #152331;
+  --sidebar-active-text: #FFFFFF;
+  --focus-ring: #152331;
+}

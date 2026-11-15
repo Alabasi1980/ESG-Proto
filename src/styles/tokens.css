@@ -1,0 +1,72 @@
+/* tokens.css — Executable token layer (TASK-PROTO-H02a, values frozen from approved H01).
+ * WHY @theme holds the raw --* defaults (GE = default theme): Tailwind v4 emits
+ * @theme vars to :root, so utilities resolve without a data-theme attribute.
+ * WHY @theme inline aliases (--color-*: var(--*)): `inline` keeps the var()
+ * reference live in utilities (bg-surface, text-muted, border-border …), so the
+ * [data-theme] overrides in themes.css switch instantly with one build. */
+
+@theme {
+  /* GE defaults — verbatim from THEME_01_GE.md §2 (order = THEME_TOKENS.md §2). */
+  --surface: #F4F6F4;
+  --surface-2: #FFFFFF;
+  --surface-3: #E9EFEA;
+  --border: #DDE5DE;
+  --border-strong: #B9C7BC;
+  --text: #152331;
+  --muted: #55666F;
+  --brand: #038947;
+  --brand-strong: #026B38;
+  --brand-soft: #E2F1E7;
+  --brand-ink: #FFFFFF;
+  --accent: #F16B3B;
+  --accent-soft: #FCE8D9;
+  --success: #038947;
+  --success-soft: #E2F1E7;
+  --warning: #B45309;
+  --warning-soft: #FEF3C7;
+  --danger: #BE123C;
+  --danger-soft: #FFE4E6;
+  --info: #0369A1;
+  --info-soft: #E0F2FE;
+  --sidebar-bg: #152331;
+  --sidebar-text: #E9EEF0;
+  --sidebar-muted: #8FA0AC;
+  --sidebar-active: #038947;
+  --sidebar-active-text: #FFFFFF;
+  --focus-ring: #038947;
+
+  /* Structural constants — identical in every theme (THEME_TOKENS.md §2). */
+  --radius: 10px;
+  --shadow: 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .08);
+}
+
+/* WHY inline: utilities emit var(--*) so runtime [data-theme] switching works. */
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-text: var(--sidebar-active-text);
+  --color-focus-ring: var(--focus-ring);
+}

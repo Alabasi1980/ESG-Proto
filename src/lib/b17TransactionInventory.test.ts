@@ -119,6 +119,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/server/routes/notifications.ts','src/server/routes/storage.ts','src/server/routes/evaluations.ts',
     'src/server/routes/reports.ts','src/server/routes/initiatives.ts',
     'src/lib/routeGates.test.ts','src/lib/b17TransactionInventory.test.ts','src/db/b17Readiness.ts',
+    // D-H01-06 (2026-11-15, owner-authorized): theme-center track H02a/H02b — 8 paths only.
+    'src/App.tsx','src/components/Header.tsx','src/components/Sidebar.tsx','src/index.css',
+    'src/main.tsx','src/context/ThemeContext.tsx','src/styles/tokens.css','src/styles/themes.css',
     ...newFiles]);
   // G1 ruling 4 (§11): the TWO reviewer-owned report paths are excluded from
   // the executor-scope guard by exact path only — never a glob/loophole — so
@@ -128,7 +131,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file));
-  assert.equal(allowed.size,16);
+  assert.equal(allowed.size,24); // 16 (G2 base) + 8 (D-H01-06 theme track)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });

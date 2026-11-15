@@ -213,18 +213,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <aside
         data-testid="sidebar"
         aria-label={lang === 'ar' ? 'قائمة التنقل' : 'Navigation menu'}
-        className={`print:hidden fixed inset-y-0 start-0 z-50 flex flex-col w-64 bg-slate-900 text-slate-100 border-e border-slate-800 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${drawerClass}`}
+        className={`print:hidden fixed inset-y-0 start-0 z-50 flex flex-col w-64 bg-sidebar-bg text-sidebar-text border-e border-sidebar-muted/60 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${drawerClass}`}
       >
         {/* Brand header */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-800">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-900/30">
+        <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-muted/60">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-sidebar-active text-sidebar-active-text shadow-md shadow-sidebar-active/30">
             <span className="font-bold text-lg tracking-wider">GE</span>
           </div>
           <div className="min-w-0">
-            <h1 className="font-bold text-base tracking-tight text-white truncate">
+            <h1 className="font-bold text-base tracking-tight text-sidebar-text truncate">
               {t.brandGreenEdge}
             </h1>
-            <p className="text-xs text-emerald-400 truncate font-medium">
+            <p className="text-xs text-sidebar-muted truncate font-medium">
               ESG & GRI System
             </p>
           </div>
@@ -236,7 +236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onClose}
             data-testid="sidebar-close"
             aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close navigation menu'}
-            className="ms-auto lg:hidden p-2 -me-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="ms-auto lg:hidden p-2 -me-2 rounded-lg text-sidebar-muted hover:text-sidebar-text hover:bg-surface-3/60 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -244,18 +244,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Tenant context banner */}
         {user && (
-          <div className="mx-4 mt-4 p-3 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
-            <div className="flex items-center gap-2 text-slate-400 mb-1">
-              <Building2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <div className="mx-4 mt-4 p-3 rounded-lg bg-surface-3/80 border border-sidebar-muted/60 text-xs">
+            <div className="flex items-center gap-2 text-sidebar-muted mb-1">
+              <Building2 className="w-3.5 h-3.5 text-sidebar-muted shrink-0" />
               <span className="font-semibold uppercase tracking-wider text-[10px]">
                 {t.nav.tenantBadge}
               </span>
             </div>
-            <div className="font-medium text-white truncate">
+            <div className="font-medium text-sidebar-text truncate">
               {user.clientName || (user.role === 'ge_admin' ? t.auth.notAssigned : user.clientId || 'Client Tenant')}
             </div>
             {user.departmentName && (
-              <div className="text-slate-400 mt-1 text-[11px] truncate">
+              <div className="text-sidebar-muted mt-1 text-[11px] truncate">
                 {t.auth.department}: {user.departmentName}
               </div>
             )}
@@ -280,14 +280,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                    ? 'bg-sidebar-active text-sidebar-active-text shadow-sm'
+                    : 'text-sidebar-muted hover:text-sidebar-text hover:bg-surface-3/60'
                 }`}
               >
-              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sidebar-active-text' : 'text-sidebar-muted'}`} />
               <span className="truncate flex-1 text-start">{item.label}</span>
               {item.id === 'notifications' && unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
+                <span className="px-1.5 py-0.5 rounded-full bg-danger text-brand-ink text-[10px] font-bold">
                   {unreadCount > 50 ? '50+' : unreadCount}
                 </span>
               )}
@@ -297,18 +297,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* Footer actions: Language switch & User profile */}
-        <div className="p-4 border-t border-slate-800 space-y-2">
+        <div className="p-4 border-t border-sidebar-muted/60 space-y-2">
           {/* Language Toggle Button */}
           <button
             onClick={toggleLanguage}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors border border-slate-700/50"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-sidebar-muted hover:bg-surface-3/60 hover:text-sidebar-text transition-colors border border-sidebar-muted/50"
             title={lang === 'en' ? 'التبديل إلى العربية' : 'Switch to English'}
           >
             <div className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-emerald-400" />
+              <Globe className="w-4 h-4 text-sidebar-muted" />
               <span>{lang === 'en' ? 'Language' : 'اللغة'}</span>
             </div>
-            <span className="px-2 py-0.5 rounded bg-slate-700 text-emerald-300 font-semibold text-[11px]">
+            <span className="px-2 py-0.5 rounded bg-surface-3 text-sidebar-muted font-semibold text-[11px]">
               {lang === 'en' ? 'العربية' : 'English'}
             </span>
           </button>
@@ -317,24 +317,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {user ? (
             <div className="pt-2">
               <div className="flex items-center gap-2 px-2 py-1 text-xs">
-                <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center font-bold text-emerald-400 text-xs">
+                <div className="w-7 h-7 rounded-full bg-surface-3 flex items-center justify-center font-bold text-sidebar-muted text-xs">
                   {user.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-white truncate text-xs">{user.name}</p>
-                  <p className="text-slate-400 truncate text-[10px]">{t.auth.roles[user.role]}</p>
+                  <p className="font-medium text-sidebar-text truncate text-xs">{user.name}</p>
+                  <p className="text-sidebar-muted truncate text-[10px]">{t.auth.roles[user.role]}</p>
                 </div>
               </div>
               <button
                 onClick={logout}
-                className="w-full mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 transition-colors"
+                className="w-full mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-danger hover:bg-danger/10 hover:text-danger transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>{t.nav.logout}</span>
               </button>
             </div>
           ) : (
-            <div className="p-2 text-center text-xs text-slate-400">
+            <div className="p-2 text-center text-xs text-sidebar-muted">
               {t.appName}
             </div>
           )}
