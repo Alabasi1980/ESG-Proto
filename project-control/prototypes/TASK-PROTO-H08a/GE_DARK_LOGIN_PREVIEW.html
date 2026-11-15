@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GE — Dark login preview / معاينة الدخول الداكن</title>
+  <style>
+    :root {
+      --surface: #152331;
+      --surface-2: #1D3029;
+      --surface-3: #263B33;
+      --border: #456347;
+      --border-strong: #93A987;
+      --text: #F1F6D6;
+      --muted: #CAD6AE;
+      --brand: #026F39;
+      --brand-strong: #027B40;
+      --brand-soft: #294834;
+      --brand-ink: #F1F6D6;
+      --accent: #AFD139;
+      --accent-soft: #303F27;
+      --success: #69D59A;
+      --success-soft: #294834;
+      --warning: #F16B3B;
+      --warning-soft: #36281F;
+      --danger: #FF8D79;
+      --danger-soft: #422A2B;
+      --info: #9BCEEB;
+      --info-soft: #253849;
+      --sidebar-bg: #152331;
+      --sidebar-text: #F1F6D6;
+      --sidebar-muted: #CAD6AE;
+      --sidebar-active: #026F39;
+      --sidebar-active-text: #F1F6D6;
+      --focus-ring: #AFD139;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html { font-family: "Noto Sans Arabic", "Cairo", system-ui, sans-serif; }
+    body { margin: 0; min-width: 280px; background: var(--surface); color: var(--text); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 3px;
+    }
+    svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+    .demo-banner { padding: 8px 16px; text-align: center; background: var(--accent-soft); border-block-end: 1px solid var(--border); font-size: 11px; font-weight: 650; line-height: 1.6; }
+    .language { position: absolute; inset-block-start: 58px; inset-inline-end: 24px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-3); color: var(--text); padding: 7px 12px; font-size: 12px; font-weight: 700; transition: background .18s ease, border-color .18s ease; }
+    .language svg { color: var(--accent); }
+    .language:hover { background: var(--surface-2); border-color: var(--focus-ring); }
+    .login-stage { width: 100%; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 98px 16px 40px; }
+    .intro, .card, .preview-controls { width: min(100%, 448px); }
+    .intro { text-align: center; }
+    .logo { width: 56px; height: 56px; margin-inline: auto; display: grid; place-items: center; background: var(--brand); color: var(--brand-ink); border-radius: 16px; font: 800 24px/1 system-ui, sans-serif; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+    h1 { margin: 16px 0 0; font-size: 24px; line-height: 1.4; font-weight: 800; }
+    .subtitle { margin: 8px auto 0; max-width: 380px; color: var(--muted); font-size: 12px; line-height: 1.75; }
+    .card { margin-block-start: 32px; padding: 32px 40px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 8px 24px rgb(0 0 0 / .15); }
+    .notice { padding: 16px; margin-block-end: 24px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warning-soft); }
+    .notice-title { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 5px; color: var(--warning); font-size: 12px; font-weight: 750; line-height: 1.6; }
+    .notice-title svg { margin-block-start: 2px; }
+    .notice p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
+    .error { display: flex; align-items: flex-start; gap: 8px; margin-block-end: 16px; padding: 12px; border: 1px solid var(--danger); border-radius: 12px; background: var(--danger-soft); color: var(--danger); font-size: 12px; line-height: 1.6; }
+    .error[hidden] { display: none; }
+    .error svg { margin-block-start: 2px; }
+    .field + .field { margin-block-start: 16px; }
+    label { display: block; margin-block-end: 5px; color: var(--muted); font-size: 12px; font-weight: 650; }
+    .input-wrap { position: relative; }
+    .input-wrap svg { position: absolute; inset-inline-start: 12px; inset-block-start: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    input { width: 100%; min-height: 40px; padding: 10px 16px; padding-inline-start: 36px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-3); color: var(--text); font-size: 12px; line-height: 1.5; }
+    input::placeholder { color: var(--muted); opacity: 1; }
+    /* WHY: email stays LTR even when labels and icon placement follow the page's RTL flow. */
+    input[type="email"] { direction: ltr; text-align: start; }
+    input:focus-visible { border-color: var(--focus-ring); }
+    .submit { width: 100%; min-height: 43px; display: flex; justify-content: center; align-items: center; gap: 8px; margin-block-start: 16px; padding: 10px 16px; border: 1px solid var(--brand); border-radius: 12px; background: var(--brand); color: var(--brand-ink); font-size: 12px; font-weight: 750; line-height: 1.5; box-shadow: 0 4px 12px rgb(0 0 0 / .18); transition: background .18s ease, transform .18s ease; }
+    .submit:hover:not(:disabled) { background: var(--brand-strong); transform: translateY(-1px); }
+    .submit:disabled { cursor: not-allowed; background: var(--brand); border-style: dashed; text-decoration: underline dotted; transform: none; }
+    .preview-controls { margin-block-start: 18px; text-align: center; color: var(--muted); font-size: 11px; line-height: 1.7; }
+    .preview-controls p { margin: 0 0 8px; }
+    .state-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+    .state-buttons button { border: 1px solid var(--border-strong); border-radius: 8px; padding: 5px 11px; background: var(--surface-2); color: var(--text); font-size: 11px; }
+    .state-buttons button:hover, .state-buttons button[aria-pressed="true"] { border-color: var(--focus-ring); background: var(--accent-soft); }
+    @media (max-width: 520px) {
+      .language { inset-block-start: 54px; inset-inline-end: 16px; }
+      .login-stage { padding-block-start: 110px; padding-block-end: 32px; }
+      .card { padding: 28px 24px; }
+      h1 { font-size: 22px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .language, .submit { transition: none; } .submit:hover:not(:disabled) { transform: none; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="demo-banner" role="note"><span data-i18n="banner">نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل</span></div>
+    <button class="language" type="button" id="language" aria-label="Switch language to English">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18M12 3c5 5 5 13 0 18"/></svg>
+      <span id="language-label">English</span>
+    </button>
+    <main class="login-stage">
+      <header class="intro">
+        <div class="logo" aria-label="GE">GE</div>
+        <h1 data-i18n="title">مرحباً بك في منصة ESG GRI</h1>
+        <p class="subtitle" data-i18n="subtitle">سجّل الدخول للوصول إلى لوحة امتثال الاستدامة ومعايير GRI</p>
+      </header>
+      <section class="card" aria-label="Login design preview">
+        <!-- WHY: DB notice is a fixed *visual scenario*, never a live connection check. -->
+        <div class="notice" role="note">
+          <div class="notice-title">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg>
+            <span data-i18n="dbTitle">اتصال PostgreSQL المباشر (DATABASE_URL) غير معين حتى الآن.</span>
+          </div>
+          <p data-i18n="dbHelp">قم بتعيين DATABASE_URL في البيئة أو ملف .env لحفظ السجلات مع عزل RLS.</p>
+        </div>
+        <div class="error" id="error" role="alert" hidden>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3ZM12 9v5M12 17h.01"/></svg>
+          <span data-i18n="error">البريد الإلكتروني أو كلمة المرور غير صحيحة.</span>
+        </div>
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="email" data-i18n="emailLabel">البريد الإلكتروني</label>
+            <div class="input-wrap">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+              <input id="email" type="email" dir="ltr" autocomplete="off" placeholder="user@company.com" data-placeholder="emailPlaceholder" aria-describedby="preview-note">
+            </div>
+          </div>
+          <div class="field">
+            <label for="password" data-i18n="passwordLabel">كلمة المرور</label>
+            <div class="input-wrap">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <input id="password" type="password" autocomplete="off" placeholder="••••••••" data-placeholder="passwordPlaceholder" aria-describedby="preview-note">
+            </div>
+          </div>
+          <button class="submit" id="submit" type="submit" aria-describedby="preview-note">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3 8 8 11 5-3 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span id="submit-label" data-i18n="signIn">تسجيل الدخول إلى المنصة</span>
+          </button>
+        </form>
+      </section>
+      <!-- WHY: preview controls are separated from the product card to avoid implying new login features. -->
+      <aside class="preview-controls" aria-label="Preview-only controls">
+        <p id="preview-note" data-i18n="previewNote">معاينة تصميم فقط — حالة قاعدة البيانات تمثيلية، ولا يوجد تسجيل دخول أو اتصال بالخادم.</p>
+        <div class="state-buttons" aria-label="Visual states">
+          <button type="button" data-state="normal" aria-pressed="true" data-i18n="normal">عادي</button>
+          <button type="button" data-state="error" aria-pressed="false" data-i18n="errorState">خطأ</button>
+          <button type="button" data-state="disabled" aria-pressed="false" data-i18n="disabledState">معطّل</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+  <script>
+    // WHY: local text/state switches illustrate visual variants only; this file never sends credentials.
+    const copy = {
+      ar: {
+        banner: 'نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل',
+        title: 'مرحباً بك في منصة ESG GRI',
+        subtitle: 'سجّل الدخول للوصول إلى لوحة امتثال الاستدامة ومعايير GRI',
+        dbTitle: 'اتصال PostgreSQL المباشر (DATABASE_URL) غير معين حتى الآن.',
+        dbHelp: 'قم بتعيين DATABASE_URL في البيئة أو ملف .env لحفظ السجلات مع عزل RLS.',
+        error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
+        emailLabel: 'البريد الإلكتروني', emailPlaceholder: 'user@company.com',
+        passwordLabel: 'كلمة المرور', passwordPlaceholder: '••••••••',
+        signIn: 'تسجيل الدخول إلى المنصة', signingIn: 'جارٍ التحقق...',
+        previewNote: 'معاينة تصميم فقط — حالة قاعدة البيانات تمثيلية، ولا يوجد تسجيل دخول أو اتصال بالخادم.',
+        normal: 'عادي', errorState: 'خطأ', disabledState: 'معطّل'
+      },
+      en: {
+        banner: "Demo build — content is the client's own GRI workbook",
+        title: 'Welcome to ESG GRI Platform',
+        subtitle: 'Sign in to access your ESG & GRI compliance dashboard',
+        dbTitle: 'Live PostgreSQL connection (DATABASE_URL) is not yet set.',
+        dbHelp: 'Set DATABASE_URL in your environment or .env file to persist records with Row-Level Security.',
+        error: 'The email address or password provided is incorrect.',
+        emailLabel: 'Email Address', emailPlaceholder: 'user@company.com',
+        passwordLabel: 'Password', passwordPlaceholder: '••••••••',
+        signIn: 'Sign In to Platform', signingIn: 'Authenticating...',
+        previewNote: 'Design preview only — the database status is illustrative; no sign-in or server connection occurs.',
+        normal: 'Normal', errorState: 'Error', disabledState: 'Disabled'
+      }
+    };
+    let language = 'ar';
+    let visualState = 'normal';
+    const submit = document.getElementById('submit');
+    const label = document.getElementById('submit-label');
+    function render() {
+      document.documentElement.lang = language;
+      document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+      document.querySelectorAll('[data-i18n]').forEach(node => {
+        node.textContent = copy[language][node.dataset.i18n];
+      });
+      document.querySelectorAll('[data-placeholder]').forEach(node => {
+        node.placeholder = copy[language][node.dataset.placeholder];
+      });
+      document.getElementById('language-label').textContent = language === 'ar' ? 'English' : 'العربية';
+      document.getElementById('language').setAttribute('aria-label', language === 'ar' ? 'Switch language to English' : 'التبديل إلى العربية');
+      document.getElementById('error').hidden = visualState !== 'error';
+      submit.disabled = visualState === 'disabled';
+      label.textContent = copy[language][submit.disabled ? 'signingIn' : 'signIn'];
+      document.querySelectorAll('[data-state]').forEach(node => {
+        node.setAttribute('aria-pressed', String(node.dataset.state === visualState));
+      });
+    }
+    document.getElementById('language').addEventListener('click', () => {
+      language = language === 'ar' ? 'en' : 'ar';
+      render();
+    });
+    document.querySelectorAll('[data-state]').forEach(node => {
+      node.addEventListener('click', () => { visualState = node.dataset.state; render(); });
+    });
+    document.getElementById('login-form').addEventListener('submit', event => event.preventDefault());
+    render();
+  </script>
+</body>
+</html>

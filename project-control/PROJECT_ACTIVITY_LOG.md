@@ -60,3 +60,37 @@
 | 2026-11-15 | ui-designer | Handback H07 | Lime v3 — القيم الخمس byte-exact · ge/abyss بلا مساس · `#037D40` أُزيل من الكتلة |
 | 2026-11-15 | TeraAgent | Verified H07 | قياس حي: page/card/input/button مطابقة · ظل أخضر · lint 0 · 227/227 · build 0 |
 | 2026-11-15 | TeraAgent | Post-Execution Review | PASS — H07 = READY FOR OWNER ACCEPTANCE · Follow-up: شارة الهيدر 3.87 تحتاج `text-brand-strong` |
+| 2026-11-15 | Owner | Decision D-H07-01 | لمسة أخيرة: تقليل اصفرار/تشبّع الخلفية وإبقاء البطاقة أغمق بوضوح |
+| 2026-11-15 | ui-designer | Handback H07b | surface #F1F6D6→#EDF0DA (S −34%) · ΔL للبطاقة 7.25 · لكنه عدّل `--surface-2` خارج تفويض المالك |
+| 2026-11-15 | TeraAgent | Correction | كشف التجاوز: `#F7F8E3` (قيمة المالك) حُذفت → أنشأت `TASK-PROTO-H07c` وأعدتها عبر المتخصص (خطأ العقد كان مني) |
+| 2026-11-15 | TeraAgent | Verified H07b+H07c | page `rgb(237,240,218)` · card `rgb(228,237,184)` · input `rgb(247,248,227)` · `#EBEED9`=0 · lint 0 · 227/227 · build 0 · لقطة محفوظة |
+| 2026-11-15 | TeraAgent | Follow-up recorded | تعليق قديم في `themes.css` (سطور 69–74) ما زال يصف v4 السابق — يُصحَّح في أول دفعة تلمس الملف |
+| 2026-11-15 | Owner | Decision D-H07-02 | بعد معاينة المكتب والهاتف: تصحيح خلفية Lime المغسولة أكثر من «قليلاً»؛ الثوابت الأخرى كما هي؛ القبول البصري النهائي معلّق |
+| 2026-11-15 | TeraAgent | Task delegation | TASK-PROTO-H07d: تصحيح `--surface` وتعليقها ومواصفتها فقط؛ Pre-Execution PASS؛ ui-designer؛ Session NEW |
+| 2026-11-15 | ui-designer | STOP before write | H07d: البحث الإلزامي يحتاج `REFERENCES.md` خارج أهداف الكتابة، والتحقق المرئي يحتاج أداة غير متاحة له؛ لا ملفات معدّلة |
+| 2026-11-15 | TeraAgent | Gate correction | أُضيف `tasks/TASK-PROTO-H07d/REFERENCES.md` فقط لأهداف المصمم، وTera يتولى Playwright ويعيد الأدلة؛ Pre-Execution PASS بعد حل التعارض، دون تجاوز صامت |
+| 2026-11-15 | ui-designer | H07d Handback | تعديل Lime `--surface` إلى `#EEF4D7` + تحديث وصف v4.2 + 4 مراجع؛ بعد إعادة لقطات Tera سلّم NEEDS_OWNER_REVIEW دون ادعاء تشغيل اختبارات |
+| 2026-11-15 | TeraAgent | H07d verification | lint/build exit 0؛ full tests 226/227 FAIL بسبب `Unapproved write: project-control/DECISIONS_LOG.md` في حارس الشجرة؛ لا commit/push؛ معاينة دخول المكتب/الهاتف، GE مقابل Lime، مقارنة v3/v4.1 المؤقتة؛ أُعيد التقاط سطح المكتب بعد اكتشاف حافة بيضاء من أداة اللقطة فقط |
+| 2026-11-15 | TeraAgent | H07d review decision | Post-Execution PASS لتصحيح اللون المحصور مع اختبار شامل غير أخضر موثق؛ READY FOR OWNER ACCEPTANCE (بصري)، لا قبول نهائي بلا قرار المالك؛ الفراغ فوق DemoBanner خارج النطاق |
+| 2026-11-15 | Owner | Decision D-H07-03 | اعتماد الثيم الفاتح GE Lime بحالته الحالية (H07d، الخلفية `#EEF4D7`)؛ الاعتماد بصري محدود لا يشمل التطبيق أو الاختبار الأحمر للحارس |
+| 2026-11-15 | TeraAgent | Task closure | H07d Accepted → Closed (UI gate scoped PASS، compliance COMPLIANT مع توثيق اختبار الحارس 226/227 غير الأخضر)؛ H07b Cancelled/Closed لكونه مُستبدلاً، لا Accepted |
+| 2026-11-15 | Owner | Dark theme proposal D-H08-01 | ألوان Abyss جديدة مقترحة كحلي/أخضر داكن مع ليموني/برتقالي؛ بانتظار حسم معنى بطاقة تسجيل الدخول أمام D-H03-01 قبل التفويض |
+| 2026-11-15 | Owner | Decision D-H08-02 | معاينة دخول داكن مستقلة في HTML قبل اعتماد القواعد أو تعديل التطبيق؛ D-H03-01 (دخول GE الفعلي) باقٍ |
+| 2026-11-15 | TeraAgent | Task created/delegated | TASK-PROTO-H08a: ui-designer يبني ملف HTML مستقلاً + قواعد 27 توكناً + REFERENCES داخل `project-control/prototypes/`؛ لا تغيير `src/`؛ ناقد يراجع قبل عرض Majed |
+| 2026-11-15 | ui-designer | STOP before write | H08a: المجلد `project-control/prototypes/` لم يكن موجوداً؛ الإنشاء خارج أهدافه؛ بحث الوصول البصري الجزئي موثق، بلا ملفات معدلة |
+| 2026-11-15 | TeraAgent | Gate correction | هيّأ مجلد TASK-PROTO-H08a بملف README.md داخل project-control/prototypes؛ الأهداف الثلاثة للمصمم كما هي؛ مراجع H01 تُنسب بصدق عند حجب الروابط، ثم استئناف المهمة |
+| 2026-11-15 | ui-designer | Handback H08a (RESUME) | معاينة HTML + مواصفة 27 توكن + مراجع؛ انحرافان موثقان بانتظار قرار المالك: `#026F39` بدل `#038947` للزر/الشعار، `#93A987` حداً للحقول |
+| 2026-11-15 | TeraAgent | Verified H08a | بناء preview محلي + قياس حي: القيم مطابقة للمواصفة حرفياً؛ RTL/LTR بلا overflow؛ email dir=ltr؛ 4 لقطات (مكتب AR/EN/خطأ + هاتف AR) محفوظ في `verification/` |
+| 2026-11-15 | TeraAgent | Tooling note (self) | استخدمت Edge مرئياً لتشغيل الملف ثم أغلقته فوراً وتحولت للمتصفح المُدار؛ التزام: لا `src/` ولا push؛ semgrep على المعاينة: 0 نتائج |
+| 2026-11-15 | design-reviewer | Independent review | **Prototype Reviewed: PASS** — تحقق مستقل بالمتصفح (لقطتان + قياس 22/22)؛ الانحرافان مبرَّران تقنياً (زر `#038947`=4.043 فاشل، `#026F39`=5.664 ناجح؛ حد `#456347`=1.782 فاشل، `#93A987`=4.708/5.485 ناجح)؛ القراران للمالك حصراً؛ ملاحظتان ثانويتان: وزن الزر 750 لا 700، favicon 404 |
+| 2026-11-15 | TeraAgent | Post-Execution Review | PASS — H08a = **READY FOR OWNER ACCEPTANCE** (اعتماد الثيم الداكن وقواعده بصرياً)؛ لا Accept/Close ولا دمج قبل موافقتك الصريحة |
+| 2026-11-15 | Owner | Decision D-H08-03 | اعتماد الثيم الداكن وقواعده (قراءة Tera: B+B كما نُفّذ؛ تصحيح مرحب به بسطر) — الدمج لاحقاً |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H08a` Accepted → Closed — Compliance: COMPLIANT (معاينة + مواصفة + مراجعة مستقلة PASS) |
+| 2026-11-15 | TeraAgent | Verified infra | tokens.css موجود · themes.css (ge/abyss-قديم/lime) · index.css يستورد الاثنين · ThemeContext: union فيه `stone` ميت ويفتقد `lime` |
+| 2026-11-15 | TeraAgent | Task created + delegated | `TASK-PROTO-H09a` (إحلال كتلة dark المعتمدة) → ui-designer — Session: NEW |
+| 2026-11-15 | ui-designer | STOP H09a (round 1) | تعارض: نص التفويض يلمّح لظلّ أخضر يخالف العقد (27 توكن بلا shadow) — لم يكتب شيئاً |
+| 2026-11-15 | TeraAgent | Contract correction | حسم H09a: 27 سطراً بلا `--shadow` — نص التفويض الشفهي لاغٍ أمام العقد |
+| 2026-11-15 | ui-designer | Handback H09a (round 2) | كتلة dark بدل abyss — 27/27 حرفي · ge/lime بلا مساس · لا shadow |
+| 2026-11-15 | TeraAgent | Verified H09a | selectors=ge/dark/lime · قيم dark مطابقة · lint 0 · build 0 |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H09a` Accepted → Closed — Compliance: COMPLIANT |
+| 2026-11-15 | TeraAgent | Delegated | `TASK-PROTO-H09b` → engineering-agent-typescript — Session: NEW |
