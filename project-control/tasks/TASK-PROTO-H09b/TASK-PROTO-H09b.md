@@ -49,3 +49,18 @@ Matrix: TS/React → المتخصص · SDA: `FAST_PATH` (آلية مثبتة، �
 
 - [Engineering File Quality]: اقرأ الملفين أولاً · جراحي · WHY موجز · بلا كود ميت.
 - أداة خارج صلاحياتك: توقف واطلبها. Handback ≤80 سطراً بلا diffs. أي غموض = STOP.
+
+## 8. Tera Post-Execution Review (2026-11-15 — فحص فعلي + تنفيذ مباشر)
+
+| Check | Result | Notes |
+|---|---|---|
+| Allowed Write Targets | PASS | ThemeContext.tsx فقط (لا تعديل حارس — مغطّى مسبقاً size=26) |
+| Union + override | PASS | `'ge'\|'lime'\|'dark'` · TENANT=`ge` · `?theme=` يعمل |
+| `?theme=dark` | PASS | data-theme=dark · surface #152331 · brand #026F39 |
+| `?theme=lime` | PASS | data-theme=lime · surface #EEF4D7 |
+| `?theme=bogus` | PASS | fallback صامت → ge |
+| lint / tests / build | PASS | 0 · 227/227 · 0 |
+| Screenshot dark login | PASS | لقطة محفوظة `h09-dark-login.png` (كحلي + بطاقة خضراء + تنبيه برتقالي + زر أخضر) |
+
+Gate Status: **PASS** — Final Decision: **Accepted → Closed** (Owner Approval Required: No).
+Compliance: **COMPLIANT** (Pre-Exec PASS · Targets PASS · No secrets · Design Source D-H08-03 · Review PASS · Handback PASS · Diff PASS · CLI done · Cross-Record PASS).

@@ -94,3 +94,11 @@
 | 2026-11-15 | TeraAgent | Verified H09a | selectors=ge/dark/lime · قيم dark مطابقة · lint 0 · build 0 |
 | 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H09a` Accepted → Closed — Compliance: COMPLIANT |
 | 2026-11-15 | TeraAgent | Delegated | `TASK-PROTO-H09b` → engineering-agent-typescript — Session: NEW |
+| 2026-11-15 | TeraAgent | Verified H09b | union نظيف · `?theme=` يعمل (dark/lime + fallback ge) · lint 0 · 227/227 · build 0 · لقطة دخول داكن |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H09b` Accepted → Closed — Compliance: COMPLIANT |
+| 2026-11-15 | TeraAgent | Checkpoint | نقطة تفتيش محلية `68bae61` (H09a+H09b + السجلات — بلا دفع) |
+| 2026-11-15 | Owner | Environment directive | العمل على قاعدة العرض الدائمة المشتركة فقط: `127.0.0.1:55432` / `b17_showcase` / حاوية `b17-showcase` / مجلد `b17-showcase-data`؛ الأسرار من `.env` فقط؛ ممنوع reset/wipe/حذف/قاعدة ثانية/إيقاف الحاوية/كتابة سر — بلا موافقة صريحة |
+| 2026-11-15 | TeraAgent | Env correction (my fault) | تشغيلاتي السابقة حذفت/بذرت حاويات مؤقتة وكتبت كلمات مرور يدوياً بـ`crypt()` (أنتجت DES بدل bcrypt) وخزّنت قيماً بمسافة زائدة بسبب `set VAR=value &&` — سُجّل كخطأ تشغيلي لي، وتوقف عنه |
+| 2026-11-15 | TeraAgent | Persistent mode adopted | `npm run showcase -- persistent` → endpoint `http://127.0.0.1:33971` · DB `127.0.0.1:55432/b17_showcase` · volume `b17-showcase-data` · أسرار من `.env` (لم تُطبع) |
+| 2026-11-15 | TeraAgent | Login verified (3 roles) | `owner@teranoo.com`=ge_admin 200 · `majid.khaireddin@gmail.com`=client_admin 200 · `mjd.alabasi@gmail.com`=employee 200 — عبر المتصفح على الخادم الصحيح |
+| 2026-11-15 | TeraAgent | Root cause (browser 401) | كانت جلسة المتصفح على تبويب AI Studio لا على خادمنا؛ أُصلح بفتح تبويب للـendpoint والصعود من هناك |
