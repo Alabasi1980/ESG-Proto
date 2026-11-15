@@ -79,7 +79,7 @@ export const StaffListsView: React.FC = () => {
   }, [fetchAll]);
 
   if (user?.role !== 'ge_admin' && user?.role !== 'client_admin') {
-    return <p className="text-xs text-rose-600">{t.staffLists.subtitle}</p>;
+    return <p className="text-xs text-danger">{t.staffLists.subtitle}</p>;
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -150,29 +150,29 @@ export const StaffListsView: React.FC = () => {
     }
   };
 
-  if (loading) return <p className="text-xs text-slate-500">{t.common.loading}</p>;
+  if (loading) return <p className="text-xs text-muted">{t.common.loading}</p>;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
+      <div className="flex items-center justify-between gap-4 p-6 bg-surface-2 rounded-2xl border border-border">
         <div>
           <h3 className="text-xl font-bold">{t.staffLists.title}</h3>
-          <p className="text-xs text-slate-500 mt-1">{t.staffLists.subtitle}</p>
+          <p className="text-xs text-muted mt-1">{t.staffLists.subtitle}</p>
         </div>
-        <button onClick={fetchAll} className="p-2 rounded-lg border border-slate-200 dark:border-slate-700" title={t.common.refresh}>
+        <button onClick={fetchAll} className="p-2 rounded-lg border border-border text-text hover:bg-surface-3" title={t.common.refresh}>
           <RefreshCw className="w-4 h-4" />
         </button>
       </div>
 
-      {error && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">{error}</div>}
+      {error && <div className="p-3 rounded-xl bg-danger-soft border border-danger text-danger text-xs">{error}</div>}
 
       {lastOtps && (
-        <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 text-xs">
-          <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-200 mb-1">
+        <div className="p-5 rounded-2xl bg-warning-soft border border-warning text-xs">
+          <div className="flex items-center gap-2 font-bold text-warning-text mb-1">
             <KeyRound className="w-4 h-4" />
             <span>{t.staffLists.otpTitle}</span>
           </div>
-          <p className="text-amber-700 dark:text-amber-300 mb-3">{t.staffLists.otpWarning}</p>
+          <p className="text-warning-text mb-3">{t.staffLists.otpWarning}</p>
           <ul className="space-y-1 font-mono" dir="ltr">
             {lastOtps.accounts.map((a) => (
               <li key={a.email}>
@@ -180,14 +180,14 @@ export const StaffListsView: React.FC = () => {
               </li>
             ))}
           </ul>
-          <button onClick={() => setLastOtps(null)} className="mt-3 px-4 py-1.5 rounded-lg bg-amber-600 text-white font-bold">
+          <button onClick={() => setLastOtps(null)} className="mt-3 px-4 py-1.5 rounded-lg bg-brand text-brand-ink font-bold">
             {t.common.close}
           </button>
         </div>
       )}
 
       {(user?.role === 'client_admin' || user?.role === 'ge_admin') && (
-        <form onSubmit={handleCreate} className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 space-y-3">
+        <form onSubmit={handleCreate} className="p-5 bg-surface-2 rounded-2xl border border-border space-y-3">
           <div className="text-xs font-bold">{t.staffLists.createTitle}</div>
           {rows.map((r, i) => (
             <div key={i} className="grid grid-cols-1 sm:grid-cols-4 gap-2">
@@ -198,20 +198,20 @@ export const StaffListsView: React.FC = () => {
                   required
                   type="email"
                   dir="ltr"
-                  className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                  className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text placeholder-muted"
                 />
               <input
                 value={r.name}
                 onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
                 placeholder={t.staffLists.namePh}
                 required
-                className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text placeholder-muted"
               />
               <select
                 value={r.departmentId}
                 onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, departmentId: e.target.value } : x)))}
                 required
-                className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text placeholder-muted"
               >
                 <option value="">—</option>
                 {departments.map((d) => (
@@ -224,22 +224,22 @@ export const StaffListsView: React.FC = () => {
                 <select
                   value={r.role}
                   onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))}
-                  className="flex-1 px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                  className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
                 >
                   <option value="employee">employee</option>
                   <option value="client_admin">client_admin</option>
                 </select>
-                <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="p-2 rounded-lg border border-rose-200 text-rose-600">
+                <button type="button" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="p-2 rounded-lg border border-danger bg-surface-3 text-danger">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
           ))}
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setRows([...rows, { email: '', name: '', departmentId: '', role: 'employee' }])} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold">
+            <button type="button" onClick={() => setRows([...rows, { email: '', name: '', departmentId: '', role: 'employee' }])} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-strong text-text text-xs font-bold">
               <Plus className="w-3.5 h-3.5" /> {t.staffLists.addRow}
             </button>
-            <button type="submit" disabled={creating} className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">
+            <button type="submit" disabled={creating} className="px-4 py-1.5 rounded-lg bg-brand text-brand-ink text-xs font-bold disabled:opacity-50">
               {creating ? t.common.loading : t.staffLists.submitList}
             </button>
           </div>
@@ -247,44 +247,44 @@ export const StaffListsView: React.FC = () => {
       )}
 
       {lists.length === 0 ? (
-        <p className="text-xs text-slate-500 p-4 rounded-xl border">{t.staffLists.emptyText}</p>
+        <p className="text-xs text-muted p-4 rounded-xl border border-border">{t.staffLists.emptyText}</p>
       ) : (
         <ul className="space-y-3">
           {lists.map((l) => (
-            <li key={l.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <li key={l.id} className="p-4 rounded-2xl border border-border bg-surface-2">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs">
                   <span className="font-bold">
                     {l.client_name} ({l.client_code})
                   </span>{' '}
                   · {(t.staffLists.statusLabels as any)[l.status] ?? l.status} · {l.row_count} rows
-                  {l.reject_reason && <span className="text-rose-600"> · {l.reject_reason}</span>}
+                  {l.reject_reason && <span className="text-danger"> · {l.reject_reason}</span>}
                 </div>
                 <div className="flex items-center gap-2">
                   {l.status === 'draft' && (
-                    <button onClick={() => handleSubmit(l.id)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">
+                    <button onClick={() => handleSubmit(l.id)} className="px-3 py-1.5 rounded-lg bg-brand text-brand-ink text-xs font-bold">
                       {t.common.submit}
                     </button>
                   )}
                   {user?.role === 'ge_admin' && l.status === 'submitted' && (
                     <>
-                      <button onClick={() => handleApprove(l.id)} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold">
+                      <button onClick={() => handleApprove(l.id)} className="px-3 py-1.5 rounded-lg bg-brand text-brand-ink text-xs font-bold">
                         {t.staffLists.approveBtn}
                       </button>
                       <input
                         value={rejectReason[l.id] || ''}
                         onChange={(e) => setRejectReason({ ...rejectReason, [l.id]: e.target.value })}
                         placeholder={t.staffLists.rejectReasonPh}
-                        className="px-3 py-1.5 rounded-lg text-xs border"
+                        className="px-3 py-1.5 rounded-lg text-xs bg-surface-3 border border-border-strong text-text placeholder-muted"
                       />
-                      <button onClick={() => handleReject(l.id)} className="px-3 py-1.5 rounded-lg border border-rose-300 text-rose-600 text-xs font-bold">
+                      <button onClick={() => handleReject(l.id)} className="px-3 py-1.5 rounded-lg border border-danger bg-surface-3 text-danger text-xs font-bold">
                         {t.staffLists.rejectBtn}
                       </button>
                     </>
                   )}
                 </div>
               </div>
-              <ul className="mt-2 text-[11px] text-slate-500 space-y-0.5">
+              <ul className="mt-2 text-[11px] text-muted space-y-0.5">
                 {l.rows.map((r) => (
                   <li key={r.id}>
                     {r.email} · {r.name} · {r.department_resolved || r.department_name || '—'} · {r.role}

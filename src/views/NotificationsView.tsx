@@ -75,26 +75,26 @@ export const NotificationsView: React.FC = () => {
 
   return (
     <div className="space-y-4 max-w-3xl">
-      <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+      <div className="p-6 bg-surface-2 rounded-2xl border border-border">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-3">
-            <Bell className="w-5 h-5 text-slate-500" />
+            <Bell className="w-5 h-5 text-muted" />
             <h3 className="font-bold text-base">
               {t.notifications.title}
               {unread > 0 && (
-                <span className="ms-2 px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold">
+                <span className="ms-2 px-2 py-0.5 rounded-full bg-danger-soft text-danger text-[11px] font-bold">
                   {unread} {t.notifications.unread}
                 </span>
               )}
               {unread === 0 && rows.length > 0 && (
-                <span className="ms-2 text-[11px] text-emerald-600 font-medium">{t.notifications.allCaughtUp}</span>
+                <span className="ms-2 text-[11px] text-success-text font-medium">{t.notifications.allCaughtUp}</span>
               )}
             </h3>
           </div>
           <div className="flex gap-2">
             <button
               onClick={fetchInbox}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500"
+              className="p-2 rounded-xl border border-border text-muted"
               title={t.notifications.title}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -102,7 +102,7 @@ export const NotificationsView: React.FC = () => {
             {unread > 0 && (
               <button
                 onClick={markAllRead}
-                className="px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold flex items-center gap-1"
+                className="px-3 py-2 rounded-xl bg-brand text-brand-ink text-xs font-bold flex items-center gap-1"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
                 {t.notifications.markAllRead}
@@ -110,14 +110,14 @@ export const NotificationsView: React.FC = () => {
             )}
           </div>
         </div>
-        <p className="text-xs text-slate-500">{t.notifications.subtitle}</p>
+        <p className="text-xs text-muted">{t.notifications.subtitle}</p>
       </div>
 
-      {error && <p className="text-xs text-rose-600">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       {rows.length === 0 && !loading && (
-        <div className="p-8 text-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
-          <BellOff className="w-6 h-6 mx-auto text-slate-300 mb-2" />
-          <p className="text-xs text-slate-500">{t.notifications.empty}</p>
+        <div className="p-8 text-center bg-surface-2 rounded-2xl border border-border">
+          <BellOff className="w-6 h-6 mx-auto text-muted mb-2" />
+          <p className="text-xs text-muted">{t.notifications.empty}</p>
         </div>
       )}
 
@@ -127,8 +127,8 @@ export const NotificationsView: React.FC = () => {
             key={n.id}
             className={`p-4 rounded-2xl border text-xs ${
               n.read_at
-                ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 opacity-75'
-                : 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
+                ? 'bg-surface-2 border-border opacity-75'
+                : 'bg-brand-soft border-brand'
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -137,18 +137,18 @@ export const NotificationsView: React.FC = () => {
                   {lang === 'ar' && n.title_ar ? n.title_ar : n.title}
                 </p>
                 {(n.body || n.body_ar) && (
-                  <p className="text-slate-500 mt-1">
+                  <p className="text-muted mt-1">
                     {lang === 'ar' && n.body_ar ? n.body_ar : n.body}
                   </p>
                 )}
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-muted mt-1">
                   {new Date(n.created_at).toLocaleString()} · <span className="font-mono">{n.type}</span>
                 </p>
               </div>
               {!n.read_at && (
                 <button
                   onClick={() => markRead(n.id)}
-                  className="shrink-0 px-3 py-1.5 rounded-xl border border-emerald-300 text-emerald-700 text-[11px] font-bold hover:bg-emerald-100"
+                  className="shrink-0 px-3 py-1.5 rounded-xl border border-brand text-brand-text text-[11px] font-bold hover:bg-brand-soft"
                 >
                   {t.notifications.markRead}
                 </button>

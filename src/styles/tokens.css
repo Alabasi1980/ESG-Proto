@@ -18,12 +18,21 @@
   --brand-strong: #026B38;
   --brand-soft: #E2F1E7;
   --brand-ink: #FFFFFF;
+  /* brand-as-text: --brand is a button fill; as text/icon it fails WCAG on the
+   * GE default surfaces (ISS-001). This token carries the brand text/icon colour. */
+  --brand-text: #026B38;
   --accent: #F16B3B;
   --accent-soft: #FCE8D9;
+  --accent-text: #9A3412;
   --success: #038947;
   --success-soft: #E2F1E7;
   --warning: #B45309;
   --warning-soft: #FEF3C7;
+  /* H10-3 (owner decision أ): semantic TEXT tokens. --success/--warning stay the
+   * fill/badge colours; as text/icon on inset surfaces (--surface-3) they fall
+   * under AA, so text/icon consumers use these instead (same pattern as --brand-text). */
+  --success-text: #026B38;
+  --warning-text: #8A4109;
   --danger: #BE123C;
   --danger-soft: #FFE4E6;
   --info: #0369A1;
@@ -33,6 +42,9 @@
   --sidebar-muted: #8FA0AC;
   --sidebar-active: #038947;
   --sidebar-active-text: #FFFFFF;
+  /* Rail danger-as-text: --danger is tuned for light page surfaces and fails AA
+   * on the dark rail (ge/dark); the rail is light in lime, so each theme differs. */
+  --on-rail-danger: #FF8D79;
   --focus-ring: #038947;
 
   /* Structural constants — identical in every theme (THEME_TOKENS.md §2). */
@@ -53,12 +65,16 @@
   --color-brand-strong: var(--brand-strong);
   --color-brand-soft: var(--brand-soft);
   --color-brand-ink: var(--brand-ink);
+  --color-brand-text: var(--brand-text);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
+  --color-success-text: var(--success-text);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  --color-warning-text: var(--warning-text);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-info: var(--info);
@@ -68,5 +84,6 @@
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-active-text: var(--sidebar-active-text);
+  --color-on-rail-danger: var(--on-rail-danger);
   --color-focus-ring: var(--focus-ring);
 }

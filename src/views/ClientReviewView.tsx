@@ -144,36 +144,36 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
   };
 
   const statusBadge = (s: string | null, na: boolean | null) => {
-    if (na) return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">{t.gapAnalysis.stNotApplicable}</span>;
+    if (na) return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-surface-3 text-muted">{t.gapAnalysis.stNotApplicable}</span>;
     switch (s) {
       case 'client_approved':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">{t.gapAnalysis.stClientApproved}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-accent-soft text-text">{t.gapAnalysis.stClientApproved}</span>;
       case 'approved':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">{t.gapAnalysis.stApproved}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-success-soft text-success-text">{t.gapAnalysis.stApproved}</span>;
       case 'submitted':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">{t.gapAnalysis.stSubmitted}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-warning-soft text-warning-text">{t.gapAnalysis.stSubmitted}</span>;
       case 'returned':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300">{t.gapAnalysis.stReturned}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-danger-soft text-danger">{t.gapAnalysis.stReturned}</span>;
       case 'draft':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">{t.gapAnalysis.stDraft}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-info-soft text-info">{t.gapAnalysis.stDraft}</span>;
       default:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{t.gapAnalysis.stNotEvaluated}</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-surface-3 text-muted">{t.gapAnalysis.stNotEvaluated}</span>;
     }
   };
 
   return (
-    <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+    <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
         <div>
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.clientReview.title}</h3>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{t.clientReview.subtitle}</p>
+          <h3 className="text-sm font-bold text-text">{t.clientReview.title}</h3>
+          <p className="text-[11px] text-muted mt-0.5">{t.clientReview.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           {isGe && (
             <select
               value={tenantId}
               onChange={(e) => setTenantId(e.target.value)}
-              className="px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] text-slate-900 dark:text-white"
+              className="px-2.5 py-2 rounded-lg border border-border-strong bg-surface-3 text-[11px] text-text"
             >
               <option value="">{t.importGRI.selectTenantPlaceholder}</option>
               {tenants.map((tn) => (
@@ -186,7 +186,7 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
           <button
             onClick={fetchGroups}
             disabled={loading}
-            className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            className="p-2 rounded-lg border border-border text-muted hover:bg-surface-3 transition-colors"
             title={t.common.refresh}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -195,7 +195,7 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
       </div>
 
       {error && (
-        <div className="mt-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-[11px] flex items-center gap-2">
+        <div className="mt-2 p-3 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -204,8 +204,8 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
         <div
           className={`mt-2 p-3 rounded-xl text-[11px] flex items-center gap-2 ${
             notice.kind === 'ok'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
-              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
+              ? 'bg-success-soft text-success-text border border-success'
+              : 'bg-danger-soft text-danger border border-danger'
           }`}
         >
           {notice.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -215,31 +215,31 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
 
       {!loading && !error && groups.length === 0 && (
         <div className="mt-3 p-4 text-center">
-          <p className="text-xs font-bold text-slate-900 dark:text-white mb-1">{t.clientReview.emptyTitle}</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.clientReview.emptyDesc}</p>
+          <p className="text-xs font-bold text-text mb-1">{t.clientReview.emptyTitle}</p>
+          <p className="text-[11px] text-muted">{t.clientReview.emptyDesc}</p>
         </div>
       )}
 
       <div className="mt-3 space-y-3">
         {groups.map((g) => (
-          <div key={g.disclosureId} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
+          <div key={g.disclosureId} className="p-3.5 rounded-xl border border-border">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
-                <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
-                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                <Building2 className="w-4 h-4 text-muted shrink-0" />
+                <span className="text-xs font-bold text-text truncate">
                   {g.standardCode} · {g.disclosureCode} — {g.disclosureTitle}
                 </span>
               </div>
               {g.fullyClientApproved ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-accent-soft text-text">
                   {t.gapAnalysis.stClientApproved}
                 </span>
               ) : g.readyForClient ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-success-soft text-success-text">
                   {t.clientReview.readyBadge}
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-warning-soft text-warning-text">
                   {t.clientReview.blockedBadge}
                 </span>
               )}
@@ -247,17 +247,17 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
 
             {/* Completeness bar */}
             <div className="mt-2">
-              <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+              <div className="flex justify-between text-[10px] text-muted mb-1">
                 <span>
                   {t.clientReview.completeness}: {g.approved + g.notApplicable}/{g.total}
                 </span>
                 <span>{g.completeness}%</span>
               </div>
-              <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden" dir="ltr">
-                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${g.completeness}%` }} />
+              <div className="h-2 rounded-full bg-surface-3 overflow-hidden" dir="ltr">
+                <div className="h-full bg-brand rounded-full transition-all" style={{ width: `${g.completeness}%` }} />
               </div>
               {g.incompleteDepartments.length > 0 && (
-                <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                <p className="mt-1 text-[10px] text-warning-text">
                   {g.incompleteDepartments.join(', ')}
                 </p>
               )}
@@ -267,15 +267,15 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
               {g.departments.map((d) => (
                 <li
                   key={d.departmentId}
-                  className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40"
+                  className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-surface-3 border border-border"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+                    <span className="text-[11px] font-semibold text-text truncate">
                       {d.departmentName}
                     </span>
                     {statusBadge(d.answerStatus, d.notApplicable)}
                     {typeof d.score === 'number' && (
-                      <span className="text-[10px] font-mono text-slate-500">{d.score}</span>
+                      <span className="text-[10px] font-mono text-muted">{d.score}</span>
                     )}
                   </div>
                   {d.evaluationId && (d.answerStatus === 'approved' || d.answerStatus === 'client_approved') && (
@@ -284,13 +284,13 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
                         value={comments[d.evaluationId] || ''}
                         onChange={(e) => setComments((c) => ({ ...c, [d.evaluationId as string]: e.target.value }))}
                         placeholder={t.gapAnalysis.commentPh}
-                        className="px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] text-slate-900 dark:text-white placeholder:text-slate-400 w-40"
+                        className="px-2 py-1.5 rounded-lg border border-border-strong bg-surface-3 text-[11px] text-text placeholder:text-muted w-40"
                       />
                       {d.answerStatus === 'approved' && (
                         <button
                           onClick={() => act(d, 'client-approve')}
                           disabled={working !== null}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-brand text-brand-ink text-[11px] font-bold hover:bg-brand-strong disabled:opacity-50 transition-colors"
                         >
                           <CheckCircle2 className="w-3 h-3" />
                           <span>{working ? t.clientReview.approving : t.clientReview.clientApproveBtn}</span>
@@ -299,7 +299,7 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
                       <button
                         onClick={() => act(d, 'client-return')}
                         disabled={working !== null}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-[11px] font-bold hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50 transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-danger text-danger text-[11px] font-bold hover:bg-danger-soft disabled:opacity-50 transition-colors"
                       >
                         <Undo2 className="w-3 h-3" />
                         <span>{t.clientReview.clientReturnBtn}</span>

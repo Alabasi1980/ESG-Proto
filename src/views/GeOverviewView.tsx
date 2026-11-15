@@ -36,7 +36,7 @@ export const GeOverviewView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   if (user?.role !== 'ge_admin') {
-    return <p className="text-xs text-rose-600">{t.geOverview.subtitle}</p>;
+    return <p className="text-xs text-danger">{t.geOverview.subtitle}</p>;
   }
 
   const headers = useCallback((): Record<string, string> => {
@@ -100,15 +100,15 @@ export const GeOverviewView: React.FC = () => {
     }
   };
 
-  if (loading) return <p className="text-xs text-slate-500">{t.common.loading}</p>;
+  if (loading) return <p className="text-xs text-muted">{t.common.loading}</p>;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-surface-2 rounded-2xl border border-border">
         <div>
-          <h3 className="text-xl font-bold text-slate-900 dark:text-white">{t.geOverview.title}</h3>
-          <p className="text-xs text-slate-500 mt-1">{t.geOverview.subtitle}</p>
-          <p className="text-xs text-slate-500 mt-2">
+          <h3 className="text-xl font-bold text-text">{t.geOverview.title}</h3>
+          <p className="text-xs text-muted mt-1">{t.geOverview.subtitle}</p>
+          <p className="text-xs text-muted mt-2">
             {t.geOverview.totalsClients}: {totals.clients} · {t.geOverview.totalsSuspended}: {totals.suspended} ·{' '}
             {t.geOverview.totalsServices}: {totals.services}
           </p>
@@ -116,14 +116,14 @@ export const GeOverviewView: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={linkAll}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong"
           >
             <Link2 className="w-3.5 h-3.5" />
             <span>{t.geOverview.linkAllBtn}</span>
           </button>
           <button
             onClick={fetchOverview}
-            className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+            className="p-2 rounded-lg border border-border text-muted"
             title={t.common.refresh}
           >
             <RefreshCw className="w-4 h-4" />
@@ -132,33 +132,33 @@ export const GeOverviewView: React.FC = () => {
       </div>
 
       {error && (
-        <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 text-rose-800 text-xs">
+        <div className="p-3 rounded-xl bg-danger-soft border border-danger text-danger text-xs">
           {error}
         </div>
       )}
 
       <ul className="space-y-4">
         {clients.map((c) => (
-          <li key={c.id} className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
+          <li key={c.id} className="p-5 bg-surface-2 rounded-2xl border border-border">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Building2 className="w-4 h-4 text-emerald-600" />
-                  <span className="font-bold text-sm text-slate-900 dark:text-white">
+                  <Building2 className="w-4 h-4 text-brand-text" />
+                  <span className="font-bold text-sm text-text">
                     {c.name} ({c.code})
                   </span>
                   {c.suspended && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-danger-soft text-danger">
                       {t.geOverview.suspendedBadge}
                     </span>
                   )}
                   {c.frozen && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-surface-3 text-muted">
                       {t.geOverview.frozenBadge}
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-muted mt-1">
                   {t.geOverview.servicesLabel}: {c.services.map((s) => s.code).join(', ') || '—'} ·{' '}
                   {t.geOverview.reviewLabel}: {c.review.aggregateScore ?? '—'}% ({t.geOverview.coverageLabel}{' '}
                   {c.review.coveragePercentage}%) · {t.geOverview.actionsLabel}:{' '}
@@ -166,7 +166,7 @@ export const GeOverviewView: React.FC = () => {
                     .map(([k, v]) => `${k}:${v}`)
                     .join(' ') || '—'}
                 </p>
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-muted mt-1">
                   Users {c.userCount} · Depts {c.departmentCount} · Assignments {c.collection.assignments} · Gaps{' '}
                   {c.review.fullGapCount}/{c.review.partialGapCount}/{c.review.noGapCount}
                 </p>
@@ -176,8 +176,8 @@ export const GeOverviewView: React.FC = () => {
                 title={c.suspended ? t.geOverview.unsuspendBtn : t.geOverview.suspendBtn}
                 className={`p-2 rounded-lg border text-xs font-bold ${
                   c.suspended
-                    ? 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                    : 'border-rose-200 text-rose-600 hover:bg-rose-50'
+                    ? 'border-brand text-brand-text hover:bg-brand-soft'
+                    : 'border-danger text-danger hover:bg-danger-soft'
                 }`}
               >
                 {c.suspended ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}

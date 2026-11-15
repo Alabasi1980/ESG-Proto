@@ -29,11 +29,11 @@ const NEXT_STATUS: Record<string, string | null> = {
 };
 
 const STATUS_STYLES: Record<string, string> = {
-  open: 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
-  in_progress: 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300',
-  awaiting_verification: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300',
-  closed: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300',
-  reopened: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300',
+  open: 'bg-surface-3 text-muted',
+  in_progress: 'bg-info-soft text-info',
+  awaiting_verification: 'bg-warning-soft text-warning-text',
+  closed: 'bg-success-soft text-success-text',
+  reopened: 'bg-danger-soft text-danger',
 };
 
 export const ActionsView: React.FC = () => {
@@ -179,15 +179,15 @@ export const ActionsView: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
         <div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">{t.actions.title}</h3>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{t.actions.subtitle}</p>
+          <h3 className="text-lg font-bold text-text">{t.actions.title}</h3>
+          <p className="text-[11px] text-muted mt-0.5">{t.actions.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchActions}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs border border-slate-200 dark:border-slate-700"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-muted hover:bg-surface-3 text-xs border border-border-strong"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>{t.common.refresh}</span>
@@ -196,7 +196,7 @@ export const ActionsView: React.FC = () => {
             onClick={() => setShowCreate((v) => !v)}
             disabled={!canCreate}
             title={canCreate ? undefined : t.b16.actionsGeOnlyTitle}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong transition-colors disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t.actions.createButton}</span>
@@ -205,7 +205,7 @@ export const ActionsView: React.FC = () => {
       </div>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-3">
+        <div className="p-4 rounded-xl bg-danger-soft border border-danger text-danger text-xs flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -214,43 +214,43 @@ export const ActionsView: React.FC = () => {
       {showCreate && (
         <form
           onSubmit={handleCreate}
-          className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs space-y-3"
+          className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs space-y-3"
         >
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t.actions.createTitle}</h4>
+          <h4 className="text-sm font-bold text-text">{t.actions.createTitle}</h4>
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{t.actions.titleLabel}</label>
+            <label className="block text-xs font-semibold text-muted mb-1">{t.actions.titleLabel}</label>
             <input
               type="text"
               required
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               placeholder={t.actions.titlePh}
-              className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/30"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{t.actions.descLabel}</label>
+            <label className="block text-xs font-semibold text-muted mb-1">{t.actions.descLabel}</label>
             <textarea
               value={newDesc}
               onChange={(e) => setNewDesc(e.target.value)}
               placeholder={t.actions.descPh}
               rows={2}
-              className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/30"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {user?.role === 'employee' ? (
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-3 rounded-xl bg-surface-3 border border-border text-xs text-muted">
                 {t.actions.deptLabel}: {user.departmentName || user.departmentId}
               </div>
             ) : (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{t.actions.deptLabel}</label>
+                <label className="block text-xs font-semibold text-muted mb-1">{t.actions.deptLabel}</label>
                 <select
                   value={newDept}
                   onChange={(e) => setNewDept(e.target.value)}
                   required
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text focus:outline-none"
                 >
                   <option value="">—</option>
                   {departments.map((d) => (
@@ -262,19 +262,19 @@ export const ActionsView: React.FC = () => {
               </div>
             )}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{t.actions.dueLabel}</label>
+              <label className="block text-xs font-semibold text-muted mb-1">{t.actions.dueLabel}</label>
               <input
                 type="date"
                 value={newDue}
                 onChange={(e) => setNewDue(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none"
+                className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text focus:outline-none"
               />
             </div>
           </div>
           <button
             type="submit"
             disabled={creating}
-            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors disabled:opacity-50"
+            className="px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-strong text-brand-ink text-xs font-bold transition-colors disabled:opacity-50"
           >
             {creating ? t.actions.creating : t.actions.createButton}
           </button>
@@ -282,7 +282,7 @@ export const ActionsView: React.FC = () => {
       )}
 
       {!canCreate && (
-        <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
+        <div className="p-3 rounded-xl bg-surface-3 border border-border text-[11px] text-muted">
           <span className="font-bold">{t.b16.actionsGeOnlyTitle}. </span>
           {t.b16.actionsGeOnlyDesc}
         </div>
@@ -292,7 +292,7 @@ export const ActionsView: React.FC = () => {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+          className="px-3 py-2 rounded-xl text-xs bg-surface-2 border border-border-strong text-text"
         >
           <option value="">{t.actions.allStatuses}</option>
           {Object.keys(t.actions.statusLabels).map((s) => (
@@ -305,7 +305,7 @@ export const ActionsView: React.FC = () => {
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+            className="px-3 py-2 rounded-xl text-xs bg-surface-2 border border-border-strong text-text"
           >
             <option value="">{t.actions.allDepartments}</option>
             {departments.map((d) => (
@@ -319,22 +319,22 @@ export const ActionsView: React.FC = () => {
 
       {loading ? (
         <div className="flex flex-col items-center justify-center p-12 space-y-4">
-          <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
-          <p className="text-sm text-slate-500">{t.common.loading}</p>
+          <RefreshCw className="w-8 h-8 text-brand-text animate-spin" />
+          <p className="text-sm text-muted">{t.common.loading}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
-          <div className="lg:col-span-2 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+          <div className="lg:col-span-2 p-4 bg-surface-2 rounded-2xl border border-border shadow-xs">
             <div className="flex items-center gap-2 mb-3 px-1">
-              <ClipboardCheck className="w-4 h-4 text-slate-500" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+              <ClipboardCheck className="w-4 h-4 text-muted" />
+              <span className="text-xs font-bold text-text">
                 {t.actions.listTitle} ({items.length})
               </span>
             </div>
             {items.length === 0 ? (
               <div className="p-4 text-center">
-                <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.actions.emptyTitle}</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.actions.emptyDesc}</p>
+                <p className="text-sm font-bold text-text mb-1">{t.actions.emptyTitle}</p>
+                <p className="text-[11px] text-muted">{t.actions.emptyDesc}</p>
               </div>
             ) : (
               <ul className="space-y-2 max-h-[70vh] overflow-y-auto pe-1">
@@ -344,17 +344,17 @@ export const ActionsView: React.FC = () => {
                       onClick={() => setSelectedId(a.id)}
                       className={`w-full text-start p-3 rounded-xl border transition-colors ${
                         a.id === selectedId
-                          ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30'
-                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
+                          ? 'border-brand bg-brand-soft'
+                          : 'border-border hover:bg-surface-3'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{a.title}</span>
+                        <span className="text-[11px] font-bold text-text truncate">{a.title}</span>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${STATUS_STYLES[a.status]}`}>
                           {statusLabel(a.status)}
                         </span>
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-1">
+                      <div className="text-[10px] text-muted mt-1">
                         {a.department_name}
                         {a.due_date ? ` · ${a.due_date}` : ''}
                         {a.item_code ? ` · ${a.item_code}` : ''}
@@ -368,25 +368,25 @@ export const ActionsView: React.FC = () => {
 
           <div className="lg:col-span-3">
             {selected ? (
-              <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs space-y-4">
+              <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs space-y-4">
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">{selected.title}</h4>
+                    <h4 className="text-sm font-bold text-text">{selected.title}</h4>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${STATUS_STYLES[selected.status]}`}>
                       {statusLabel(selected.status)}
                     </span>
                   </div>
                   {selected.description && (
-                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{selected.description}</p>
+                    <p className="text-xs text-muted mt-1 leading-relaxed">{selected.description}</p>
                   )}
-                  <div className="text-[11px] text-slate-400 mt-2">
+                  <div className="text-[11px] text-muted mt-2">
                     {selected.department_name}
                     {selected.due_date ? ` · ${t.actions.dueLabel}: ${selected.due_date}` : ''}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  <label className="block text-[11px] font-semibold text-muted mb-1">
                     {t.actions.evidenceLabel}
                   </label>
                   <textarea
@@ -394,12 +394,12 @@ export const ActionsView: React.FC = () => {
                     onChange={(e) => setEvidence(e.target.value)}
                     placeholder={t.actions.evidencePh}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
+                    className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text placeholder:text-muted"
                   />
                   <button
                     onClick={() => patchAction({ evidenceNote: evidence })}
                     disabled={mutating}
-                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border-strong text-text text-xs font-semibold hover:bg-surface-3 disabled:opacity-50"
                   >
                     <Save className="w-3.5 h-3.5" />
                     <span>{t.actions.saveEvidence}</span>
@@ -410,8 +410,8 @@ export const ActionsView: React.FC = () => {
                   <div
                     className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${
                       formMsg.kind === 'ok'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
-                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'
+                        ? 'bg-success-soft text-success-text'
+                        : 'bg-danger-soft text-danger'
                     }`}
                   >
                     {formMsg.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -424,7 +424,7 @@ export const ActionsView: React.FC = () => {
                     <button
                       onClick={() => patchAction({ status: NEXT_STATUS[selected.status] as string })}
                       disabled={mutating}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong disabled:opacity-50"
                     >
                       <ArrowRight className="w-3.5 h-3.5 rtl:rotate-180" />
                       <span>
@@ -435,7 +435,7 @@ export const ActionsView: React.FC = () => {
                     </button>
                   )}
                   {NEXT_STATUS[selected.status] && nextNeedsGe && !canVerifyClose && (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    <p className="text-[11px] text-muted">
                       <span className="font-bold">{t.b16.actionsGeOnlyTitle}. </span>
                       {t.b16.actionsGeOnlyDesc}
                     </p>
@@ -447,7 +447,7 @@ export const ActionsView: React.FC = () => {
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
                         placeholder={t.actions.reasonPh}
-                        className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 w-56"
+                        className="px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text placeholder:text-muted w-56"
                       />
                       <button
                         onClick={() => {
@@ -458,7 +458,7 @@ export const ActionsView: React.FC = () => {
                           patchAction({ status: 'reopened', reason: reason.trim() });
                         }}
                         disabled={mutating}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-danger text-danger text-xs font-bold hover:bg-danger-soft disabled:opacity-50"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>{t.actions.reopenButton}</span>
@@ -467,16 +467,16 @@ export const ActionsView: React.FC = () => {
                   )}
                 </div>
                 {selected.status === 'closed' && (
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                  <p className="text-[11px] text-success-text flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     {statusLabel('closed')}
                   </p>
                 )}
               </div>
             ) : (
-              <div className="p-8 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs text-center">
-                <ClipboardCheck className="w-10 h-10 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">{t.actions.emptyTitle}</p>
+              <div className="p-8 bg-surface-2 rounded-2xl border border-border shadow-xs text-center">
+                <ClipboardCheck className="w-10 h-10 mx-auto mb-3 text-muted" />
+                <p className="text-xs text-muted">{t.actions.emptyTitle}</p>
               </div>
             )}
           </div>

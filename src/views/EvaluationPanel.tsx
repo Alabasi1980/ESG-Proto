@@ -142,20 +142,20 @@ const ConflictBox: React.FC<{ conflict: VersionConflictPayload; t: any; onReload
   const an = conflict.answer;
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex justify-between gap-2 py-0.5">
-      <span className="text-slate-400">{label}</span>
-      <span className="font-semibold text-slate-700 dark:text-slate-200 text-end break-all">{value}</span>
+      <span className="text-muted">{label}</span>
+      <span className="font-semibold text-text text-end break-all">{value}</span>
     </div>
   );
   return (
-    <div className="mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-[11px]">
-      <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-200 mb-1">
+    <div className="mt-3 p-3 rounded-xl bg-warning-soft border border-warning text-[11px]">
+      <div className="flex items-center gap-2 font-bold text-warning-text mb-1">
         <AlertTriangle className="w-4 h-4 shrink-0" />
         <span>{t.conflict.title}</span>
       </div>
-      <p className="text-amber-700 dark:text-amber-300 mb-2">{t.conflict.desc}</p>
+      <p className="text-warning-text mb-2">{t.conflict.desc}</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/50 border border-amber-200 dark:border-amber-800">
-          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.conflict.theirsLabel}</div>
+        <div className="p-2 rounded-lg bg-surface-3 border border-border">
+          <div className="font-bold text-text mb-1">{t.conflict.theirsLabel}</div>
           {row(t.conflict.versionLabel, ev?.version ?? an?.version ?? '—')}
           {row(t.gapAnalysis.scoreLabel, ev?.score ?? (ev?.notApplicable ? t.gapAnalysis.stNotApplicable : t.gapAnalysis.stNotEvaluated))}
           {row(t.gapAnalysis.evidenceNoteLabel, ev?.evidenceNote || an?.evidenceNote || '—')}
@@ -163,16 +163,16 @@ const ConflictBox: React.FC<{ conflict: VersionConflictPayload; t: any; onReload
           {row(t.conflict.actorLabel, ev?.actorName || an?.actorName || '—')}
           {row(t.conflict.timeLabel, ev?.updatedAt ? new Date(ev.updatedAt).toLocaleString() : '—')}
         </div>
-        <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.conflict.mineLabel}</div>
-          <pre className="whitespace-pre-wrap font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+        <div className="p-2 rounded-lg bg-surface-3 border border-border">
+          <div className="font-bold text-text mb-1">{t.conflict.mineLabel}</div>
+          <pre className="whitespace-pre-wrap font-mono text-muted" dir="ltr">
             {JSON.stringify(conflict.attempted ?? {}, null, 1)}
           </pre>
         </div>
       </div>
       <button
         onClick={onReload}
-        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[11px] font-bold hover:bg-amber-700 transition-colors"
+        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-brand-ink text-[11px] font-bold hover:bg-brand-strong transition-colors"
       >
         <RefreshCw className="w-3 h-3" />
         <span>{t.conflict.reloadRetry}</span>
@@ -290,9 +290,9 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
   };
 
   return (
-    <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-      <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.attachments.title}</h4>
-      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.attachments.typesNote}</p>
+    <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
+      <h4 className="text-sm font-bold text-text mb-1">{t.attachments.title}</h4>
+      <p className="text-[11px] text-muted mb-3">{t.attachments.typesNote}</p>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -300,12 +300,12 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.txt"
           onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)}
-          className="text-[11px] text-slate-600 dark:text-slate-300 file:me-2 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-slate-300 dark:file:border-slate-600 file:bg-slate-50 dark:file:bg-slate-700 file:text-[11px] file:font-semibold"
+          className="text-[11px] text-text file:me-2 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-border-strong file:bg-surface-3 file:text-[11px] file:font-semibold"
         />
         <button
           onClick={doUpload}
           disabled={uploading || !pendingFile}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand text-brand-ink text-[11px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
         >
           <Paperclip className="w-3.5 h-3.5" />
           <span>{uploading ? t.attachments.uploading : t.attachments.attachBtn}</span>
@@ -316,8 +316,8 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
         <div
           className={`mt-2 p-2.5 rounded-lg text-[11px] flex items-center gap-2 ${
             msg.kind === 'ok'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
-              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'
+              ? 'bg-success-soft text-success-text'
+              : 'bg-danger-soft text-danger'
           }`}
         >
           {msg.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -326,19 +326,19 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
       )}
 
       <div className="mt-3">
-        {loading && <p className="text-[11px] text-slate-500">{t.common.loading}</p>}
+        {loading && <p className="text-[11px] text-muted">{t.common.loading}</p>}
         {!loading && files.length === 0 && (
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.attachments.emptyText}</p>
+          <p className="text-[11px] text-muted">{t.attachments.emptyText}</p>
         )}
         <ul className="space-y-2">
           {files.map((f) => (
             <li
               key={f.id}
-              className="flex items-center justify-between gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px]"
+              className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border text-[11px]"
             >
               <div className="min-w-0">
-                <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{f.file_name}</div>
-                <div className="text-slate-400">
+                <div className="font-bold text-text truncate">{f.file_name}</div>
+                <div className="text-muted">
                   {f.mime} · {fmtBytes(f.size_bytes)} · {f.uploaded_by_name || f.uploaded_by} ·{' '}
                   {new Date(f.created_at).toLocaleString()}
                 </div>
@@ -346,14 +346,14 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => doDownload(f)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-700"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border-strong text-text font-semibold hover:bg-surface-3"
                 >
                   <Download className="w-3 h-3" />
                   <span>{t.attachments.downloadBtn}</span>
                 </button>
                 <button
                   onClick={() => doDelete(f)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 font-semibold hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-danger text-danger font-semibold hover:bg-danger-soft"
                 >
                   <Trash2 className="w-3 h-3" />
                   <span>{t.attachments.deleteBtn}</span>
@@ -365,10 +365,10 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
       </div>
 
       {usage && (
-        <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40 text-[11px] text-slate-600 dark:text-slate-300">
+        <div className="mt-3 p-2.5 rounded-lg bg-surface-3 border border-border text-[11px] text-muted">
           {t.attachments.usageLabel}: <span className="font-bold">{usage.formatted}</span> · {usage.files}{' '}
           {t.storage.filesLabel}
-          {usage.warn && <span className="ms-1 font-bold text-amber-600 dark:text-amber-400">· {t.storage.warnMsg}</span>}
+          {usage.warn && <span className="ms-1 font-bold text-warning-text">· {t.storage.warnMsg}</span>}
         </div>
       )}
     </div>
@@ -640,33 +640,33 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
   return (
     <div className="space-y-4">
       {/* Item header */}
-      <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+      <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+            <div className="text-[11px] font-mono text-muted">
               {item.standard_code} · {item.disclosure_code} · {item.code}
             </div>
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-1">{item.disclosure_title}</h4>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{item.requirement}</p>
+            <h4 className="text-sm font-bold text-text mt-1">{item.disclosure_title}</h4>
+            <p className="text-xs text-muted mt-1 leading-relaxed">{item.requirement}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2 mt-3 text-[11px]">
-          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+          <span className="px-2 py-0.5 rounded-full bg-surface-3 text-muted font-semibold">
             {t.gapAnalysis.priority}: {item.priority} (×{item.weight})
           </span>
-          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+          <span className="px-2 py-0.5 rounded-full bg-surface-3 text-muted font-semibold">
             {t.gapAnalysis.pillar}: {item.pillar}
           </span>
           {item.topic && (
-            <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+            <span className="px-2 py-0.5 rounded-full bg-surface-3 text-muted font-semibold">
               {t.gapAnalysis.topic}: {item.topic}
             </span>
           )}
-          <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+          <span className="px-2 py-0.5 rounded-full bg-surface-3 text-muted font-semibold">
             {t.gapAnalysis.department}: {item.department_name}
           </span>
           {item.evaluation_id && (
-            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 font-bold">
+            <span className={`px-2 py-0.5 rounded-full font-bold ${item.not_applicable ? 'bg-surface-3 text-muted' : item.not_evaluated ? 'bg-warning-soft text-warning-text' : 'bg-success-soft text-success-text'}`}>
               {outcomeLabel(item, t)}
             </span>
           )}
@@ -676,9 +676,9 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       {/* Evaluate form — B16-B1: department employees only. Other roles get
           the correct alternative surfaced instead of a dead form. */}
       {canDraft && !isPostSubmit && !isDecided && (
-      <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.gapAnalysis.evaluateTitle}</h4>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-4">{t.gapAnalysis.scoreLabel}</p>
+      <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
+        <h4 className="text-sm font-bold text-text mb-1">{t.gapAnalysis.evaluateTitle}</h4>
+        <p className="text-[11px] text-muted mb-4">{t.gapAnalysis.scoreLabel}</p>
 
         <div className="space-y-2">
           {[
@@ -690,8 +690,8 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
               key={opt.value}
               className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
                 mode === 'score' && score === opt.value
-                  ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30'
-                  : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
+                  ? opt.value === 0 ? 'border-danger bg-danger-soft' : opt.value === 50 ? 'border-warning bg-warning-soft' : 'border-success bg-success-soft'
+                  : 'border-border hover:bg-surface-3'
               }`}
             >
               <input
@@ -702,11 +702,11 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
                   setMode('score');
                   setScore(opt.value);
                 }}
-                className="mt-1 accent-emerald-600"
+                className="mt-1 accent-brand"
               />
               <span>
-                <span className="block text-xs font-bold text-slate-900 dark:text-white">{opt.label}</span>
-                <span className="block text-[11px] text-slate-500 dark:text-slate-400">{opt.desc}</span>
+                <span className="block text-xs font-bold text-text">{opt.label}</span>
+                <span className="block text-[11px] text-muted">{opt.desc}</span>
               </span>
             </label>
           ))}
@@ -714,8 +714,8 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           <label
             className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
               mode === 'notEvaluated'
-                ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30'
-                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
+                ? 'border-focus-ring bg-brand-soft'
+                : 'border-border hover:bg-surface-3'
             }`}
           >
             <input
@@ -723,19 +723,19 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
               name={`eval-mode-${item.item_id}`}
               checked={mode === 'notEvaluated'}
               onChange={() => setMode('notEvaluated')}
-              className="mt-1 accent-emerald-600"
+              className="mt-1 accent-brand"
             />
             <span>
-              <span className="block text-xs font-bold text-slate-900 dark:text-white">{t.gapAnalysis.notEvalLabel}</span>
-              <span className="block text-[11px] text-slate-500 dark:text-slate-400">{t.gapAnalysis.notEvalDesc}</span>
+              <span className="block text-xs font-bold text-text">{t.gapAnalysis.notEvalLabel}</span>
+              <span className="block text-[11px] text-muted">{t.gapAnalysis.notEvalDesc}</span>
             </span>
           </label>
 
           <div
             className={`p-3 rounded-xl border transition-colors ${
               mode === 'notApplicable'
-                ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30'
-                : 'border-slate-200 dark:border-slate-700'
+                ? 'border-focus-ring bg-brand-soft'
+                : 'border-border'
             }`}
           >
             <label className="flex items-start gap-3 cursor-pointer">
@@ -744,22 +744,22 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
                 name={`eval-mode-${item.item_id}`}
                 checked={mode === 'notApplicable'}
                 onChange={() => setMode('notApplicable')}
-                className="mt-1 accent-emerald-600"
+                className="mt-1 accent-brand"
               />
               <span>
-                <span className="block text-xs font-bold text-slate-900 dark:text-white">{t.gapAnalysis.naLabel}</span>
-                <span className="block text-[11px] text-slate-500 dark:text-slate-400">{t.gapAnalysis.naDesc}</span>
+                <span className="block text-xs font-bold text-text">{t.gapAnalysis.naLabel}</span>
+                <span className="block text-[11px] text-muted">{t.gapAnalysis.naDesc}</span>
               </span>
             </label>
             {mode === 'notApplicable' && (
               <div className="mt-3 ms-6">
-                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                <label className="block text-[11px] font-semibold text-muted mb-1">
                   {t.gapAnalysis.naReasonLabel}
                 </label>
                 <select
                   value={naReason}
                   onChange={(e) => setNaReason(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text"
                 >
                   {naReasonKeys.map((k) => (
                     <option key={k} value={k}>
@@ -773,7 +773,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         </div>
 
         <div className="mt-4">
-          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+          <label className="block text-[11px] font-semibold text-muted mb-1">
             {t.gapAnalysis.evidenceNoteLabel}
           </label>
           <textarea
@@ -781,7 +781,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             onChange={(e) => setNote(e.target.value)}
             placeholder={t.gapAnalysis.evidenceNotePh}
             rows={3}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
+            className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text placeholder-muted"
           />
         </div>
 
@@ -789,8 +789,8 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           <div
             className={`mt-3 p-2.5 rounded-lg text-xs flex items-center gap-2 ${
               formMsg.kind === 'ok'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
-                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'
+                ? 'bg-success-soft text-success-text'
+                : 'bg-danger-soft text-danger'
             }`}
           >
             {formMsg.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -803,7 +803,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             <button
               onClick={saveDraft}
               disabled={saving || submitting}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border-strong text-text text-xs font-semibold hover:bg-surface-3 disabled:opacity-50 transition-colors"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{saving ? t.gapAnalysis.saving : t.gapAnalysis.saveDraft}</span>
@@ -811,7 +811,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             <button
               onClick={submitForApproval}
               disabled={saving || submitting}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong disabled:opacity-50 transition-colors"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{submitting ? t.gapAnalysis.submitting : t.gapAnalysis.submitEval}</span>
@@ -822,8 +822,8 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       )}
       {/* B16-B1: non-drafting roles see the correct alternative, not a dead form. */}
       {!canDraft && !isPostSubmit && !isDecided && (
-        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">
+        <div className="p-4 rounded-xl bg-surface-3 border border-border text-[11px] text-muted">
+          <div className="font-bold text-text mb-1">
             {isClientAdmin ? t.b16.clientNoDraftTitle : t.b16.geNoDraftTitle}
           </div>
           <p className="leading-relaxed">{isClientAdmin ? t.b16.clientNoDraftDesc : t.b16.geNoDraftDesc}</p>
@@ -832,19 +832,19 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
 
       {/* Post-submit correction — B16-B3: author + GE only; client uses return. */}
       {isPostSubmit && !canCorrect && isClientAdmin && (
-        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.b16.correctionForbiddenTitle}</div>
+        <div className="p-4 rounded-xl bg-surface-3 border border-border text-[11px] text-muted">
+          <div className="font-bold text-text mb-1">{t.b16.correctionForbiddenTitle}</div>
           <p className="leading-relaxed">{t.b16.correctionForbiddenDesc}</p>
         </div>
       )}
       {isPostSubmit && canCorrect && (
-        <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-amber-200 dark:border-amber-800/60 shadow-xs">
+        <div className="p-5 bg-surface-2 rounded-2xl border border-warning shadow-xs">
           <div className="flex items-center gap-2 mb-1">
-            <PencilLine className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t.gapAnalysis.correctionTitle}</h4>
+            <PencilLine className="w-4 h-4 text-warning-text" />
+            <h4 className="text-sm font-bold text-text">{t.gapAnalysis.correctionTitle}</h4>
           </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.gapAnalysis.correctionDesc}</p>
-          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+          <p className="text-[11px] text-muted mb-3">{t.gapAnalysis.correctionDesc}</p>
+          <label className="block text-[11px] font-semibold text-muted mb-1">
             {t.gapAnalysis.correctionReasonLabel}
           </label>
           <textarea
@@ -852,14 +852,14 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             onChange={(e) => setCorrectReason(e.target.value)}
             placeholder={t.gapAnalysis.correctionReasonPh}
             rows={2}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
+            className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text placeholder-muted"
           />
           {correctMsg && (
             <div
               className={`mt-2 p-2.5 rounded-lg text-xs flex items-center gap-2 ${
                 correctMsg.kind === 'ok'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
-                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'
+                  ? 'bg-success-soft text-success-text'
+                  : 'bg-danger-soft text-danger'
               }`}
             >
               {correctMsg.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -869,7 +869,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           <button
             onClick={applyCorrection}
             disabled={correcting || !correctReason.trim()}
-            className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong disabled:opacity-50 transition-colors"
           >
             <PencilLine className="w-3.5 h-3.5" />
             <span>{t.gapAnalysis.applyCorrection}</span>
@@ -881,22 +881,22 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
           (head-only enforced server-side). client_admin confirms at client
           scope; ge_admin acts at final approval. */}
       {showDeptNoteForClient && (
-        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.b16.clientNoDraftTitle}</div>
+        <div className="p-4 rounded-xl bg-surface-3 border border-border text-[11px] text-muted">
+          <div className="font-bold text-text mb-1">{t.b16.clientNoDraftTitle}</div>
           <p className="leading-relaxed">{t.b16.clientNoDraftDesc}</p>
         </div>
       )}
       {showDeptNoteForGe && (
-        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-          <div className="font-bold text-slate-800 dark:text-slate-100 mb-1">{t.b16.geNoDraftTitle}</div>
+        <div className="p-4 rounded-xl bg-surface-3 border border-border text-[11px] text-muted">
+          <div className="font-bold text-text mb-1">{t.b16.geNoDraftTitle}</div>
           <p className="leading-relaxed">{t.b16.geNoDraftDesc}</p>
         </div>
       )}
       {showDeptApproval && (
-        <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-indigo-200 dark:border-indigo-800/60 shadow-xs">
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.b16.deptApprovalTitle}</h4>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.b16.deptApprovalDesc}</p>
-          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+        <div className="p-5 bg-surface-2 rounded-2xl border border-info shadow-xs">
+          <h4 className="text-sm font-bold text-text mb-1">{t.b16.deptApprovalTitle}</h4>
+          <p className="text-[11px] text-muted mb-3">{t.b16.deptApprovalDesc}</p>
+          <label className="block text-[11px] font-semibold text-muted mb-1">
             {t.gapAnalysis.commentLabel}
           </label>
           <textarea
@@ -904,14 +904,14 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             onChange={(e) => setComment(e.target.value)}
             placeholder={t.gapAnalysis.commentPh}
             rows={2}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
+            className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text placeholder-muted"
           />
           {decisionMsg && (
             <div
               className={`mt-2 p-2.5 rounded-lg text-xs flex items-center gap-2 ${
                 decisionMsg.kind === 'ok'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'
-                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'
+                  ? 'bg-success-soft text-success-text'
+                  : 'bg-danger-soft text-danger'
               }`}
             >
               {decisionMsg.kind === 'err' && <AlertTriangle className="w-4 h-4 shrink-0" />}
@@ -922,7 +922,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             <button
               onClick={() => decide('approve')}
               disabled={deciding !== null}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong disabled:opacity-50 transition-colors"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>{t.gapAnalysis.approveBtn}</span>
@@ -930,7 +930,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
             <button
               onClick={() => decide('return')}
               disabled={deciding !== null}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-danger text-danger text-xs font-bold hover:bg-danger-soft disabled:opacity-50 transition-colors"
             >
               <Undo2 className="w-3.5 h-3.5" />
               <span>{t.gapAnalysis.returnBtn}</span>
@@ -939,7 +939,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
         </div>
       )}
       {isDecided && (
-        <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+        <div className="p-4 rounded-xl bg-surface-3 border border-border text-[11px] font-semibold text-muted">
           {isClientApproved
             ? t.gapAnalysis.stClientApproved
             : item.answer_status === 'approved'
@@ -957,32 +957,32 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       {item.answer_id && <AttachmentsSection answerId={item.answer_id} token={token} t={t} />}
 
       {/* Revision history */}
-      <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+      <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
         <div className="flex items-center gap-2 mb-3">
-          <History className="w-4 h-4 text-slate-500" />
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t.gapAnalysis.historyTitle}</h4>
+          <History className="w-4 h-4 text-muted" />
+          <h4 className="text-sm font-bold text-text">{t.gapAnalysis.historyTitle}</h4>
         </div>
-        {historyLoading && <p className="text-[11px] text-slate-500">{t.common.loading}</p>}
+        {historyLoading && <p className="text-[11px] text-muted">{t.common.loading}</p>}
         {!historyLoading && (!history || history.length === 0) && (
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.gapAnalysis.historyEmpty}</p>
+          <p className="text-[11px] text-muted">{t.gapAnalysis.historyEmpty}</p>
         )}
         {!historyLoading && history && history.length > 0 && (
           <ol className="space-y-3">
             {history.map((h) => (
-              <li key={h.id} className="text-[11px] border-s-2 border-slate-200 dark:border-slate-700 ps-3">
-                <div className="font-bold text-slate-800 dark:text-slate-200">{h.action}</div>
+              <li key={h.id} className="text-[11px] border-s-2 border-border ps-3">
+                <div className="font-bold text-text">{h.action}</div>
                 {h.payload?.before && h.payload?.after && (
-                  <div className="mt-1 font-mono text-slate-600 dark:text-slate-300" dir="ltr">
+                  <div className="mt-1 font-mono text-muted" dir="ltr">
                     {JSON.stringify(h.payload.before)} → {JSON.stringify(h.payload.after)}
                   </div>
                 )}
                 {h.payload?.comment && (
-                  <div className="mt-1 text-slate-600 dark:text-slate-300">{h.payload.comment}</div>
+                  <div className="mt-1 text-muted">{h.payload.comment}</div>
                 )}
                 {h.payload?.reason && (
-                  <div className="mt-1 text-slate-600 dark:text-slate-300">{h.payload.reason}</div>
+                  <div className="mt-1 text-muted">{h.payload.reason}</div>
                 )}
-                <div className="mt-1 text-slate-400">
+                <div className="mt-1 text-muted">
                   {h.actor_name || h.user_id} · {new Date(h.created_at).toLocaleString()}
                 </div>
               </li>

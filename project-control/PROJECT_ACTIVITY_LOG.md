@@ -142,3 +142,11 @@
 | 2026-11-15 | TeraAgent | Verified P3 | lint 0 · 227/227 · build 0 · صفر مخالفات في الأربعة (Reports نظيف خارج كتلة الطباعة) |
 | 2026-11-15 | TeraAgent | Stop-rule applied | ISS-007 (سطر القسم 3.44 في ge) سُجّل بدل جولة رابعة — يُصلح مع أول دفعة تلمس Sidebar |
 | 2026-11-15 | TeraAgent | Progress | **19 ملفاً نظيفاً** · المتبقي: ClientDetail(63) · ImportGRI(211) · Setup(52) ≈ 326 كلاساً |
+| 2026-11-15 | engineering-agent-typescript | Handback P4 | ClientDetail + Setup مرّحلان (±0) + بانر المستأجر معتم (ISS-007 مغلق) |
+| 2026-11-15 | engineering-agent-typescript | Handback P5 | ImportGRI مرّحل (±0) بلا مساس بمنطق الرفع/التحقق · الحارس 45→48 |
+| 2026-11-15 | TeraAgent | Verified P4/P5 | lint 0 · 227/227 · build 0 · **الكل نظيف ما عدا كتلة الطباعة (8 لترals معتمدة)** |
+| 2026-11-15 | TeraAgent | Rail defects found+fixed | ge: زر اللغة 2.3→13.64 · خروج 2.5→7.09 (توكن `--on-rail-danger`) · التمييز كنص 2.6→(توكن `--accent-text`) |
+| 2026-11-15 | TeraAgent | Final sweep | **dark**: 0 عيوب · 0 أسطح بيضاء (Dashboard/Reports/ImportGRI/GapAnalysis/Standards/Settings) · **ge**: 3 عناصر فقط عند 4.49 (استثناء GAP-002 الموثّق) |
+| 2026-11-15 | Owner | Acceptance D-STYLE-01 | اعتماد نهائي لطبقة الستايل والثيمات الثلاثة بعد المعاينة |
+| 2026-11-15 | TeraAgent | Handoff artifact | `STYLE_HANDOFF.md` أُنشئ: القواعد · أوامر التحقق · إضافة التوكنات · الحالة · المفتوح |
+| 2026-11-15 | TeraAgent | Batch closure | P1..P6 مغلقة · ISS-007/008/009 مغلقة · ISS-010 استثناء معتمد · الترحيل مكتمل (22 ملفاً) |

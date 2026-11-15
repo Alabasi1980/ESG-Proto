@@ -265,8 +265,8 @@ export const ReportsView: React.FC = () => {
       <div
         className={`flex items-start gap-3 p-4 rounded-xl border text-sm ${
           gateOk
-            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-200'
-            : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-200'
+            ? 'bg-success-soft border-success text-success-text'
+            : 'bg-danger-soft border-danger text-danger'
         }`}
       >
         {gateOk ? <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" /> : <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />}
@@ -280,42 +280,42 @@ export const ReportsView: React.FC = () => {
 
   const renderL1 = (p: ReportPayload) => (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{R.levelDescL1}</p>
+      <p className="text-xs text-muted">{R.levelDescL1}</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{R.headlineScore}</div>
-          <div className="text-3xl font-extrabold text-slate-900 dark:text-white">{fmtScore(p.aggregate.aggregateScore)}</div>
-          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="p-5 bg-surface-2 rounded-2xl border border-border">
+          <div className="text-xs font-medium text-muted mb-1">{R.headlineScore}</div>
+          <div className="text-3xl font-extrabold text-text">{fmtScore(p.aggregate.aggregateScore)}</div>
+          <div className="mt-2 text-[11px] text-muted">
             {R.coverage}: {p.aggregate.coveragePercentage}% ({p.aggregate.evaluatedCount} / {p.aggregate.applicableCount})
           </div>
         </div>
-        <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{R.coverage}</div>
-          <div className="text-3xl font-extrabold text-slate-900 dark:text-white">{p.aggregate.coveragePercentage}%</div>
-          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="p-5 bg-surface-2 rounded-2xl border border-border">
+          <div className="text-xs font-medium text-muted mb-1">{R.coverage}</div>
+          <div className="text-3xl font-extrabold text-text">{p.aggregate.coveragePercentage}%</div>
+          <div className="mt-2 text-[11px] text-muted">
             {R.items}: {p.aggregate.evaluatedCount} / {p.aggregate.applicableCount}
           </div>
         </div>
-        <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{R.omissionsSummary}</div>
-          <div className="text-3xl font-extrabold text-slate-900 dark:text-white">{p.meta.omittedCount}</div>
-          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="p-5 bg-surface-2 rounded-2xl border border-border">
+          <div className="text-xs font-medium text-muted mb-1">{R.omissionsSummary}</div>
+          <div className="text-3xl font-extrabold text-text">{p.meta.omittedCount}</div>
+          <div className="mt-2 text-[11px] text-muted">
             {R.disclosure}: {p.meta.disclosureCount}
           </div>
         </div>
       </div>
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{R.topGaps}</h4>
+      <div className="bg-surface-2 rounded-2xl border border-border p-5">
+        <h4 className="text-sm font-bold text-text mb-3">{R.topGaps}</h4>
         {p.topGaps.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{R.noOmissions}</p>
+          <p className="text-xs text-muted">{R.noOmissions}</p>
         ) : (
           <ul className="space-y-2">
             {p.topGaps.map((g) => (
-                <li key={g.disclosureCode} className="flex items-center justify-between gap-3 text-sm p-2 rounded-lg bg-slate-50 dark:bg-slate-700/40">
-                  <span className="font-medium text-slate-800 dark:text-slate-100">
+                <li key={g.disclosureCode} className="flex items-center justify-between gap-3 text-sm p-2 rounded-lg bg-surface-3">
+                  <span className="font-medium text-text">
                     <span dir="ltr">{g.standardCode} · {g.disclosureCode}</span> — {g.disclosureTitle}
                   </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0" dir="ltr">
+                  <span className="text-xs text-muted shrink-0" dir="ltr">
                     {fmtScore(g.score)} · {R.coverage} {g.coveragePercentage}%
                   </span>
               </li>
@@ -328,13 +328,13 @@ export const ReportsView: React.FC = () => {
 
   const renderL2 = (p: ReportPayload) => (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{R.levelDescL2}</p>
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{R.byDepartment}</h4>
+      <p className="text-xs text-muted">{R.levelDescL2}</p>
+      <div className="bg-surface-2 rounded-2xl border border-border p-5">
+        <h4 className="text-sm font-bold text-text mb-3">{R.byDepartment}</h4>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-start text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+              <tr className="text-start text-xs text-muted border-b border-border">
                 <th className="py-2 pe-3 text-start font-medium">{R.departments}</th>
                 <th className="py-2 pe-3 text-start font-medium">{R.score}</th>
                 <th className="py-2 text-start font-medium">{R.coverage}</th>
@@ -342,10 +342,10 @@ export const ReportsView: React.FC = () => {
             </thead>
             <tbody>
               {p.departments.map((d) => (
-                <tr key={d.departmentId} className="border-b border-slate-100 dark:border-slate-700/50 text-slate-800 dark:text-slate-100">
+                <tr key={d.departmentId} className="border-b border-border text-text">
                   <td className="py-2 pe-3">{d.departmentName}</td>
                   <td className="py-2 pe-3 font-semibold">{fmtScore(d.score)}</td>
-                  <td className="py-2 text-xs text-slate-500 dark:text-slate-400">
+                  <td className="py-2 text-xs text-muted">
                     {d.coveragePercentage}% ({d.evaluatedItems} / {d.applicableItems})
                   </td>
                 </tr>
@@ -355,32 +355,32 @@ export const ReportsView: React.FC = () => {
         </div>
       </div>
       {p.visibility.showCorrective && (
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{R.actionsSummary}</h4>
+        <div className="bg-surface-2 rounded-2xl border border-border p-5">
+          <h4 className="text-sm font-bold text-text mb-3">{R.actionsSummary}</h4>
           <div className="flex flex-wrap gap-2">
             {Object.keys(p.actions.byStatus).length === 0 && (
-              <p className="text-xs text-slate-500 dark:text-slate-400">—</p>
+              <p className="text-xs text-muted">—</p>
             )}
             {Object.entries(p.actions.byStatus).map(([st, n]) => (
-              <span key={st} className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200">
+              <span key={st} className="px-3 py-1 rounded-full bg-surface-3 text-xs font-medium text-text">
                 {st}: {n}
               </span>
             ))}
           </div>
         </div>
       )}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{R.omissionsSummary}</h4>
+      <div className="bg-surface-2 rounded-2xl border border-border p-5">
+        <h4 className="text-sm font-bold text-text mb-3">{R.omissionsSummary}</h4>
         {p.omissions.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{R.noOmissions}</p>
+          <p className="text-xs text-muted">{R.noOmissions}</p>
         ) : (
           <ul className="space-y-2">
             {p.omissions.map((o) => (
-                <li key={o.disclosureCode} className="text-sm p-3 rounded-lg bg-slate-50 dark:bg-slate-700/40">
-                  <div className="font-medium text-slate-800 dark:text-slate-100">
+                <li key={o.disclosureCode} className="text-sm p-3 rounded-lg bg-surface-3">
+                  <div className="font-medium text-text">
                     <span dir="ltr">{o.disclosureCode}</span> — {o.disclosureTitle}
                   </div>
-                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <div className="mt-1 text-xs text-muted">
                   {R.reason}: {reasonLabel(o.reason)} · {R.explanation}: {o.explanation ?? '—'}
                 </div>
               </li>
@@ -393,54 +393,54 @@ export const ReportsView: React.FC = () => {
 
   const renderL3 = (p: ReportPayload) => (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{R.levelDescL3}</p>
+      <p className="text-xs text-muted">{R.levelDescL3}</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{R.statementTitle}</h4>
+        <div className="bg-surface-2 rounded-2xl border border-border p-5">
+          <h4 className="text-sm font-bold text-text mb-3">{R.statementTitle}</h4>
           <dl className="space-y-2 text-sm">
             <div className="flex gap-2">
-              <dt className="text-slate-500 dark:text-slate-400 shrink-0">{R.statementName}:</dt>
-              <dd className="font-medium text-slate-800 dark:text-slate-100">{p.settings.statementName}</dd>
+              <dt className="text-muted shrink-0">{R.statementName}:</dt>
+              <dd className="font-medium text-text">{p.settings.statementName}</dd>
             </div>
             <div className="flex gap-2">
-              <dt className="text-slate-500 dark:text-slate-400 shrink-0">{R.statementPeriod}:</dt>
-              <dd className="font-medium text-slate-800 dark:text-slate-100">{p.settings.statementPeriod}</dd>
+              <dt className="text-muted shrink-0">{R.statementPeriod}:</dt>
+              <dd className="font-medium text-text">{p.settings.statementPeriod}</dd>
             </div>
           </dl>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-          <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">{R.notificationTitle}</h4>
+        <div className="bg-surface-2 rounded-2xl border border-border p-5">
+          <h4 className="text-sm font-bold text-text mb-3">{R.notificationTitle}</h4>
           <dl className="space-y-2 text-sm">
             <div className="flex gap-2">
-              <dt className="text-slate-500 dark:text-slate-400 shrink-0">{R.notificationTitle}:</dt>
-              <dd className="font-medium text-slate-800 dark:text-slate-100">
+              <dt className="text-muted shrink-0">{R.notificationTitle}:</dt>
+              <dd className="font-medium text-text">
                 {p.settings.notified === 'done' ? R.notifiedDone : R.notifiedNotDone}
               </dd>
             </div>
             {p.settings.notifiedDate && (
               <div className="flex gap-2">
-                <dt className="text-slate-500 dark:text-slate-400 shrink-0">{R.notifiedDate}:</dt>
-                <dd className="font-medium text-slate-800 dark:text-slate-100">{p.settings.notifiedDate.slice(0, 10)}</dd>
+                <dt className="text-muted shrink-0">{R.notifiedDate}:</dt>
+                <dd className="font-medium text-text">{p.settings.notifiedDate.slice(0, 10)}</dd>
               </div>
             )}
             {p.settings.notifyRef && (
               <div className="flex gap-2">
-                <dt className="text-slate-500 dark:text-slate-400 shrink-0">{R.notifyRef}:</dt>
-                <dd className="font-medium text-slate-800 dark:text-slate-100">{p.settings.notifyRef}</dd>
+                <dt className="text-muted shrink-0">{R.notifyRef}:</dt>
+                <dd className="font-medium text-text">{p.settings.notifyRef}</dd>
               </div>
             )}
           </dl>
-          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">{R.notificationRecordNote}</p>
+          <p className="mt-3 text-[11px] text-muted">{R.notificationRecordNote}</p>
         </div>
       </div>
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
+      <div className="bg-surface-2 rounded-2xl border border-border p-5">
+        <h4 className="text-sm font-bold text-text mb-3">
           {R.disclosure} ({p.meta.disclosureCount})
         </h4>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-start text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+              <tr className="text-start text-xs text-muted border-b border-border">
                 <th className="py-2 pe-3 text-start font-medium">{R.standard}</th>
                 <th className="py-2 pe-3 text-start font-medium">{R.disclosure}</th>
                 <th className="py-2 pe-3 text-start font-medium">{R.location}</th>
@@ -451,36 +451,36 @@ export const ReportsView: React.FC = () => {
             </thead>
             <tbody>
               {p.index.map((row) => (
-                <tr key={row.disclosureCode} className="border-b border-slate-100 dark:border-slate-700/50 align-top">
-                  <td className="py-2 pe-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap" dir="ltr">
+                <tr key={row.disclosureCode} className="border-b border-border align-top">
+                  <td className="py-2 pe-3 text-xs text-muted whitespace-nowrap" dir="ltr">
                     {row.standardCode}
                     <div className="max-w-40 truncate" title={row.standardTitle}>{row.standardTitle}</div>
                   </td>
                   <td className="py-2 pe-3">
-                    <div className="font-medium text-slate-800 dark:text-slate-100" dir="ltr">{row.disclosureCode}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">{row.disclosureTitle}</div>
-                    <div className="text-[11px] text-slate-400 dark:text-slate-500">{row.departments.join(' · ')}</div>
+                    <div className="font-medium text-text" dir="ltr">{row.disclosureCode}</div>
+                    <div className="text-xs text-muted">{row.disclosureTitle}</div>
+                    <div className="text-[11px] text-muted">{row.departments.join(' · ')}</div>
                   </td>
-                  <td className="py-2 pe-3 text-xs text-slate-600 dark:text-slate-300 max-w-xs">
-                    {row.location ?? <span className="italic text-slate-400">{R.locationMissing}</span>}
+                  <td className="py-2 pe-3 text-xs text-muted max-w-xs">
+                    {row.location ?? <span className="italic text-muted">{R.locationMissing}</span>}
                   </td>
                   <td className="py-2 pe-3 text-xs">
                     {row.omitted ? (
                       <span>
-                        <span className="font-semibold text-amber-700 dark:text-amber-300">{R.omittedYes}</span>
-                        <div className="text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold text-warning-text">{R.omittedYes}</span>
+                        <div className="text-muted">
                           {R.reason}: {reasonLabel(row.omissionReason)}
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400">
+                        <div className="text-muted">
                           {R.explanation}: {row.omissionExplanation ?? '—'}
                         </div>
                       </span>
                     ) : (
-                      <span className="text-slate-400">{R.omittedNo}</span>
+                      <span className="text-muted">{R.omittedNo}</span>
                     )}
                   </td>
                   <td className="py-2 pe-3 font-semibold whitespace-nowrap" dir="ltr">{fmtScore(row.score)}</td>
-                  <td className="py-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap" dir="ltr">
+                  <td className="py-2 text-xs text-muted whitespace-nowrap" dir="ltr">
                     {row.coveragePercentage}% ({row.evaluatedItems}/{row.applicableItems})
                   </td>
                 </tr>
@@ -537,19 +537,19 @@ export const ReportsView: React.FC = () => {
 
       <div className="print:hidden space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-surface-2 rounded-2xl border border-border">
           <div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FileText className="w-5 h-5 text-emerald-600" />
+            <h3 className="text-xl font-bold text-text flex items-center gap-2">
+              <FileText className="w-5 h-5 text-brand-text" />
               {R.title}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{R.subtitle}</p>
+            <p className="text-xs text-muted mt-1">{R.subtitle}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => downloadExport('json')}
               disabled={!payload}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-border-strong text-text hover:bg-surface-3 disabled:opacity-40"
             >
               <Download className="w-3.5 h-3.5" />
               {R.exportJson}
@@ -557,7 +557,7 @@ export const ReportsView: React.FC = () => {
             <button
               onClick={() => downloadExport('csv')}
               disabled={!payload}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-border-strong text-text hover:bg-surface-3 disabled:opacity-40"
             >
               <Download className="w-3.5 h-3.5" />
               {R.exportCsv}
@@ -565,7 +565,7 @@ export const ReportsView: React.FC = () => {
             <button
               onClick={() => window.print()}
               disabled={!payload}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-brand text-brand-ink hover:opacity-90 disabled:opacity-40"
             >
               <Printer className="w-3.5 h-3.5" />
               {R.printBtn}
@@ -578,25 +578,25 @@ export const ReportsView: React.FC = () => {
         {/* Settings — B16-B2: GE only. Client roles keep reports/export
             and see who sets the levels. */}
         {!isGeAdmin && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.b16.reportSettingsGeOnlyTitle}</h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{t.b16.reportSettingsGeOnlyDesc}</p>
+          <div className="bg-surface-2 rounded-2xl border border-border p-5">
+            <h4 className="text-sm font-bold text-text mb-1">{t.b16.reportSettingsGeOnlyTitle}</h4>
+            <p className="text-xs text-muted leading-relaxed">{t.b16.reportSettingsGeOnlyDesc}</p>
           </div>
         )}
         {isGeAdmin && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-5">
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-emerald-600" />
+          <div className="bg-surface-2 rounded-2xl border border-border p-5">
+            <h4 className="text-sm font-bold text-text mb-1 flex items-center gap-2">
+              <Settings2 className="w-4 h-4 text-brand-text" />
               {R.settingsTitle}
             </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{R.settingsDesc}</p>
+            <p className="text-xs text-muted mb-4">{R.settingsDesc}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.disclosureLevel}</span>
+                <span className="text-xs font-medium text-muted">{R.disclosureLevel}</span>
                 <select
                   value={settings.disclosureLevel}
                   onChange={(e) => setSettings((s) => ({ ...s, disclosureLevel: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 >
                   <option value="">—</option>
                   <option value="in-accordance">{R.inAccordance}</option>
@@ -604,11 +604,11 @@ export const ReportsView: React.FC = () => {
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.reportLevel}</span>
+                <span className="text-xs font-medium text-muted">{R.reportLevel}</span>
                 <select
                   value={settings.reportLevel}
                   onChange={(e) => setSettings((s) => ({ ...s, reportLevel: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 >
                   <option value="">—</option>
                   <option value="L1">{R.levelTabL1}</option>
@@ -617,28 +617,28 @@ export const ReportsView: React.FC = () => {
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.statementName}</span>
+                <span className="text-xs font-medium text-muted">{R.statementName}</span>
                 <input
                   value={settings.statementName}
                   onChange={(e) => setSettings((s) => ({ ...s, statementName: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.statementPeriod}</span>
+                <span className="text-xs font-medium text-muted">{R.statementPeriod}</span>
                 <input
                   value={settings.statementPeriod}
                   onChange={(e) => setSettings((s) => ({ ...s, statementPeriod: e.target.value }))}
                   placeholder="2026"
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 />
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.notificationTitle}</span>
+                <span className="text-xs font-medium text-muted">{R.notificationTitle}</span>
                 <select
                   value={settings.notified}
                   onChange={(e) => setSettings((s) => ({ ...s, notified: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 >
                   <option value="">—</option>
                   <option value="done">{R.notifiedDone}</option>
@@ -646,33 +646,33 @@ export const ReportsView: React.FC = () => {
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.notifiedDate}</span>
+                <span className="text-xs font-medium text-muted">{R.notifiedDate}</span>
                 <input
                   type="date"
                   value={settings.notifiedDate}
                   onChange={(e) => setSettings((s) => ({ ...s, notifiedDate: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 />
               </label>
               <label className="block sm:col-span-2">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{R.notifyRef}</span>
+                <span className="text-xs font-medium text-muted">{R.notifyRef}</span>
                 <input
                   value={settings.notifyRef}
                   onChange={(e) => setSettings((s) => ({ ...s, notifyRef: e.target.value }))}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-sm"
                 />
               </label>
             </div>
-            <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">{R.notificationRecordNote}</p>
+            <p className="mt-3 text-[11px] text-muted">{R.notificationRecordNote}</p>
             <div className="mt-3 flex items-center gap-3">
               <button
                 onClick={saveSettings}
                 disabled={saving}
-                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-semibold hover:bg-brand-strong disabled:opacity-50"
               >
                 {saving ? R.saving : R.saveSettings}
               </button>
-              {saveMsg && <span className="text-xs text-emerald-700 dark:text-emerald-300">{saveMsg}</span>}
+              {saveMsg && <span className="text-xs text-success-text">{saveMsg}</span>}
             </div>
           </div>
         )}
@@ -685,8 +685,8 @@ export const ReportsView: React.FC = () => {
               onClick={() => setLevel(lv)}
               className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-colors ${
                 level === lv
-                  ? 'bg-emerald-600 text-white border-emerald-600'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                  ? 'bg-brand text-brand-ink border-brand'
+                  : 'border-border text-muted hover:bg-surface-3'
               }`}
             >
               {lv === 'L1' ? R.levelTabL1 : lv === 'L2' ? R.levelTabL2 : R.levelTabL3}
@@ -694,7 +694,7 @@ export const ReportsView: React.FC = () => {
           ))}
           <button
             onClick={loadReport}
-            className="ms-auto p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700"
+            className="ms-auto p-2 rounded-lg text-muted hover:bg-surface-3 border border-border"
             title={R.loading}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -702,9 +702,9 @@ export const ReportsView: React.FC = () => {
         </div>
 
         {/* Body */}
-        {loading && <p className="text-sm text-slate-500 dark:text-slate-400">{R.loading}</p>}
+        {loading && <p className="text-sm text-muted">{R.loading}</p>}
         {error && (
-          <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-800/60 bg-rose-50 dark:bg-rose-950/30 text-sm text-rose-800 dark:text-rose-200">
+          <div className="p-4 rounded-xl border border-danger bg-danger-soft text-sm text-danger">
             <p className="font-semibold">{R.incompleteTitle}</p>
             <p className="mt-1 text-xs leading-relaxed">{error}</p>
             {incompleteCodes.length > 0 && (
@@ -713,7 +713,7 @@ export const ReportsView: React.FC = () => {
           </div>
         )}
         {!loading && !error && !payload && gateOk === false && (
-          <p className="text-sm text-slate-500 dark:text-slate-400">{R.selectLevelHint}</p>
+          <p className="text-sm text-muted">{R.selectLevelHint}</p>
         )}
         {!loading && !error && payload && (
           <>{level === 'L1' ? renderL1(payload) : level === 'L2' ? renderL2(payload) : renderL3(payload)}</>

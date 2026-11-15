@@ -244,18 +244,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Tenant context banner */}
         {user && (
-          <div className="mx-4 mt-4 p-3 rounded-lg bg-surface-3/80 border border-sidebar-muted/60 text-xs">
+          <div className="mx-4 mt-4 p-3 rounded-lg bg-surface-3 border border-sidebar-muted/60 text-xs">
             <div className="flex items-center gap-2 text-sidebar-muted mb-1">
               <Building2 className="w-3.5 h-3.5 text-sidebar-muted shrink-0" />
-              <span className="font-semibold uppercase tracking-wider text-[10px]">
+              <span className="font-semibold uppercase tracking-wider text-[10px] text-text">
                 {t.nav.tenantBadge}
               </span>
             </div>
-            <div className="font-medium text-sidebar-text truncate">
+            <div className="font-medium text-text truncate">
               {user.clientName || (user.role === 'ge_admin' ? t.auth.notAssigned : user.clientId || 'Client Tenant')}
             </div>
             {user.departmentName && (
-              <div className="text-sidebar-muted mt-1 text-[11px] truncate">
+              <div className="text-muted mt-1 text-[11px] truncate">
                 {t.auth.department}: {user.departmentName}
               </div>
             )}
@@ -308,7 +308,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Globe className="w-4 h-4 text-sidebar-muted" />
               <span>{lang === 'en' ? 'Language' : 'اللغة'}</span>
             </div>
-            <span className="px-2 py-0.5 rounded bg-surface-3 text-sidebar-muted font-semibold text-[11px]">
+            <span className="px-2 py-0.5 rounded border border-sidebar-muted/40 text-sidebar-text font-semibold text-[11px]">
               {lang === 'en' ? 'العربية' : 'English'}
             </span>
           </button>
@@ -327,7 +327,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <button
                 onClick={logout}
-                className="w-full mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-danger hover:bg-danger/10 hover:text-danger transition-colors"
+                className="w-full mt-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-on-rail-danger hover:bg-danger/10 hover:text-on-rail-danger transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>{t.nav.logout}</span>

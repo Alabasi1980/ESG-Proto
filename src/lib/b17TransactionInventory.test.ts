@@ -125,6 +125,26 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // D-H01-07 (2026-11-15, owner-authorized): view-migration batch H03 — 2 paths only.
     // Exact files named in TASK-PROTO-H03 — no globs, no implicit paths (LoginView + DemoBanner → tokens).
     'src/views/LoginView.tsx','src/components/DemoBanner.tsx',
+    // D-H01-07 standing authority — TASK-PROTO-H10a/H10b view batch: 4 exact paths (named, no globs).
+    'src/views/DashboardView.tsx','src/views/ClientDashboardView.tsx',
+    'src/views/GeOverviewView.tsx','src/views/EsgProfileView.tsx',
+    // D-H01-07 standing authority — TASK-PROTO-H10-3 view batch (+ H10-3): 3 missing
+    // paths only; GeOverviewView/EsgProfileView were already named above (no duplicates).
+    'src/views/SettingsView.tsx','src/views/StaffListsView.tsx','src/views/ServicesManage.tsx',
+    // D-H01-07 standing authority — TASK-PROTO-H11 view batch (H11a guard + H11b): 3 missing
+    // paths only; no duplicates with the batches named above.
+    'src/views/GapAnalysisView.tsx','src/views/StandardsView.tsx','src/views/InitiativesView.tsx',
+    // D-H01-07 standing authority — TASK-PROTO-H12 P1/P2 view batch (Gap Analysis + Standards
+    // wrappers named by that task): 4 missing paths only; no duplicates with the batches above.
+    'src/views/EvaluationPanel.tsx','src/views/ClientReviewView.tsx',
+    'src/views/GeFinalView.tsx','src/views/TaxonomyManage.tsx',
+    // D-H01-07 standing authority — TASK-PROTO-H13 P3 view batch (P3a + P3b): 4 missing
+    // paths only; Actions/Notifications (P3a) and Reports/AuditLog (P3b) — no duplicates.
+    'src/views/ActionsView.tsx','src/views/NotificationsView.tsx',
+    'src/views/ReportsView.tsx','src/views/AuditLogView.tsx',
+    // D-H01-07 standing authority — TASK-PROTO-H14 P4/P5 view batch (P4 + P5): 3 missing
+    // paths only; ClientDetailView/SetupView (P4) and ImportGRIView (P5) — no duplicates.
+    'src/views/ClientDetailView.tsx','src/views/SetupView.tsx','src/views/ImportGRIView.tsx',
     ...newFiles,
     // Owner-authorized persistent shared-DB infra (showcase script + container/DB) — exact path only.
     'scripts/b17-showcase.ts']);
@@ -136,7 +156,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file));
-  assert.equal(allowed.size,27); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase)
+  assert.equal(allowed.size,48); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });

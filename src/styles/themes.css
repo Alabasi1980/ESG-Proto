@@ -16,12 +16,16 @@
   --brand-strong: #026B38;
   --brand-soft: #E2F1E7;
   --brand-ink: #FFFFFF;
+  --brand-text: #026B38;
   --accent: #F16B3B;
   --accent-soft: #FCE8D9;
+  --accent-text: #9A3412;
   --success: #038947;
   --success-soft: #E2F1E7;
+  --success-text: #026B38;
   --warning: #B45309;
   --warning-soft: #FEF3C7;
+  --warning-text: #8A4109;
   --danger: #BE123C;
   --danger-soft: #FFE4E6;
   --info: #0369A1;
@@ -31,6 +35,7 @@
   --sidebar-muted: #8FA0AC;
   --sidebar-active: #038947;
   --sidebar-active-text: #FFFFFF;
+  --on-rail-danger: #FF8D79;
   --focus-ring: #038947;
 }
 
@@ -47,12 +52,16 @@
   --brand-strong: #027B40;
   --brand-soft: #294834;
   --brand-ink: #F1F6D6;
+  --brand-text: #86DCA8;
   --accent: #AFD139;
   --accent-soft: #303F27;
+  --accent-text: #AFD139;
   --success: #69D59A;
   --success-soft: #294834;
+  --success-text: #69D59A;
   --warning: #F16B3B;
   --warning-soft: #36281F;
+  --warning-text: #FBBF24;
   --danger: #FF8D79;
   --danger-soft: #422A2B;
   --info: #9BCEEB;
@@ -62,6 +71,7 @@
   --sidebar-muted: #CAD6AE;
   --sidebar-active: #026F39;
   --sidebar-active-text: #F1F6D6;
+  --on-rail-danger: #FF8D79;
   --focus-ring: #AFD139;
 }
 
@@ -75,8 +85,8 @@
    * 20 identity tokens stay inside the 4-colour palette; --brand-ink is the single
    * achromatic token (mandated #FFFFFF, 4.49 contrast = documented GAP-002 exception). */
   --surface: #EEF4D7;
-  --surface-2: #F7F8E3;
-  --surface-3: #E4EDB8;
+  --surface-2: #E4EDB8; /* H10-0: role normalization — card=surface-2, inset=surface-3; owner colours unchanged */
+  --surface-3: #F7F8E3;
   --border: #CBD79B;
   --border-strong: #498D6B;
   --text: #152331;
@@ -85,12 +95,16 @@
   --brand-strong: #026B38;
   --brand-soft: #E4F1EB;
   --brand-ink: #FFFFFF;
+  --brand-text: #026B38;
   --accent: #F16B3B;
   --accent-soft: #F8ECE2;
+  --accent-text: #9A3412;
   --success: #038947;
   --success-soft: #E2F1E7;
+  --success-text: #026B38;
   --warning: #B45309;
   --warning-soft: #FEF3C7;
+  --warning-text: #8A4109;
   --danger: #BE123C;
   --danger-soft: #FFE4E6;
   --info: #0369A1;
@@ -100,6 +114,7 @@
   --sidebar-muted: #52667A;
   --sidebar-active: #038947;
   --sidebar-active-text: #FCFDF4;
+  --on-rail-danger: #BE123C;
   --focus-ring: #038947;
   /* WHY per-theme and not @theme: the neutral shadow in tokens.css is the structural
    * default shared by ge/abyss; lime needs a green-tinted shadow so the card separates

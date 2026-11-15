@@ -300,17 +300,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
   return (
     <div className="space-y-6 max-w-4xl">
       {/* PostgreSQL Database Status Card */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-100 dark:border-slate-700/60">
+      <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+            <div className="p-2.5 rounded-xl bg-brand-soft text-brand">
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+              <h3 className="font-bold text-base text-text">
                 {t.settings.databaseConnection}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted">
                 {t.settings.databaseUrlNote}
               </p>
             </div>
@@ -319,7 +319,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
           <button
             onClick={checkDb}
             disabled={loadingDb}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors"
+            className="p-2 rounded-xl border border-border text-muted hover:bg-surface-3 transition-colors"
             title={t.common.refresh}
           >
             <RefreshCw className={`w-4 h-4 ${loadingDb ? 'animate-spin' : ''}`} />
@@ -328,22 +328,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
 
         {dbStatus && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+            <div className="p-4 rounded-xl bg-surface-3 border border-border">
+              <span className="text-[10px] uppercase font-bold text-muted block mb-1">
                 {t.settings.dbStatus}
               </span>
               <div className="flex items-center gap-2">
                 {dbStatus.connected ? (
                   <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4 text-success-text" />
+                    <span className="text-xs font-bold text-success-text">
                       {t.settings.connected}
                     </span>
                   </>
                 ) : (
                   <>
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-4 h-4 text-warning-text" />
+                    <span className="text-xs font-bold text-warning-text">
                       {t.settings.disconnected}
                     </span>
                   </>
@@ -351,20 +351,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+            <div className="p-4 rounded-xl bg-surface-3 border border-border">
+              <span className="text-[10px] uppercase font-bold text-muted block mb-1">
                 Configuration
               </span>
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <span className="text-xs font-semibold text-text">
                 {dbStatus.configured ? t.settings.configured : t.settings.notConfigured}
               </span>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+            <div className="p-4 rounded-xl bg-surface-3 border border-border">
+              <span className="text-[10px] uppercase font-bold text-muted block mb-1">
                 {t.settings.tableCount}
               </span>
-              <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+              <span className="text-xs font-extrabold text-text">
                 {dbStatus.tableCount} tables created
               </span>
             </div>
@@ -372,14 +372,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
         )}
 
         {migrateSuccess && (
-          <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2">
+          <div className="mb-4 p-3 rounded-xl bg-success-soft border border-success text-success-text text-xs flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{migrateSuccess}</span>
           </div>
         )}
 
         {migrateError && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
+          <div className="mb-4 p-3 rounded-xl bg-danger-soft border border-danger text-danger text-xs flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{migrateError}</span>
           </div>
@@ -388,7 +388,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
         <button
           onClick={handleRunMigrations}
           disabled={migrating}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-strong text-brand-ink text-xs font-bold shadow-xs disabled:opacity-50 transition-colors"
         >
           {migrating ? (
             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -403,17 +403,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       {/* B11a (S-04): GE-only services management (Settings-adjacent, one place). */}
       {isGeAdmin && <ServicesManage />}
 
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-700/60">
+      <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+            <div className="p-2.5 rounded-xl bg-warning-soft text-warning-text">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+              <h3 className="font-bold text-base text-text">
                 {t.storage.title}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted">
                 {t.storage.subtitle}
               </p>
             </div>
@@ -421,7 +421,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
           <button
             onClick={fetchStorageUsage}
             disabled={loadingStorage}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors"
+            className="p-2 rounded-xl border border-border text-muted hover:bg-surface-3 transition-colors"
             title={t.common.refresh}
           >
             <RefreshCw className={`w-4 h-4 ${loadingStorage ? 'animate-spin' : ''}`} />
@@ -429,26 +429,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
         </div>
 
         {!storageUsage && (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-muted">
             {loadingStorage ? t.common.loading : t.attachments.emptyText}
           </p>
         )}
         {storageUsage && (
           <div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+              <div className="p-4 rounded-xl bg-surface-3 border border-border">
+                <span className="text-[10px] uppercase font-bold text-muted block mb-1">
                   {t.storage.bytesLabel}
                 </span>
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                <span className="text-sm font-extrabold text-text">
                   {storageUsage.formatted}
                 </span>
               </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+              <div className="p-4 rounded-xl bg-surface-3 border border-border">
+                <span className="text-[10px] uppercase font-bold text-muted block mb-1">
                   {t.storage.filesLabel}
                 </span>
-                <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                <span className="text-sm font-extrabold text-text">
                   {storageUsage.files}
                 </span>
               </div>
@@ -456,8 +456,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
             <div
               className={`mt-3 p-3 rounded-xl text-xs flex items-center gap-2 ${
                 storageUsage.warn
-                  ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
-                  : 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                  ? 'bg-warning-soft border border-warning text-warning-text'
+                  : 'bg-success-soft border border-success text-success-text'
               }`}
             >
               {storageUsage.warn ? (
@@ -472,16 +472,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       </div>
 
       {/* Language & RTL Settings Card */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
+      <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400">
+          <div className="p-2.5 rounded-xl bg-info-soft text-info">
             <Globe className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-base text-slate-900 dark:text-white">
+            <h3 className="font-bold text-base text-text">
               {t.settings.languageSettings}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-muted">
               {t.settings.languageDescription}
             </p>
           </div>
@@ -492,46 +492,46 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
             onClick={() => setLang('en')}
             className={`p-4 rounded-xl border text-start flex items-center justify-between transition-colors ${
               lang === 'en'
-                ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20'
-                : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+                ? 'border-brand bg-brand-soft text-text ring-2 ring-focus-ring/20'
+                : 'border-border text-muted hover:bg-surface-3'
             }`}
           >
             <div>
               <div className="font-bold text-xs">{t.settings.english}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Left-to-Right (LTR)</div>
+              <div className="text-[11px] text-muted mt-0.5">Left-to-Right (LTR)</div>
             </div>
-            {lang === 'en' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+            {lang === 'en' && <CheckCircle2 className="w-4 h-4 text-success-text" />}
           </button>
 
           <button
             onClick={() => setLang('ar')}
             className={`p-4 rounded-xl border text-start flex items-center justify-between transition-colors ${
               lang === 'ar'
-                ? 'border-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20'
-                : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750'
+                ? 'border-brand bg-brand-soft text-text ring-2 ring-focus-ring/20'
+                : 'border-border text-muted hover:bg-surface-3'
             }`}
           >
             <div>
               <div className="font-bold text-xs">{t.settings.arabic}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">من اليمين إلى اليسار (RTL)</div>
+              <div className="text-[11px] text-muted mt-0.5">من اليمين إلى اليسار (RTL)</div>
             </div>
-            {lang === 'ar' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+            {lang === 'ar' && <CheckCircle2 className="w-4 h-4 text-success-text" />}
           </button>
         </div>
       </div>
 
       {/* Account Security & Change Password Card */}
       {user && (
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
+        <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+            <div className="p-2.5 rounded-xl bg-accent-soft text-accent-text">
               <Lock className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+              <h3 className="font-bold text-base text-text">
                 {t.settings.securitySettings}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted">
                 {t.auth.changePasswordTitle}
               </p>
             </div>
@@ -542,8 +542,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
               <div
                 className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
                   passMessage.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 border border-emerald-200'
-                    : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-200 border border-rose-200'
+                    ? 'bg-success-soft text-success-text border border-success'
+                    : 'bg-danger-soft text-danger border border-danger'
                 }`}
               >
                 {passMessage.type === 'success' ? (
@@ -556,7 +556,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-muted mb-1">
                 {t.auth.currentPassword}
               </label>
               <input
@@ -564,12 +564,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                 required
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-muted mb-1">
                 {t.auth.newPassword}
               </label>
               <input
@@ -577,12 +577,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                 required
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-muted mb-1">
                 {t.auth.confirmPassword}
               </label>
               <input
@@ -590,14 +590,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
               />
             </div>
 
             <button
               type="submit"
               disabled={changingPass}
-              className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold transition-colors shadow-xs disabled:opacity-50"
+              className="px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-strong text-brand-ink text-xs font-bold transition-colors shadow-xs disabled:opacity-50"
             >
               {changingPass ? t.common.loading : t.settings.updatePasswordButton}
             </button>
@@ -607,16 +607,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
 
       {/* C2: Minimal user management (admins only) */}
       {isAdmin && (
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-6 shadow-xs">
+        <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
           <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
+            <div className="p-2.5 rounded-xl bg-brand-soft text-brand">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+              <h3 className="font-bold text-base text-text">
                 {t.users.title}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-muted">
                 {t.users.subtitle}
               </p>
             </div>
@@ -626,8 +626,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
             <div
               className={`mt-4 p-3 rounded-xl text-xs flex items-center gap-2 ${
                 userMessage.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 border border-emerald-200'
-                  : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-200 border border-rose-200'
+                  ? 'bg-success-soft text-success-text border border-success'
+                  : 'bg-danger-soft text-danger border border-danger'
               }`}
             >
               {userMessage.type === 'success' ? (
@@ -642,20 +642,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
           {/* User list */}
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+              <span className="text-xs font-bold text-text">
                 {t.users.listTitle} ({managedUsers.length})
               </span>
               <button
                 onClick={fetchUsers}
                 disabled={loadingUsers}
-                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors"
+                className="p-1.5 rounded-lg border border-border text-muted hover:bg-surface-3 transition-colors"
                 title={t.common.refresh}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? 'animate-spin' : ''}`} />
               </button>
             </div>
             {managedUsers.length === 0 ? (
-              <p className="text-xs text-slate-500 dark:text-slate-400 p-3 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
+              <p className="text-xs text-muted p-3 rounded-xl bg-surface-3 border border-border">
                 {t.users.emptyList}
               </p>
             ) : (
@@ -663,13 +663,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                 {managedUsers.map((u) => (
                   <li
                     key={u.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700"
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border"
                   >
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {u.name} <span className="font-normal text-slate-500">· {u.email}</span>
+                      <div className="text-xs font-bold text-text truncate">
+                        {u.name} <span className="font-normal text-muted">· {u.email}</span>
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      <div className="text-[11px] text-muted mt-0.5 truncate">
                         {t.auth.roles[u.role as keyof typeof t.auth.roles] || u.role}
                         {u.client_name ? ` · ${u.client_name}` : ''}
                         {u.department_name ? ` · ${u.department_name}` : ''}
@@ -679,8 +679,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                           u.is_active
-                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                            ? 'bg-success-soft text-success-text'
+                            : 'bg-surface-3 text-muted'
                         }`}
                       >
                         {u.is_active ? t.users.activeLabel : t.users.inactiveLabel}
@@ -691,8 +691,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                           title={u.is_active ? t.users.deactivateButton : t.users.reactivateButton}
                           className={`p-1.5 rounded-lg border transition-colors ${
                             u.is_active
-                              ? 'border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                              : 'border-emerald-200 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                              ? 'border-danger text-danger hover:bg-danger-soft'
+                              : 'border-success text-success-text hover:bg-success-soft'
                           }`}
                         >
                           {u.is_active ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
@@ -708,14 +708,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
           {/* Create form — GE ONLY (04 matrix + WF-01: العميل لا ينشئ حسابات).
               Non-GE admins see a pointer to the staff-list flow instead. */}
           {isGeAdmin ? (
-          <form onSubmit={handleCreateUser} className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700/60 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
-              <UserPlus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <form onSubmit={handleCreateUser} className="mt-5 pt-5 border-t border-border space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-text">
+              <UserPlus className="w-4 h-4 text-brand" />
               <span>{t.users.createButton}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   {t.users.nameLabel}
                 </label>
                 <input
@@ -723,11 +723,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                   required
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   {t.users.emailLabel}
                 </label>
                 <input
@@ -735,11 +735,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                   required
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   {t.users.passwordLabel}
                 </label>
                 <input
@@ -748,17 +748,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
                   minLength={10}
                   value={newPasswordInput}
                   onChange={(e) => setNewPasswordInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-muted mb-1">
                   {t.users.roleLabel}
                 </label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
                 >
                   <option value="employee">{t.auth.roles.employee}</option>
                   <option value="client_admin">{t.auth.roles.client_admin}</option>
@@ -767,13 +767,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
               </div>
               {isGeAdmin && newRole !== 'ge_admin' && (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-muted mb-1">
                     {t.users.tenantLabel}
                   </label>
                   <select
                     value={newTenantId}
                     onChange={(e) => setNewTenantId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
                   >
                     <option value="">{t.users.tenantPlaceholder}</option>
                     {tenants.map((tn) => (
@@ -786,13 +786,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
               )}
               {newRole === 'employee' && (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-muted mb-1">
                     {t.users.departmentLabel}
                   </label>
                   <select
                     value={newDeptId}
                     onChange={(e) => setNewDeptId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full px-3 py-2 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/20"
                   >
                     <option value="">—</option>
                     {departments.map((d) => (
@@ -807,14 +807,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
             <button
               type="submit"
               disabled={creatingUser}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs disabled:opacity-50"
+              className="px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-strong text-brand-ink text-xs font-bold transition-colors shadow-xs disabled:opacity-50"
             >
               {creatingUser ? t.users.creating : t.users.createButton}
             </button>
           </form>
           ) : (
-            <div className="mt-5 pt-5 border-t border-slate-100 dark:border-slate-700/60">
-              <p className="p-3 rounded-xl bg-slate-50 dark:bg-slate-750/50 border border-slate-200 dark:border-slate-700/40 text-xs text-slate-600 dark:text-slate-300">
+            <div className="mt-5 pt-5 border-t border-border">
+              <p className="p-3 rounded-xl bg-surface-3 border border-border text-xs text-muted">
                 {t.users.geOnlyNote}
               </p>
             </div>

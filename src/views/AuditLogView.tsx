@@ -79,57 +79,57 @@ export const AuditLogView: React.FC = () => {
 
   if (user?.role !== 'ge_admin') {
     return (
-      <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
-        <p className="text-xs text-rose-600">{t.audit.subtitle}</p>
+      <div className="p-6 bg-surface-2 rounded-2xl border border-border">
+        <p className="text-xs text-danger">{t.audit.subtitle}</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+      <div className="p-6 bg-surface-2 rounded-2xl border border-border">
         <div className="flex items-center gap-3 mb-1">
-          <ScrollText className="w-5 h-5 text-slate-500" />
+          <ScrollText className="w-5 h-5 text-muted" />
           <h3 className="font-bold text-base">{t.audit.title}</h3>
         </div>
-        <p className="text-xs text-slate-500 mb-4">{t.audit.subtitle}</p>
+        <p className="text-xs text-muted mb-4">{t.audit.subtitle}</p>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
           <input
             value={action}
             onChange={(e) => setAction(e.target.value)}
             placeholder={t.audit.filterAction}
-            className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
           />
           <input
             value={entityType}
             onChange={(e) => setEntityType(e.target.value)}
             placeholder={t.audit.filterEntity}
-            className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
           />
           <input
             value={auditUserId}
             onChange={(e) => setAuditUserId(e.target.value)}
             placeholder={t.audit.filterUser}
-            className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
           />
           <input
             type="date"
             value={since}
             onChange={(e) => setSince(e.target.value)}
             aria-label={t.audit.filterFrom}
-            className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
           />
           <input
             type="date"
             value={until}
             onChange={(e) => setUntil(e.target.value)}
             aria-label={t.audit.filterTo}
-            className="px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+            className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
           />
           <div className="flex gap-2">
             <button
               onClick={fetchLog}
-              className="flex-1 px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-1"
+              className="flex-1 px-3 py-2 rounded-xl bg-brand text-brand-ink text-xs font-bold flex items-center justify-center gap-1"
             >
               <Search className="w-3.5 h-3.5" />
               {t.audit.search}
@@ -142,7 +142,7 @@ export const AuditLogView: React.FC = () => {
                 setSince('');
                 setUntil('');
               }}
-              className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs"
+              className="px-3 py-2 rounded-xl border border-border-strong text-text text-xs"
             >
               {t.audit.clear}
             </button>
@@ -150,20 +150,20 @@ export const AuditLogView: React.FC = () => {
         </div>
         <button
           onClick={fetchLog}
-          className="text-xs text-slate-500 flex items-center gap-1 hover:text-slate-700"
+          className="text-xs text-muted flex items-center gap-1 hover:text-text"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           {t.audit.limit}: {rows.length}
         </button>
       </div>
 
-      {error && <p className="text-xs text-rose-600">{error}</p>}
-      {rows.length === 0 && !loading && <p className="text-xs text-slate-500">{t.audit.empty}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
+      {rows.length === 0 && !loading && <p className="text-xs text-muted">{t.audit.empty}</p>}
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+      <div className="overflow-x-auto rounded-2xl border border-border">
         <table className="w-full text-xs" dir="auto">
           <thead>
-            <tr className="bg-slate-100 dark:bg-slate-800 text-start">
+            <tr className="bg-surface-3 text-muted text-start">
               <th className="text-start px-3 py-2 font-bold">{t.audit.when}</th>
               <th className="text-start px-3 py-2 font-bold">{t.audit.who}</th>
               <th className="text-start px-3 py-2 font-bold">{t.audit.what}</th>
@@ -180,15 +180,15 @@ export const AuditLogView: React.FC = () => {
               return (
                 <React.Fragment key={r.id}>
                   <tr
-                    className="border-t border-slate-100 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer"
+                    className="border-t border-border hover:bg-surface-3 cursor-pointer"
                     onClick={() => setExpanded(open ? null : r.id)}
                   >
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-500">
+                    <td className="px-3 py-2 whitespace-nowrap text-muted">
                       {new Date(r.created_at).toLocaleString()}
                     </td>
                     <td className="px-3 py-2">{r.user_name ?? r.user_email ?? r.user_id ?? '—'}</td>
                     <td className="px-3 py-2 font-mono" dir="ltr">{r.action}</td>
-                    <td className="px-3 py-2 font-mono text-slate-500" dir="ltr">
+                    <td className="px-3 py-2 font-mono text-muted" dir="ltr">
                       {r.entity_type}
                       {r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}
                     </td>
@@ -197,10 +197,10 @@ export const AuditLogView: React.FC = () => {
                     <td className="px-3 py-2 max-w-48 truncate">{f.reason}</td>
                   </tr>
                   {open && (
-                    <tr className="border-t border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/40">
+                    <tr className="border-t border-border bg-surface-3">
                       <td colSpan={7} className="px-3 py-2">
                         <p className="font-bold mb-1">{t.audit.payload}</p>
-                        <pre className="whitespace-pre-wrap text-[11px] text-slate-600 dark:text-slate-300" dir="ltr">
+                        <pre className="whitespace-pre-wrap text-[11px] text-muted" dir="ltr">
                           {JSON.stringify(r.payload ?? null, null, 2)}
                         </pre>
                       </td>

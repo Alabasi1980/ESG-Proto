@@ -271,15 +271,15 @@ export const ClientDetailView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60">
+      <div className="p-6 bg-surface-2 rounded-2xl border border-border">
         <h3 className="text-xl font-bold">{t.clientDetail.title}</h3>
-        <p className="text-xs text-slate-500 mt-1">{t.clientDetail.subtitle}</p>
+        <p className="text-xs text-muted mt-1">{t.clientDetail.subtitle}</p>
         <div className="mt-3 flex items-center gap-2">
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             disabled={!isGe}
-            className="flex-1 px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+            className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
           >
             <option value="">{t.clientDetail.selectTenant}</option>
             {tenants.map((c) => (
@@ -288,28 +288,28 @@ export const ClientDetailView: React.FC = () => {
               </option>
             ))}
           </select>
-          <button onClick={() => selected && fetchDetail(selected)} className="p-2 rounded-lg border" title={t.common.refresh}>
+          <button onClick={() => selected && fetchDetail(selected)} className="p-2 rounded-lg border border-border text-muted hover:bg-surface-3" title={t.common.refresh}>
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {error && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">{error}</div>}
-      {loading && <p className="text-xs text-slate-500">{t.common.loading}</p>}
+      {error && <div className="p-3 rounded-xl bg-danger-soft border border-danger text-danger text-xs">{error}</div>}
+      {loading && <p className="text-xs text-muted">{t.common.loading}</p>}
 
       {detail && (
         <>
-          <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
+          <div className="p-5 bg-surface-2 rounded-2xl border border-border">
             <h4 className="font-bold text-sm mb-2">{t.clientDetail.servicesTitle}</h4>
             <ul className="space-y-2">
               {detail.services.map((s) => (
-                <li key={s.id} className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                <li key={s.id} className="p-3 rounded-xl border border-border text-xs">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold">
                       {s.code} — {s.name}
                     </span>
                     {isGe && (
-                      <button onClick={() => handleUnlink(s.id)} title={t.clientDetail.unlinkBtn} className="p-1.5 rounded-lg border border-rose-200 text-rose-600">
+                      <button onClick={() => handleUnlink(s.id)} title={t.clientDetail.unlinkBtn} className="p-1.5 rounded-lg border border-danger text-danger">
                         <Unlink className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -332,7 +332,7 @@ export const ClientDetailView: React.FC = () => {
                         />
                         <span>{t.clientDetail.showCorrective}</span>
                       </label>
-                      <button onClick={() => handleSaveFlags(s.id)} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 text-white font-bold">
+                      <button onClick={() => handleSaveFlags(s.id)} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-brand text-brand-ink font-bold">
                         <Save className="w-3 h-3" /> {t.clientDetail.saveFlags}
                       </button>
                     </div>
@@ -342,7 +342,7 @@ export const ClientDetailView: React.FC = () => {
             </ul>
             {isGe && (
               <div className="mt-3 flex items-center gap-2">
-                <select value={linkServiceId} onChange={(e) => setLinkServiceId(e.target.value)} className="flex-1 px-3 py-2 rounded-xl text-xs border">
+                <select value={linkServiceId} onChange={(e) => setLinkServiceId(e.target.value)} className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                   <option value="">—</option>
                   {services
                     .filter((s) => !detail.services.some((x) => x.id === s.id))
@@ -352,7 +352,7 @@ export const ClientDetailView: React.FC = () => {
                       </option>
                     ))}
                 </select>
-                <button onClick={handleLink} disabled={!linkServiceId} className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold disabled:opacity-50">
+                <button onClick={handleLink} disabled={!linkServiceId} className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-brand text-brand-ink text-xs font-bold disabled:opacity-50">
                   <Link2 className="w-3.5 h-3.5" /> {t.clientDetail.linkService}
                 </button>
               </div>
@@ -360,29 +360,29 @@ export const ClientDetailView: React.FC = () => {
           </div>
 
           {isGe && (
-            <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
+            <div className="p-5 bg-surface-2 rounded-2xl border border-border">
               <h4 className="font-bold text-sm mb-1">{t.clientDetail.suspendTitle}</h4>
-              <p className="text-[11px] text-slate-500 mb-2">{t.clientDetail.suspendedNote}</p>
+              <p className="text-[11px] text-muted mb-2">{t.clientDetail.suspendedNote}</p>
               <button
                 onClick={() => handleSuspend(!detail.client.suspended)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold text-white ${detail.client.suspended ? 'bg-emerald-600' : 'bg-rose-600'}`}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-brand-ink ${detail.client.suspended ? 'bg-brand' : 'bg-danger'}`}
               >
                 {detail.client.suspended ? 'Unsuspend' : 'Suspend'}
               </button>
             </div>
           )}
 
-          <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
+          <div className="p-5 bg-surface-2 rounded-2xl border border-border">
             <h4 className="font-bold text-sm mb-2">{t.assignments.title}</h4>
             {!isGe && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                <span className="font-bold text-slate-700 dark:text-slate-200">{t.b16.assignGeOnlyTitle}. </span>
+              <p className="text-[11px] text-muted mb-3 leading-relaxed">
+                <span className="font-bold text-text">{t.b16.assignGeOnlyTitle}. </span>
                 {t.b16.assignGeOnlyDesc}
               </p>
             )}
             {isGe && (
             <form onSubmit={handleAssign} className="flex flex-col sm:flex-row gap-2 mb-3">
-              <select value={assignForm.itemId} onChange={(e) => setAssignForm({ ...assignForm, itemId: e.target.value })} required className="flex-1 px-3 py-2 rounded-xl text-xs border">
+              <select value={assignForm.itemId} onChange={(e) => setAssignForm({ ...assignForm, itemId: e.target.value })} required className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 <option value="">{t.assignments.itemLabel}…</option>
                 {items.slice(0, 500).map((i) => (
                   <option key={i.id} value={i.id}>
@@ -390,7 +390,7 @@ export const ClientDetailView: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <select value={assignForm.departmentId} onChange={(e) => setAssignForm({ ...assignForm, departmentId: e.target.value })} required className="flex-1 px-3 py-2 rounded-xl text-xs border">
+              <select value={assignForm.departmentId} onChange={(e) => setAssignForm({ ...assignForm, departmentId: e.target.value })} required className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 <option value="">{t.assignments.deptLabel}…</option>
                 {detail.departments.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -398,19 +398,19 @@ export const ClientDetailView: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">
+              <button type="submit" className="px-4 py-2 rounded-xl bg-brand text-brand-ink text-xs font-bold">
                 {t.assignments.assignBtn}
               </button>
             </form>
             )}
             <ul className="space-y-1 max-h-64 overflow-y-auto">
               {assignments.slice(0, 200).map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border text-[11px]">
+                <li key={a.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border text-[11px]">
                   <span>
                     {a.item_code} → {a.department_name}
                   </span>
                   {isGe && (
-                    <button onClick={() => handleUnassign(a.item_id, a.department_id)} className="px-2 py-1 rounded-lg border border-rose-200 text-rose-600 font-bold">
+                    <button onClick={() => handleUnassign(a.item_id, a.department_id)} className="px-2 py-1 rounded-lg border border-danger text-danger font-bold">
                       {t.assignments.unassignBtn}
                     </button>
                   )}
@@ -418,8 +418,8 @@ export const ClientDetailView: React.FC = () => {
               ))}
             </ul>
             {isGe && (
-            <form onSubmit={handleNa} className="mt-4 pt-4 border-t grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <select value={naForm.itemId} onChange={(e) => setNaForm({ ...naForm, itemId: e.target.value })} required className="px-3 py-2 rounded-xl text-xs border">
+            <form onSubmit={handleNa} className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <select value={naForm.itemId} onChange={(e) => setNaForm({ ...naForm, itemId: e.target.value })} required className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 <option value="">Item…</option>
                 {items.slice(0, 500).map((i) => (
                   <option key={i.id} value={i.id}>
@@ -427,7 +427,7 @@ export const ClientDetailView: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <select value={naForm.departmentId} onChange={(e) => setNaForm({ ...naForm, departmentId: e.target.value })} required className="px-3 py-2 rounded-xl text-xs border">
+              <select value={naForm.departmentId} onChange={(e) => setNaForm({ ...naForm, departmentId: e.target.value })} required className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 <option value="">Dept…</option>
                 {detail.departments.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -435,15 +435,15 @@ export const ClientDetailView: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <select value={naForm.naReason} onChange={(e) => setNaForm({ ...naForm, naReason: e.target.value })} className="px-3 py-2 rounded-xl text-xs border">
+              <select value={naForm.naReason} onChange={(e) => setNaForm({ ...naForm, naReason: e.target.value })} className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 {NA_REASONS.map((r) => (
                   <option key={r} value={r}>
                     {r}
                   </option>
                 ))}
               </select>
-              <input value={naForm.justification} onChange={(e) => setNaForm({ ...naForm, justification: e.target.value })} placeholder={t.assignments.justificationPh} className="px-3 py-2 rounded-xl text-xs border" />
-              <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-amber-600 text-white text-xs font-bold">
+              <input value={naForm.justification} onChange={(e) => setNaForm({ ...naForm, justification: e.target.value })} placeholder={t.assignments.justificationPh} className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text placeholder-muted" />
+              <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-warning text-brand-ink text-xs font-bold">
                 {t.assignments.naBtn}
               </button>
             </form>
@@ -451,14 +451,14 @@ export const ClientDetailView: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
+            <div className="p-5 bg-surface-2 rounded-2xl border border-border">
               <h4 className="font-bold text-sm mb-1">
                 {t.clientDetail.departmentsTitle} ({detail.departments.length})
-                {isGe && <span className="ms-2 text-[11px] font-semibold text-slate-500">· {t.b16.headTitle}</span>}
+                {isGe && <span className="ms-2 text-[11px] font-semibold text-muted">· {t.b16.headTitle}</span>}
               </h4>
-              {isGe && <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">{t.b16.headDesc}</p>}
+              {isGe && <p className="text-[11px] text-muted mb-3 leading-relaxed">{t.b16.headDesc}</p>}
               {headMsg && (
-                <div className={`mb-2 p-2.5 rounded-lg text-[11px] ${headMsg.kind === 'ok' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200'}`}>
+                <div className={`mb-2 p-2.5 rounded-lg text-[11px] ${headMsg.kind === 'ok' ? 'bg-success-soft text-success-text' : 'bg-danger-soft text-danger'}`}>
                   {headMsg.text}
                 </div>
               )}
@@ -466,17 +466,17 @@ export const ClientDetailView: React.FC = () => {
                 {detail.departments.map((d) => {
                   const members = detail.users.filter((u) => u.department_id === d.id && u.role === 'employee');
                   return (
-                    <li key={d.id} className="p-2 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                    <li key={d.id} className="p-2 rounded-lg border border-border">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold">
                           {d.name} ({d.code})
                         </span>
                         {d.head_user_id ? (
-                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-full bg-info-soft text-info text-[10px] font-bold">
                             {t.b16.deptHeadBadge}: {d.head_name || d.head_user_id.slice(0, 8)}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400">{t.b16.headNone}</span>
+                          <span className="text-[10px] text-muted">{t.b16.headNone}</span>
                         )}
                       </div>
                       {isGe && (
@@ -484,7 +484,7 @@ export const ClientDetailView: React.FC = () => {
                           <select
                             value={headPick[d.id] ?? ''}
                             onChange={(e) => setHeadPick((p) => ({ ...p, [d.id]: e.target.value }))}
-                            className="flex-1 px-2 py-1.5 rounded-lg text-[11px] border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750"
+                            className="flex-1 px-2 py-1.5 rounded-lg text-[11px] border border-border-strong bg-surface-3 text-text"
                           >
                             <option value="">{t.b16.headLabel}…</option>
                             {members.map((m) => (
@@ -496,7 +496,7 @@ export const ClientDetailView: React.FC = () => {
                           <button
                             onClick={() => handleSetHead(d.id, false)}
                             disabled={headSaving === d.id || !(headPick[d.id] || '').trim()}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50"
+                            className="px-3 py-1.5 rounded-lg bg-brand text-brand-ink text-[11px] font-bold hover:bg-brand-strong disabled:opacity-50"
                           >
                             {t.b16.headAssign}
                           </button>
@@ -504,7 +504,7 @@ export const ClientDetailView: React.FC = () => {
                             <button
                               onClick={() => handleSetHead(d.id, true)}
                               disabled={headSaving === d.id}
-                              className="px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-[11px] font-bold disabled:opacity-50"
+                              className="px-3 py-1.5 rounded-lg border border-danger text-danger text-[11px] font-bold disabled:opacity-50"
                             >
                               {t.b16.headClear}
                             </button>
@@ -516,13 +516,13 @@ export const ClientDetailView: React.FC = () => {
                 })}
               </ul>
             </div>
-            <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border">
+            <div className="p-5 bg-surface-2 rounded-2xl border border-border">
               <h4 className="font-bold text-sm mb-2">{t.clientDetail.usersTitle} ({detail.users.length})</h4>
               <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
                 {detail.users.map((u) => (
                   <li key={u.id}>
                     {u.name} · {u.email} · {u.role}
-                    {u.must_change_password && <span className="text-amber-600"> · {t.clientDetail.mustChangeBadge}</span>}
+                    {u.must_change_password && <span className="text-warning-text"> · {t.clientDetail.mustChangeBadge}</span>}
                   </li>
                 ))}
               </ul>

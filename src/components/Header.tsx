@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
             dbConnected
-              ? 'bg-brand-soft text-brand border-brand'
+              ? 'bg-brand-soft text-brand-text border-brand'
               : 'bg-warning-soft text-warning border-warning'
           }`}
           title={dbConnected ? t.settings.connected : t.settings.disconnected}
@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-3 text-text hover:bg-surface-3 transition-colors"
           title={lang === 'en' ? 'تبديل إلى العربية' : 'Switch to English'}
         >
-          <Globe className="w-3.5 h-3.5 text-brand" />
+          <Globe className="w-3.5 h-3.5 text-brand-text" />
           <span>{lang === 'en' ? 'العربية' : 'English'}</span>
         </button>
       </div>

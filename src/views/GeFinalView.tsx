@@ -185,20 +185,20 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
   };
 
   return (
-    <div className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+    <div className="p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
       <div className="flex items-center gap-2 mb-1">
-        <Lock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-        <h3 className="text-sm font-bold text-slate-900 dark:text-white">{t.geFinal.title}</h3>
+        <Lock className="w-4 h-4 text-brand-text" />
+        <h3 className="text-sm font-bold text-text">{t.geFinal.title}</h3>
       </div>
-      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{t.geFinal.subtitle}</p>
+      <p className="text-[11px] text-muted mb-3">{t.geFinal.subtitle}</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">{t.users.tenantLabel}</label>
+          <label className="block text-[11px] font-semibold text-muted mb-1">{t.users.tenantLabel}</label>
           <select
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
-            className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] text-slate-900 dark:text-white"
+            className="w-full px-2.5 py-2 rounded-lg border border-border-strong bg-surface-3 text-[11px] text-text"
           >
             <option value="">{t.importGRI.selectTenantPlaceholder}</option>
             {tenants.map((tn) => (
@@ -209,24 +209,24 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
           </select>
         </div>
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">{t.geFinal.scopeLabel}</label>
+          <label className="block text-[11px] font-semibold text-muted mb-1">{t.geFinal.scopeLabel}</label>
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value as 'disclosure' | 'tenant')}
-            className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] text-slate-900 dark:text-white"
+            className="w-full px-2.5 py-2 rounded-lg border border-border-strong bg-surface-3 text-[11px] text-text"
           >
             <option value="disclosure">{t.geFinal.scopeDisclosure}</option>
             <option value="tenant">{t.geFinal.scopeTenant}</option>
           </select>
         </div>
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">{t.geFinal.disclosureLabel}</label>
+          <label className="block text-[11px] font-semibold text-muted mb-1">{t.geFinal.disclosureLabel}</label>
           <input
             value={scopeRef}
             onChange={(e) => setScopeRef(e.target.value)}
             disabled={scope === 'tenant'}
             placeholder={t.geFinal.selectDisclosure}
-            className="w-full px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] text-slate-900 dark:text-white placeholder:text-slate-400 disabled:opacity-50 font-mono"
+            className="w-full px-2.5 py-2 rounded-lg border border-border-strong bg-surface-3 text-[11px] text-text placeholder:text-muted disabled:opacity-50 font-mono"
             dir="ltr"
           />
         </div>
@@ -234,7 +234,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
           <button
             onClick={runCheck}
             disabled={checking || !tenantId}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-[11px] font-bold hover:bg-brand-strong disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
             <span>{checking ? t.geFinal.checking : t.geFinal.runCheck}</span>
@@ -243,7 +243,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
       </div>
 
       {error && (
-        <div className="mt-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-[11px] flex items-center gap-2">
+        <div className="mt-2 p-3 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -252,8 +252,8 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
         <div
           className={`mt-2 p-3 rounded-xl text-[11px] ${
             notice.kind === 'ok'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'
-              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
+              ? 'bg-success-soft text-success-text border border-success'
+              : 'bg-danger-soft text-danger border border-danger'
           }`}
         >
           {notice.text}
@@ -261,25 +261,25 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
       )}
 
       {check && (
-        <div className="mt-3 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
-          <h4 className="text-xs font-bold text-slate-900 dark:text-white mb-2">{t.geFinal.checklistTitle}</h4>
+        <div className="mt-3 p-3.5 rounded-xl border border-border">
+          <h4 className="text-xs font-bold text-text mb-2">{t.geFinal.checklistTitle}</h4>
           {check.alreadyFrozen && (
-            <p className="mb-2 px-2 py-1 rounded-full inline-block text-[10px] font-bold uppercase bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
+            <p className="mb-2 px-2 py-1 rounded-full inline-block text-[10px] font-bold uppercase bg-accent-soft text-text">
               {t.geFinal.frozenBadge} · {t.geFinal.alreadyFrozen}
             </p>
           )}
           {check.gate.ok ? (
-            <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">{t.geFinal.allClear}</p>
+            <p className="text-[11px] text-success-text font-semibold">{t.geFinal.allClear}</p>
           ) : (
             <div className="text-[11px]">
-              <p className="font-bold text-rose-700 dark:text-rose-300 mb-1">
+              <p className="font-bold text-danger mb-1">
                 {t.geFinal.blockedItems}: {(check.gate.incomplete || []).join(', ')}
               </p>
             </div>
           )}
           <ul className="mt-2 max-h-48 overflow-y-auto space-y-1 text-[11px]">
             {check.items.map((it) => (
-              <li key={it.itemId} className="flex items-center justify-between gap-2 font-mono text-slate-600 dark:text-slate-300">
+              <li key={it.itemId} className="flex items-center justify-between gap-2 font-mono text-muted">
                 <span>{it.code}</span>
                 <span className="font-sans font-semibold">
                   {it.notApplicable ? t.gapAnalysis.stNotApplicable : it.answerStatus === 'client_approved' ? t.gapAnalysis.stClientApproved : it.answerStatus || '—'}
@@ -290,17 +290,17 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
           </ul>
 
           {!check.alreadyFrozen && check.gate.ok && (
-            <div className="mt-3 p-3 rounded-xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800">
-              <p className="text-[11px] font-bold text-slate-900 dark:text-white mb-1">{t.geFinal.confirmTitle}</p>
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 mb-2">{t.geFinal.confirmDesc}</p>
-              <label className="flex items-start gap-2 text-[11px] text-slate-700 dark:text-slate-200 cursor-pointer mb-2">
-                <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 accent-rose-600" />
+            <div className="mt-3 p-3 rounded-xl bg-danger-soft/60 border border-danger">
+              <p className="text-[11px] font-bold text-text mb-1">{t.geFinal.confirmTitle}</p>
+              <p className="text-[11px] text-muted mb-2">{t.geFinal.confirmDesc}</p>
+              <label className="flex items-start gap-2 text-[11px] text-text cursor-pointer mb-2">
+                <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-0.5 accent-danger" />
                 <span>{t.geFinal.confirmCheck}</span>
               </label>
               <button
                 onClick={freeze}
                 disabled={freezing || !confirm}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-danger text-brand-ink text-[11px] font-bold hover:bg-danger/90 disabled:opacity-50 transition-colors"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>{freezing ? t.geFinal.freezing : t.geFinal.freezeBtn}</span>
@@ -312,11 +312,11 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
 
       {/* Snapshot viewer */}
       <div className="mt-4">
-        <h4 className="text-xs font-bold text-slate-900 dark:text-white mb-2">
+        <h4 className="text-xs font-bold text-text mb-2">
           {t.geFinal.snapshotTitle} ({snapshots.length})
         </h4>
         {snapshots.length === 0 && (
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.geFinal.snapshotEmpty}</p>
+          <p className="text-[11px] text-muted">{t.geFinal.snapshotEmpty}</p>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <ul className="space-y-2 max-h-72 overflow-y-auto">
@@ -326,23 +326,23 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
                   onClick={() => openSnapshot(s.id)}
                   className={`w-full text-start p-3 rounded-xl border transition-colors ${
                     selected?.snapshot.id === s.id
-                      ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/30'
-                      : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
+                      ? 'border-brand bg-brand-soft'
+                      : 'border-border hover:bg-surface-3'
                   }`}
                 >
                   <div className="flex items-center gap-2 text-[11px]">
-                    <FileCheck2 className="w-4 h-4 text-indigo-500 shrink-0" />
-                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                    <FileCheck2 className="w-4 h-4 text-brand-text shrink-0" />
+                    <span className="font-bold text-text">
                       {s.scope_type}: <span className="font-mono" dir="ltr">{s.scope_type === 'tenant' ? s.scope_ref.slice(0, 8) : s.scope_ref.slice(0, 8)}</span>
                     </span>
-                    <span className="ms-auto px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
+                    <span className="ms-auto px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-accent-soft text-text">
                       {t.geFinal.frozenBadge}
                     </span>
                   </div>
-                  <div className="mt-1 text-[10px] text-slate-400 font-mono break-all" dir="ltr">
+                  <div className="mt-1 text-[10px] text-muted font-mono break-all" dir="ltr">
                     {t.geFinal.hashLabel}: {s.content_hash}
                   </div>
-                  <div className="mt-0.5 text-[10px] text-slate-400">
+                  <div className="mt-0.5 text-[10px] text-muted">
                     {s.created_by_name || s.created_by} · {new Date(s.created_at).toLocaleString()} · {s.notes_count} notes
                   </div>
                 </button>
@@ -352,9 +352,9 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
 
           <div>
             {selected ? (
-              <div className="p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 text-[11px]">
-                <h5 className="text-xs font-bold text-slate-900 dark:text-white mb-2">{t.geFinal.viewerTitle}</h5>
-                <div className="space-y-1 text-slate-600 dark:text-slate-300">
+              <div className="p-3.5 rounded-xl border border-brand text-[11px]">
+                <h5 className="text-xs font-bold text-text mb-2">{t.geFinal.viewerTitle}</h5>
+                <div className="space-y-1 text-muted">
                   <div>{t.geFinal.aggregateLabel}: <span className="font-bold font-mono" dir="ltr">{selected.snapshot.payload?.aggregate ?? '—'}</span></div>
                   <div>{t.geFinal.coverageLabel}: <span className="font-bold font-mono" dir="ltr">{selected.snapshot.payload?.coveragePercentage ?? '—'}%</span></div>
                   <div>{t.geFinal.hashLabel}: <span className="font-mono break-all" dir="ltr">{selected.snapshot.content_hash}</span></div>
@@ -368,35 +368,35 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
                   </div>
                 </div>
                 <div className="mt-3">
-                  <label className="block font-semibold text-slate-600 dark:text-slate-300 mb-1">{t.geFinal.noteLabel}</label>
+                  <label className="block font-semibold text-muted mb-1">{t.geFinal.noteLabel}</label>
                   <div className="flex gap-2">
                     <input
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                       placeholder={t.geFinal.notePh}
                       maxLength={2000}
-                      className="flex-1 px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] text-slate-900 dark:text-white placeholder:text-slate-400"
+                      className="flex-1 px-2.5 py-2 rounded-lg border border-border-strong bg-surface-3 text-[11px] text-text placeholder:text-muted"
                     />
                     <button
                       onClick={addNote}
                       disabled={addingNote || !note.trim()}
-                      className="px-3 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                      className="px-3 py-2 rounded-lg bg-brand text-brand-ink font-bold hover:bg-brand-strong disabled:opacity-50 transition-colors"
                     >
                       {addingNote ? t.geFinal.addingNote : t.geFinal.addNote}
                     </button>
                   </div>
                   <ul className="mt-2 space-y-1.5 max-h-32 overflow-y-auto">
                     {selected.notes.map((n: any) => (
-                      <li key={n.id} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-750/50 border border-slate-100 dark:border-slate-700/40">
-                        <div className="text-slate-700 dark:text-slate-200">{n.note}</div>
-                        <div className="text-slate-400 mt-0.5">{n.created_by_name || n.created_by} · {new Date(n.created_at).toLocaleString()}</div>
+                      <li key={n.id} className="p-2 rounded-lg bg-surface-3 border border-border">
+                        <div className="text-text">{n.note}</div>
+                        <div className="text-muted mt-0.5">{n.created_by_name || n.created_by} · {new Date(n.created_at).toLocaleString()}</div>
                       </li>
                     ))}
                   </ul>
                 </div>
               </div>
             ) : (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 p-3 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+              <p className="text-[11px] text-muted p-3 text-center border border-dashed border-border rounded-xl">
                 {t.geFinal.viewerTitle}…
               </p>
             )}

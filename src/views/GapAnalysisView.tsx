@@ -12,13 +12,13 @@ interface GapAnalysisViewProps {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  not_evaluated: 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300',
-  draft: 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300',
-  submitted: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300',
-  approved: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300',
-  client_approved: 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300',
-  returned: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300',
-  not_applicable: 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300',
+  not_evaluated: 'bg-surface-3 text-muted',
+  draft: 'bg-info-soft text-info',
+  submitted: 'bg-warning-soft text-warning-text',
+  approved: 'bg-success-soft text-success-text',
+  client_approved: 'bg-accent-soft text-text',
+  returned: 'bg-danger-soft text-danger',
+  not_applicable: 'bg-surface-3 text-muted',
 };
 
 export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }) => {
@@ -84,8 +84,8 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center p-12 space-y-4">
-        <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
-        <p className="text-sm text-slate-500">{t.common.loading}</p>
+        <RefreshCw className="w-8 h-8 text-brand-text animate-spin" />
+        <p className="text-sm text-muted">{t.common.loading}</p>
       </div>
     );
   }
@@ -95,17 +95,17 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
   if (!error && items.length === 0) {
     return (
       <div className="space-y-6">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 p-8 md:p-12 text-center max-w-2xl mx-auto shadow-xs">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
+        <div className="bg-surface-2 rounded-2xl border border-border p-8 md:p-12 text-center max-w-2xl mx-auto shadow-xs">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-warning-soft flex items-center justify-center text-warning-text">
             <Scale className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{t.gapAnalysis.emptyTitle}</h3>
-          <p className="text-slate-600 dark:text-slate-300 text-xs max-w-md mx-auto mb-6 leading-relaxed">
+          <h3 className="text-xl font-bold text-text mb-2">{t.gapAnalysis.emptyTitle}</h3>
+          <p className="text-muted text-xs max-w-md mx-auto mb-6 leading-relaxed">
             {t.gapAnalysis.emptyDescription}
           </p>
           <button
             onClick={() => setActiveTab('import-gri')}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 text-xs transition-colors shadow-xs"
+            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-brand-ink font-medium hover:bg-brand-strong text-xs transition-colors shadow-xs"
           >
             <UploadCloud className="w-4 h-4" />
             <span>{t.gapAnalysis.emptyAction}</span>
@@ -117,14 +117,14 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 bg-surface-2 rounded-2xl border border-border shadow-xs">
         <div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">{t.gapAnalysis.queueTitle}</h3>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{t.gapAnalysis.queueSubtitle}</p>
+          <h3 className="text-lg font-bold text-text">{t.gapAnalysis.queueTitle}</h3>
+          <p className="text-[11px] text-muted mt-0.5">{t.gapAnalysis.queueSubtitle}</p>
         </div>
         <button
           onClick={fetchQueue}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs border border-slate-200 dark:border-slate-700"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-muted hover:bg-surface-3 text-xs border border-border"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           <span>{t.common.refresh}</span>
@@ -132,7 +132,7 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
       </div>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-3">
+        <div className="p-4 rounded-xl bg-danger-soft border border-danger text-danger text-xs flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -140,17 +140,17 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
         {/* Queue list */}
-        <div className="lg:col-span-2 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+        <div className="lg:col-span-2 p-4 bg-surface-2 rounded-2xl border border-border shadow-xs">
           <div className="flex items-center gap-2 mb-3 px-1">
-            <ClipboardList className="w-4 h-4 text-slate-500" />
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+            <ClipboardList className="w-4 h-4 text-muted" />
+            <span className="text-xs font-bold text-text">
               {t.gapAnalysis.queueTitle} ({items.length})
             </span>
           </div>
           {items.length === 0 && (
             <div className="p-4 text-center">
-              <p className="text-sm font-bold text-slate-900 dark:text-white mb-1">{t.gapAnalysis.emptyQueueTitle}</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">{t.gapAnalysis.emptyQueueDesc}</p>
+              <p className="text-sm font-bold text-text mb-1">{t.gapAnalysis.emptyQueueTitle}</p>
+              <p className="text-[11px] text-muted">{t.gapAnalysis.emptyQueueDesc}</p>
             </div>
           )}
           <ul className="space-y-2 max-h-[70vh] overflow-y-auto pe-1">
@@ -163,12 +163,12 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
                     onClick={() => setSelectedKey(key)}
                     className={`w-full text-start p-3 rounded-xl border transition-colors ${
                       active
-                        ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
+                        ? 'border-brand bg-brand-soft'
+                        : 'border-border hover:bg-surface-3'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                      <span className="text-[11px] font-mono font-bold text-brand-text">
                         {qi.code}
                       </span>
                       <span
@@ -177,10 +177,10 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
                         {statusLabel(qi.status)}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 line-clamp-2">
+                    <div className="text-[11px] text-muted mt-1 line-clamp-2">
                       {qi.requirement}
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-1">
+                    <div className="text-[10px] text-muted mt-1">
                       {qi.priority} · ×{qi.weight} · {qi.department_name}
                     </div>
                   </button>
@@ -199,9 +199,9 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
               onChanged={onChanged}
             />
           ) : (
-            <div className="p-8 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-xs text-center">
-              <Scale className="w-10 h-10 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t.gapAnalysis.selectPrompt}</p>
+            <div className="p-8 bg-surface-2 rounded-2xl border border-border shadow-xs text-center">
+              <Scale className="w-10 h-10 mx-auto mb-3 text-muted" />
+              <p className="text-xs text-muted">{t.gapAnalysis.selectPrompt}</p>
             </div>
           )}
         </div>

@@ -84,9 +84,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
       <div className="absolute top-6 end-6">
         <button
           onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-3 border border-border text-xs font-semibold text-muted hover:text-text hover:border-border-strong transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-2 border border-border text-xs font-semibold text-muted hover:text-text hover:border-border-strong transition-colors"
         >
-          <Globe className="w-4 h-4 text-brand" />
+          <Globe className="w-4 h-4 text-brand-text" />
           <span>{lang === 'en' ? 'العربية' : 'English'}</span>
         </button>
       </div>
@@ -104,11 +104,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-        <div className="bg-surface-3 py-8 px-6 sm:px-10 shadow-[var(--shadow)] rounded-2xl">
+        <div className="bg-surface-2 py-8 px-6 sm:px-10 shadow-[var(--shadow)] rounded-2xl">
           {/* Notice when live DB is not yet set in environment */}
           {dbConfigured === false && (
-            <div className="mb-6 p-4 rounded-xl bg-surface-2 border border-border text-xs">
-              <div className="flex items-center gap-2 font-bold text-warning mb-1">
+            <div className="mb-6 p-4 rounded-xl bg-surface-3 border border-border text-xs">
+              <div className="flex items-center gap-2 font-bold text-warning-text mb-1">
                 <Database className="w-4 h-4 shrink-0" />
                 <span>{t.auth.dbUnconfiguredNotice}</span>
               </div>
@@ -160,7 +160,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t.auth.emailPlaceholder}
                   dir="ltr"
-                  className="w-full ps-9 pe-4 py-2.5 rounded-xl text-xs bg-surface-2 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/30 focus:border-focus-ring"
+                  className="w-full ps-9 pe-4 py-2.5 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/30 focus:border-focus-ring"
                 />
               </div>
             </div>
@@ -177,7 +177,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t.auth.passwordPlaceholder}
-                  className="w-full ps-9 pe-4 py-2.5 rounded-xl text-xs bg-surface-2 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/30 focus:border-focus-ring"
+                  className="w-full ps-9 pe-4 py-2.5 rounded-xl text-xs bg-surface-3 border border-border-strong text-text placeholder-muted focus:outline-none focus:ring-2 focus:ring-focus-ring/30 focus:border-focus-ring"
                 />
               </div>
             </div>
@@ -197,7 +197,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
               <button
                 type="button"
                 onClick={onSwitchToSetup}
-                className="text-xs text-brand-strong font-semibold hover:underline"
+                className="text-xs text-brand-text font-semibold hover:underline"
               >
                 {t.setup.title} →
               </button>
