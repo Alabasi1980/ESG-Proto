@@ -6,7 +6,7 @@ import { requireDomainAccess } from '../access.ts';
 import { scopedProfile, scopeError, scopeId } from '../scope.ts';
 import { calculateEsgProfileScore } from '../../lib/esgProfile.ts';
 import { esgProfileTextToRating } from '../../lib/initiatives.ts';
-import { requireFreshPassword, isFrozenScope } from './_shared.ts';
+import { requireFreshPassword, isFrozenScope, platformConfigContext } from './_shared.ts';
 import { domainTransaction, configurationService, domainFailure, domainTenant, textFilter, validateDomainIds } from './initiativeScope.ts';
 
 // Natural key stays client/pillar/department/topic/parameter, NOT service. An
@@ -36,10 +36,12 @@ export function registerProfileRoutes(router: Router) {
   router.post('/esg-profile/import', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
     try {
       validateDomainIds(req);
-      const tenant = domainTenant(req, req.body?.clientId), service = scopeId(req.body?.serviceId, true)!;
+      const service = scopeId(req.body?.serviceId, true)!;
       if (!Array.isArray(req.body?.rows) || !req.body.rows.length) throw scopeError(400, 'profile.rows_required');
       const rows = req.body.rows.map(profileInput), importBatchId = `esg_${randomUUID()}`;
       const result = await domainTransaction(req, async client => {
+        validateDomainIds(req);
+        const tenant = domainTenant(req, req.body?.clientId);
         await configurationService(client, tenant, service);
         const frozen = await isFrozenScope(client, tenant);
         let inserted = 0, updated = 0, skipped = 0;
@@ -70,7 +72,7 @@ export function registerProfileRoutes(router: Router) {
         const all = await client.query('SELECT profile_rating FROM esg_profile WHERE client_id=$1 AND service_id=$2', [tenant,service]);
         return { inserted,updated,skipped,skippedFrozen,skippedFrozenReason:reason,count:inserted+updated,importBatchId,
           ...calculateEsgProfileScore(all.rows) };
-      }, tenant);
+      }, live => platformConfigContext(live, domainTenant(live, req.body?.clientId)));
       res.json({ success:true,...result });
     } catch (err: any) {
       domainFailure(res, ['42501','23505'].includes(err?.code) ? scopeError(409, 'profile.service_conflict') : err,
@@ -82,6 +84,7 @@ export function registerProfileRoutes(router: Router) {
     try {
       validateDomainIds(req);
       const data = await domainTransaction(req, async client => {
+        validateDomainIds(req);
         domainTenant(req, req.query.clientId);
         const rows = (await scopedProfile(client, req.access!, req.query.serviceId)).map(row => ({
           id:row.id,pillar:row.pillar,department:row.department,topic:row.topic,parameter:row.parameter,

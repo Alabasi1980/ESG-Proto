@@ -14,7 +14,8 @@
 // no credential fields.
 
 import type { Response } from 'express';
-import { withTenantContext, recordAuditLog } from '../../db/index.ts';
+import { recordAuditLog } from '../../db/index.ts';
+import { domainTransaction } from './initiativeScope.ts';
 import type { AuthenticatedRequest } from '../auth.ts';
 import {
   calculateAggregateScore,
@@ -38,8 +39,8 @@ const SUBMITTED_STATUSES = ['submitted', 'approved', 'client_approved'];
 /** §3.4 row 20 — P@T target; W bound A; C own company (E refused by the matrix). */
 export async function listStaffLists(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const { context, tenant } = adminTenantContext(req, req.query.clientId);
-    const rows = await withTenantContext(context, async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const { tenant } = adminTenantContext(req, req.query.clientId);
       const lists = await client.query(
         `SELECT sl.id, sl.client_id, sl.status, sl.note, sl.reject_reason, sl.created_at, sl.decided_at,
                 c.code AS client_code, c.name AS client_name,
@@ -64,7 +65,7 @@ export async function listStaffLists(req: AuthenticatedRequest, res: Response): 
         list.rows = rRes.rows.map((r: any) => stripSecrets(r));
       }
       return lists.rows;
-    });
+    }, live => adminTenantContext(live, req.query.clientId).context);
     res.json({ items: rows, count: rows.length });
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch staff lists');
@@ -75,13 +76,13 @@ export async function listStaffLists(req: AuthenticatedRequest, res: Response): 
  * + its rows, validated departments, freeze checked, audited. No provisioning. */
 export async function createStaffList(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
     const body = req.body ?? {};
-    const tenant = ownTenant(access, body.clientId);
     const validation = validateStaffListRows(body.rows);
     if (!validation.ok) { res.status(validation.status).json({ error: validation.error }); return; }
     const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
-    const created = await withTenantContext(readContext(req), async (client) => {
+    const created = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const tenant = ownTenant(access, body.clientId);
       const cRes = await client.query('SELECT id FROM clients WHERE id = $1', [tenant]);
       if (!cRes.rows[0]) throw Object.assign(new Error('Target tenant not found.'), { statusCode: 404 });
       if (await isFrozenScope(client, tenant, null)) throw frozenWriteError();
@@ -130,7 +131,7 @@ export async function createStaffList(req: AuthenticatedRequest, res: Response):
         payload: { targetTenant: tenant, rows: validation.rows.length },
       });
       return { ...listRes.rows[0], rows: validation.rows.length };
-    });
+    }, readContext);
     res.status(201).json(created);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to create staff list');
@@ -141,9 +142,9 @@ export async function createStaffList(req: AuthenticatedRequest, res: Response):
  * provisioning (status moves to 'submitted' only). */
 export async function submitStaffList(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
     const listId = scopeId(req.params.id, true)!;
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const cur = await client.query(
         'SELECT id, client_id, status FROM staff_lists WHERE id = $1 AND client_id = $2',
         [listId, access.tenantId]
@@ -175,7 +176,7 @@ export async function submitStaffList(req: AuthenticatedRequest, res: Response):
         payload: { targetTenant: list.client_id },
       });
       return upd.rows[0];
-    });
+    }, readContext);
     res.json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to submit staff list');
@@ -186,15 +187,12 @@ export async function submitStaffList(req: AuthenticatedRequest, res: Response):
  * submitted-list gates, NO provisioning (status → 'rejected' only). */
 export async function rejectStaffList(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
-    const platform = access.mode === 'platform';
-    const target = platform ? platformTarget(req.body?.clientId) : null;
-    const tenant = platform ? target! : access.tenantId;
     const listId = scopeId(req.params.id, true)!;
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
     if (!reason) { res.status(400).json({ error: 'A rejection reason is required.' }); return; }
-    const context = platform ? platformConfigContext(req, target!) : readContext(req);
-    const result = await withTenantContext(context, async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const tenant = access.mode === 'platform' ? platformTarget(req.body?.clientId) : access.tenantId;
       const cur = await client.query(
         `SELECT id, client_id, status, submitted_by FROM staff_lists
          WHERE id = $1 AND client_id = $2`,
@@ -246,7 +244,8 @@ export async function rejectStaffList(req: AuthenticatedRequest, res: Response):
         }
       }
       return upd.rows[0];
-    });
+    }, live => live.access!.mode === 'platform'
+      ? platformConfigContext(live, platformTarget(req.body?.clientId)) : readContext(live));
     res.json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to reject staff list');
@@ -259,9 +258,9 @@ export async function rejectStaffList(req: AuthenticatedRequest, res: Response):
  * branch stays as the second ring behind requireDomainAccess. */
 export async function clientDashboard(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
-    const tenant = ownTenant(access, req.query.clientId);
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const tenant = ownTenant(access, req.query.clientId);
       const cRes = await client.query(
         'SELECT id, code, name, suspended FROM clients WHERE id = $1', [tenant]);
       const tenantRow = cRes.rows[0];
@@ -360,7 +359,7 @@ export async function clientDashboard(req: AuthenticatedRequest, res: Response):
         },
         departments: gapVisible ? departments : departments.map((d) => ({ ...d, score: null, coveragePercentage: null })),
       };
-    });
+    }, readContext);
     res.json(data);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to build client dashboard');

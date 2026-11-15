@@ -10,9 +10,7 @@
 // stays append-only).
 
 import express, { type Response } from 'express';
-import {
-  withTenantContext,
-} from '../../db/index.ts';
+import { domainTransaction, boundaryFailure, DeferredRefusal } from './initiativeScope.ts';
 import {
   authMiddleware,
   type AuthenticatedRequest,
@@ -30,7 +28,6 @@ const DEFAULT_LIMIT = 50;
 /** B12 (S-24): audit read UI data — who/what/when/before-after/reason + filters. */
 router.get('/audit-log', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const q = req.query as Record<string, unknown>;
     const action = typeof q.action === 'string' && q.action.trim() ? q.action.trim() : null;
     const entityType = typeof q.entityType === 'string' && q.entityType.trim() ? q.entityType.trim() : null;
@@ -47,11 +44,10 @@ router.get('/audit-log', authMiddleware, requireDomainAccess, async (req: Authen
     // §3 preamble: an explicit client filter may only NARROW to the caller's
     // own context. P has no client scope at all (platform events only), so any
     // clientId is an explicit mismatch; W may name only its own A.
-    if (clientId && clientId !== access.tenantId) {
-      return res.status(403).json({ error: 'Cross-tenant audit access is forbidden.', code: 'audit.forbidden' });
-    }
-
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (clientId && clientId !== access.tenantId)
+        throw new DeferredRefusal(403, { error: 'Cross-tenant audit access is forbidden.', code: 'audit.forbidden' });
       const params: any[] = [];
       const clauses: string[] = [];
       if (action) {
@@ -96,10 +92,12 @@ router.get('/audit-log', authMiddleware, requireDomainAccess, async (req: Authen
         params
       );
       return { items: result.rows, count: result.rows.length, limit, offset };
-    });
+    }, readContext);
 
     res.json(data);
   } catch (err: any) {
+    if (err instanceof DeferredRefusal) { res.status(err.statusCode).json(err.body); return; }
+    if (boundaryFailure(res, err)) return;
     console.error('Audit log read error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to read audit log' });
   }

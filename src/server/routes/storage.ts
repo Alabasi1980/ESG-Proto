@@ -14,7 +14,6 @@
 import express, { type Response } from 'express';
 import multer from 'multer';
 import {
-  withTenantContext,
   recordAuditLog,
 } from '../../db/index.ts';
 import {
@@ -22,6 +21,7 @@ import {
   type AuthenticatedRequest,
 } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal } from './initiativeScope.ts';
 import { scopeId } from '../scope.ts';
 import {
   validateAttachment,
@@ -84,7 +84,6 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
         }
         return res.status(400).json({ error: multerErr.message || 'Upload failed.', code: 'attachments.upload' });
       }
-      const access = req.access!;
       const file = (req as any).file;
       if (!file) {
         return res.status(400).json({ error: 'A file field named "file" is required.', code: 'attachments.missing' });
@@ -100,7 +99,8 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
         });
       }
 
-      const created = await withTenantContext(readContext(req), async (client) => {
+      const created = await domainTransaction(req, async (client) => {
+        const access = req.access!;
         const answer = await loadVisibleAnswer(client, access, req.params.id);
         if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
           throw frozenWriteError();
@@ -129,10 +129,11 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
         });
 
         return insRes.rows[0];
-      });
+      }, readContext);
 
       res.status(201).json(created);
     } catch (err: any) {
+      if (deferredFailure(res, err)) return;
       console.error('Attachment upload error:', err);
       const mapped = toFrozenError(err);
       res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to upload attachment' });
@@ -143,8 +144,8 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
 // B9-D2. List metadata (never bulk bytes).
 router.get('/answers/:id/attachments', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       await loadVisibleAnswer(client, access, req.params.id);
       const result = await client.query(
         `SELECT ea.id, ea.answer_id, ea.file_name, ea.mime, ea.size_bytes,
@@ -156,10 +157,11 @@ router.get('/answers/:id/attachments', authMiddleware, requireDomainAccess, asyn
         [req.params.id]
       );
       return result.rows;
-    });
+    }, readContext);
 
     res.json({ items: rows, count: rows.length });
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Attachments list error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attachments' });
   }
@@ -168,8 +170,8 @@ router.get('/answers/:id/attachments', authMiddleware, requireDomainAccess, asyn
 // B9-D2. Single-file download stream (attachId must belong to that answer).
 router.get('/answers/:id/attachments/:attachId/download', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const file = await withTenantContext(readContext(req), async (client) => {
+    const file = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const answer = await loadVisibleAnswer(client, access, req.params.id);
       const fileRes = await client.query('SELECT * FROM evidence_attachments WHERE id = $1 AND answer_id = $2', [
         req.params.attachId,
@@ -179,13 +181,14 @@ router.get('/answers/:id/attachments/:attachId/download', authMiddleware, requir
         throw Object.assign(new Error('Attachment not found.'), { statusCode: 404 });
       }
       return fileRes.rows[0];
-    });
+    }, readContext);
 
     res.setHeader('Content-Type', file.mime);
     res.setHeader('Content-Length', String(file.size_bytes));
     res.setHeader('Content-Disposition', `attachment; filename="${String(file.file_name).replace(/"/g, '')}"`);
     res.send(file.data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Attachment download error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to download attachment' });
   }
@@ -194,8 +197,8 @@ router.get('/answers/:id/attachments/:attachId/download', authMiddleware, requir
 // B9-D2. Delete (§3.6: E own uploader OR W scoped GE authority; C/P denied).
 router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    await withTenantContext(readContext(req), async (client) => {
+    await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const answer = await loadVisibleAnswer(client, access, req.params.id);
       if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
         throw frozenWriteError();
@@ -233,10 +236,11 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
         entityId: file.id,
         payload: { answerId: answer.id, fileName: file.file_name, sizeBytes: file.size_bytes },
       });
-    });
+    }, readContext);
 
     res.json({ success: true });
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Attachment delete error:', err);
     const mapped = toFrozenError(err);
     res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to delete attachment' });
@@ -251,22 +255,18 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
 // rather than true counts — deferred to a later platform-summary round.
 router.get('/storage/usage', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const namedClient = typeof req.query.clientId === 'string' && req.query.clientId.trim() ? req.query.clientId.trim() : null;
-    let tenantId: string;
-    if (namedClient) {
-      const id = scopeId(namedClient, true)!; // malformed -> 400 scope.id_invalid
-      if (access.mode !== 'platform' && id !== access.tenantId) {
-        return res.status(403).json({ error: 'Cross-tenant storage access is forbidden.', code: 'scope.tenant_mismatch' });
-      }
-      tenantId = id;
-    } else if (access.mode === 'platform') {
-      return res.status(400).json({ error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
-    } else {
-      tenantId = access.tenantId!;
-    }
-
-    const usage = await withTenantContext(readContext(req), async (client) => {
+    const usage = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      let tenantId: string;
+      if (namedClient) {
+        const id = scopeId(namedClient, true)!;
+        if (access.mode !== 'platform' && id !== access.tenantId)
+          throw new DeferredRefusal(403, { error: 'Cross-tenant storage access is forbidden.', code: 'scope.tenant_mismatch' });
+        tenantId = id;
+      } else if (access.mode === 'platform') {
+        throw new DeferredRefusal(400, { error: 'No tenant selected. As a platform admin, choose a tenant (clientId).' });
+      } else tenantId = access.tenantId!;
       const result = await client.query(
         `SELECT COUNT(*)::int AS files, COALESCE(SUM(ea.size_bytes), 0)::int AS bytes
           FROM evidence_attachments ea
@@ -285,10 +285,11 @@ router.get('/storage/usage', authMiddleware, requireDomainAccess, async (req: Au
         warn: bytes >= STORAGE_WARN_BYTES,
         capNote: 'Demo database capacity is 1 GB. Attachments warn at 800 MB; production object-storage migration is out of scope (OD-06).',
       };
-    });
+    }, readContext);
 
     res.json(usage);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Storage usage error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch storage usage' });
   }

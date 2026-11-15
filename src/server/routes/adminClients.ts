@@ -17,7 +17,8 @@
 // carries no progress block: §6 defines the progress response for P only.
 
 import type { Response } from 'express';
-import { withTenantContext, recordAuditLog } from '../../db/index.ts';
+import { recordAuditLog } from '../../db/index.ts';
+import { domainTransaction } from './initiativeScope.ts';
 import type { AuthenticatedRequest } from '../auth.ts';
 import { stripSecrets } from '../../lib/b11b.ts';
 import { readContext, platformConfigContext, writeFailure, type DbClient } from './_shared.ts';
@@ -141,10 +142,10 @@ async function clientProgressByTenant(client: DbClient): Promise<Map<string, Ser
 /** GET /clients — P searchable list + per-linked-service progress; C own minimal row. */
 export async function listClients(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
     const search = searchableFilter(req.query.search);
-    if (access.mode === 'platform') {
-      const rows = await withTenantContext(platformGlobalContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (access.mode === 'platform') {
         const params: any[] = [];
         let where = '';
         if (search) { params.push(search); where = ' WHERE (name ILIKE $1 OR code ILIKE $1)'; }
@@ -156,16 +157,13 @@ export async function listClients(req: AuthenticatedRequest, res: Response): Pro
           suspended: row.suspended === true,
           services: progress.get(row.id) ?? [],
         }));
-      });
-      res.json(rows); return;
-    }
-    // C: the OWN company row in the existing array shape — no enumeration, no
-    // progress block (the supplied clientId, if any, is a comparison only).
-    const tenant = ownTenant(access, req.query.clientId);
-    const rows = await withTenantContext(readContext(req), async (client) =>
-      (await client.query(
-        `SELECT ${CLIENT_COLUMNS} FROM clients WHERE id = $1 ORDER BY name ASC`, [tenant])).rows);
-    res.json(rows.map(row => ({ ...row, suspended: row.suspended === true })));
+      }
+      const tenant = ownTenant(access, req.query.clientId);
+      return (await client.query(
+        `SELECT ${CLIENT_COLUMNS} FROM clients WHERE id = $1 ORDER BY name ASC`, [tenant])).rows
+        .map(row => ({ ...row, suspended: row.suspended === true }));
+    }, live => live.access!.mode === 'platform' ? platformGlobalContext(live) : readContext(live));
+    res.json(rows);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch clients');
   }
@@ -179,7 +177,7 @@ export async function createClient(req: AuthenticatedRequest, res: Response): Pr
     if (typeof code !== 'string' || !code.trim() || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Client code and name are required.' }); return;
     }
-    const newClient = await withTenantContext(platformGlobalContext(req), async (client) => {
+    const newClient = await domainTransaction(req, async (client) => {
       const result = await client.query(
         `INSERT INTO clients (code, name, industry, contact_email)
          VALUES ($1, $2, $3, $4)
@@ -198,7 +196,7 @@ export async function createClient(req: AuthenticatedRequest, res: Response): Pr
         payload: { code: created.code, name: created.name },
       });
       return created;
-    });
+    }, platformGlobalContext);
     res.json(newClient);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to create client tenant');
@@ -210,8 +208,8 @@ export async function createClient(req: AuthenticatedRequest, res: Response): Pr
  * §3.4 row 9). */
 export async function getClient(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const { context, tenant, platform } = adminTenantContext(req, req.params.id);
-    const data = await withTenantContext(context, async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const { tenant, platform } = adminTenantContext(req, req.params.id);
       const cRes = await client.query(
         `SELECT ${CLIENT_COLUMNS} FROM clients WHERE id = $1`, [tenant]);
       const clientRow = cRes.rows[0];
@@ -264,7 +262,7 @@ export async function getClient(req: AuthenticatedRequest, res: Response): Promi
             })),
         staffLists: staffRes.rows,
       };
-    });
+    }, live => adminTenantContext(live, req.params.id).context);
     res.json(data);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch client detail');
@@ -298,7 +296,7 @@ export async function updateClient(req: AuthenticatedRequest, res: Response): Pr
       sets.push(`industry = $${params.length}`);
     }
     if (sets.length === 0) { res.status(400).json({ error: 'Provide name and/or suspended to update.' }); return; }
-    const updated = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
       params.push(target);
       const upd = await client.query(
         `UPDATE clients SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}
@@ -317,7 +315,7 @@ export async function updateClient(req: AuthenticatedRequest, res: Response): Pr
         payload: { suspended: row.suspended },
       });
       return { ...row, suspended: row.suspended === true };
-    });
+    }, live => platformConfigContext(live, target));
     res.json(updated);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to update client');
@@ -328,8 +326,8 @@ export async function updateClient(req: AuthenticatedRequest, res: Response): Pr
  * projection (RLS parent.service fact narrows E to assigned services). */
 export async function listClientServices(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const { context, tenant } = adminTenantContext(req, req.params.id);
-    const rows = await withTenantContext(context, async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const { tenant } = adminTenantContext(req, req.params.id);
       const result = await client.query(
         `SELECT s.id, s.code, s.name, s.description, cs.show_gap, cs.show_corrective, cs.created_at AS linked_at
          FROM client_services cs JOIN services s ON s.id = cs.service_id
@@ -341,7 +339,7 @@ export async function listClientServices(req: AuthenticatedRequest, res: Respons
         showGap: r.show_gap !== false,
         showCorrective: r.show_corrective !== false,
       }));
-    });
+    }, live => adminTenantContext(live, req.params.id).context);
     res.json(rows);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch client services');
@@ -361,7 +359,7 @@ export async function linkClientService(req: AuthenticatedRequest, res: Response
     if (typeof showGap !== 'boolean' || typeof showCorrective !== 'boolean') {
       res.status(400).json({ error: 'showGap and showCorrective must be booleans.' }); return;
     }
-    const result = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
       const cRes = await client.query('SELECT id FROM clients WHERE id = $1', [target]);
       if (!cRes.rows[0]) throw Object.assign(new Error('Client not found.'), { statusCode: 404 });
       const sRes = await client.query('SELECT id, code FROM services WHERE id = $1', [serviceId]);
@@ -387,7 +385,7 @@ export async function linkClientService(req: AuthenticatedRequest, res: Response
         [target, serviceId]
       );
       return { linked: true, existed: !created, link: cur.rows[0] };
-    });
+    }, live => platformConfigContext(live, target));
     res.status(result.existed ? 200 : 201).json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to link service');
@@ -409,7 +407,7 @@ export async function updateClientServiceFlags(req: AuthenticatedRequest, res: R
     if (body.showGap === undefined && body.showCorrective === undefined) {
       res.status(400).json({ error: 'Provide showGap and/or showCorrective.' }); return;
     }
-    const updated = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
       const sets: string[] = [];
       const params: any[] = [];
       if (body.showGap !== undefined) {
@@ -437,7 +435,7 @@ export async function updateClientServiceFlags(req: AuthenticatedRequest, res: R
         payload: { clientId: target, serviceId, ...body },
       });
       return { ...row, showGap: row.show_gap !== false, showCorrective: row.show_corrective !== false };
-    });
+    }, live => platformConfigContext(live, target));
     res.json(updated);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to update client service flags');
@@ -452,7 +450,7 @@ export async function unlinkClientService(req: AuthenticatedRequest, res: Respon
   try {
     const target = platformTarget(req.params.id);
     const serviceId = scopeId(req.params.serviceId, true)!;
-    const result = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
       const del = await client.query(
         'DELETE FROM client_services WHERE client_id = $1 AND service_id = $2',
         [target, serviceId]
@@ -468,7 +466,7 @@ export async function unlinkClientService(req: AuthenticatedRequest, res: Respon
         payload: { clientId: target, serviceId },
       });
       return { unlinked: true };
-    });
+    }, live => platformConfigContext(live, target));
     res.json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to unlink service');

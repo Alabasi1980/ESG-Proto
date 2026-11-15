@@ -52,14 +52,15 @@ function assertCatalogTenant(req: AuthenticatedRequest) {
 router.get('/initiatives', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     validateDomainIds(req);
-    const platform = req.access!.mode === 'platform';
-    const view = textFilter(req.query.view, platform ? 'library' : 'selected');
-    if ((platform && view !== 'library') || (!platform && !['selected','eligible'].includes(view))
-      || (view === 'eligible' && req.access!.mode !== 'consultant')) throw scopeError(403, 'scope.initiatives_denied');
-    if (platform) assertCatalogTenant(req);
     const filters = ['sector','esg','department','search'].map(key => textFilter(req.query[key]));
     const service = scopeId(req.query.serviceId, req.query.serviceId !== undefined);
     const rows = await domainTransaction(req, async client => {
+      validateDomainIds(req);
+      const platform = req.access!.mode === 'platform';
+      const view = textFilter(req.query.view, platform ? 'library' : 'selected');
+      if ((platform && view !== 'library') || (!platform && !['selected','eligible'].includes(view))
+        || (view === 'eligible' && req.access!.mode !== 'consultant')) throw scopeError(403, 'scope.initiatives_denied');
+      if (platform) assertCatalogTenant(req);
       const tenant = platform ? null : domainTenant(req, req.query.clientId);
       if (!platform && service) await resolveLinkedService(client, req.access!, service);
       const result = await client.query(`SELECT l.id,l.title,l.sector,l.department,l.esg_class,
@@ -90,6 +91,7 @@ router.post('/initiatives', authMiddleware, requireFreshPassword, requireDomainA
     const sortOrder = body.sortOrder == null || body.sortOrder === '' ? null : Number(body.sortOrder);
     if (sortOrder !== null && !Number.isInteger(sortOrder)) throw scopeError(400, 'scope.sort_invalid');
     const result = await domainTransaction(req, async client => {
+      validateDomainIds(req);
       const row = (await client.query(`INSERT INTO initiatives_library(title,sector,department,esg_class,standards_ref,notes,sort_order,import_batch_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(title,sector) DO UPDATE SET
         department=EXCLUDED.department,esg_class=EXCLUDED.esg_class,standards_ref=EXCLUDED.standards_ref,
@@ -122,6 +124,7 @@ router.patch('/initiatives/:id', authMiddleware, requireFreshPassword, requireDo
     }
     if (sets.length === 1 && mappings === undefined) throw scopeError(400, 'scope.fields_required');
     const row = await domainTransaction(req, async client => {
+      validateDomainIds(req);
       values.push(id);
       let updated;
       try { updated = (await client.query(`UPDATE initiatives_library SET ${sets.join(',')} WHERE id=$${values.length} RETURNING *`, values)).rows[0]; }
@@ -144,6 +147,7 @@ router.post('/initiatives/select', authMiddleware, requireFreshPassword, require
     validateDomainIds(req);
     const id = scopeId(req.body?.initiativeId, true)!, service = scopeId(req.body?.serviceId);
     const result = await domainTransaction(req, async client => {
+      validateDomainIds(req);
       const tenant = domainTenant(req, req.body?.clientId);
       if (service) await resolveLinkedService(client, req.access!, service);
       await eligible(client, tenant, id, service);
@@ -164,6 +168,7 @@ router.delete('/initiatives/select/:id', authMiddleware, requireFreshPassword, r
     validateDomainIds(req);
     const id = scopeId(req.params.id, true)!, service = scopeId(req.query.serviceId);
     await domainTransaction(req, async client => {
+      validateDomainIds(req);
       const tenant = domainTenant(req, req.query.clientId);
       if (service) await resolveLinkedService(client, req.access!, service);
       await eligible(client, tenant, id, service);

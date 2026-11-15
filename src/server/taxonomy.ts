@@ -1,8 +1,9 @@
 import express, { type Response, type NextFunction } from 'express';
-import { withTenantContext, recordAuditLog } from '../db/index.ts';
+import { recordAuditLog } from '../db/index.ts';
+import { domainTransaction, boundaryFailure, DeferredRefusal } from './routes/initiativeScope.ts';
 import { authMiddleware, type AuthenticatedRequest } from './auth.ts';
 import { requireDomainAccess } from './access.ts';
-import { readContext, platformConfigContext, requireFreshPassword } from './routes/_shared.ts';
+import { readContext, requireFreshPassword } from './routes/_shared.ts';
 import { scopeId, scopeError } from './scope.ts';
 import {
   canonicalLinkPair,
@@ -69,7 +70,7 @@ function readFilter(value: unknown): string | null {
 // standards), so the aggregate cannot leak foreign parents or counts.
 router.get('/services', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
       const result = await client.query(
         `SELECT s.id, s.code, s.name, s.description, s.created_at,
                 COALESCE(
@@ -86,9 +87,10 @@ router.get('/services', authMiddleware, requireDomainAccess, validateTaxonomyIds
          ORDER BY s.code ASC`
       );
       return result.rows.map((r) => ({ ...r, standard_count: r.standards.length }));
-    });
+    }, readContext);
     res.json(rows);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch services' });
   }
 });
@@ -99,7 +101,7 @@ router.get('/services', authMiddleware, requireDomainAccess, validateTaxonomyIds
 router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const standardId = readFilter(req.query.standardId);
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
       const params: any[] = [];
       let where = '';
       if (standardId) {
@@ -119,9 +121,10 @@ router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomy
         params
       );
       return result.rows;
-    });
+    }, readContext);
     res.json(rows);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch disclosures' });
   }
 });
@@ -132,7 +135,7 @@ router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomy
 router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const disclosureId = readFilter(req.query.disclosureId);
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
       const params: any[] = [];
       let where = '';
       if (disclosureId) {
@@ -152,9 +155,10 @@ router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, a
         params
       );
       return result.rows;
-    });
+    }, readContext);
     res.json(rows);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch items' });
   }
 });
@@ -165,7 +169,6 @@ router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, a
 
 router.post('/services', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
     const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const description =
@@ -175,7 +178,8 @@ router.post('/services', authMiddleware, requireFreshPassword, requireDomainAcce
     if (!code) return res.status(400).json({ error: 'Service code is required.' });
     if (!name) return res.status(400).json({ error: 'Service name is required.' });
 
-    const created = await withTenantContext(platformConfigContext(req), async (client) => {
+    const created = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       let row;
       try {
         const ins = await client.query(
@@ -204,17 +208,17 @@ router.post('/services', authMiddleware, requireFreshPassword, requireDomainAcce
     });
     res.status(201).json(created);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create service' });
   }
 });
 
 router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const body = req.body ?? {};
     // Service code is the natural key: immutable after creation.
     if (typeof body.code === 'string' && body.code.trim() !== '') {
-      const cur = await withTenantContext(platformConfigContext(req), async (client) => {
+      const cur = await domainTransaction(req, async (client) => {
         const r = await client.query('SELECT code FROM services WHERE id = $1', [req.params.id]);
         return r.rows[0]?.code ?? null;
       });
@@ -243,7 +247,8 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Provide name and/or description to update.' });
     }
-    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE services SET ${sets.join(', ')} WHERE id = $${params.length}
@@ -264,6 +269,7 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
     });
     res.json(updated);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update service' });
   }
 });
@@ -271,7 +277,6 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
 // Duplicate a service with its standard links under a NEW code (S-04).
 router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
     if (!code) {
       return res.status(400).json({ error: 'A new service code is required for duplication.' });
@@ -281,7 +286,8 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
         ? req.body.name.trim()
         : null;
 
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const srcRes = await client.query('SELECT * FROM services WHERE id = $1', [req.params.id]);
       const src = srcRes.rows[0];
       if (!src) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
@@ -319,6 +325,7 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
     });
     res.status(201).json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to duplicate service' });
   }
 });
@@ -326,12 +333,12 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
 // Link / unlink a standard to a service (S-04).
 router.post('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const standardId =
       typeof req.body?.standardId === 'string' ? req.body.standardId.trim() : '';
     if (!standardId) return res.status(400).json({ error: 'standardId is required.' });
 
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const svc = await client.query('SELECT id, code FROM services WHERE id = $1', [req.params.id]);
       if (!svc.rows[0]) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
       const std = await client.query('SELECT id, code FROM standards WHERE id = $1', [standardId]);
@@ -355,20 +362,21 @@ router.post('/services/:id/standards', authMiddleware, requireFreshPassword, req
     });
     res.status(result.existed ? 200 : 201).json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to link standard' });
   }
 });
 
 router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const standardId =
       (typeof req.body?.standardId === 'string' && req.body.standardId.trim()) ||
       (typeof req.query.standardId === 'string' && req.query.standardId.trim()) ||
       '';
     if (!standardId) return res.status(400).json({ error: 'standardId is required.' });
 
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const del = await client.query(
         'DELETE FROM service_standards WHERE service_id = $1 AND standard_id = $2',
         [req.params.id, standardId]
@@ -387,6 +395,7 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, r
     });
     res.json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to unlink standard' });
   }
 });
@@ -401,7 +410,6 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, r
 
 router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const body = req.body ?? {};
     if (typeof body.code === 'string' && body.code.trim() !== '') {
       return res.status(400).json({
@@ -425,7 +433,8 @@ router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDoma
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Provide title and/or category to update.' });
     }
-    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE standards SET ${sets.join(', ')} WHERE id = $${params.length}
@@ -446,14 +455,15 @@ router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDoma
     });
     res.json(updated);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update standard' });
   }
 });
 
 router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const cur = await client.query('SELECT id, code FROM standards WHERE id = $1', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Standard not found.'), { statusCode: 404 });
@@ -486,13 +496,13 @@ router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDom
     });
     res.json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete standard' });
   }
 });
 
 router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const body = req.body ?? {};
     if (typeof body.code === 'string' && body.code.trim() !== '') {
       return res.status(400).json({
@@ -523,7 +533,8 @@ router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDo
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Provide title and/or description to update.' });
     }
-    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE disclosures SET ${sets.join(', ')} WHERE id = $${params.length}
@@ -544,14 +555,15 @@ router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDo
     });
     res.json(updated);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update disclosure' });
   }
 });
 
 router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const cur = await client.query('SELECT id, code FROM disclosures WHERE id = $1', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Disclosure not found.'), { statusCode: 404 });
@@ -582,6 +594,7 @@ router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireD
     });
     res.json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete disclosure' });
   }
 });
@@ -596,7 +609,6 @@ router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireD
 
 router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const validation = validateNewItem(req.body ?? {});
     if (!validation.ok) {
       return res.status(validation.status).json({ error: validation.error });
@@ -604,7 +616,8 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
     const v = validation.value;
     const disclosureId = String((req.body as any).disclosureId).trim();
 
-    const created = await withTenantContext(platformConfigContext(req), async (client) => {
+    const created = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const disc = await client.query('SELECT id, code FROM disclosures WHERE id = $1', [disclosureId]);
       if (!disc.rows[0]) throw Object.assign(new Error('Disclosure not found.'), { statusCode: 404 });
       if (v.departmentId) {
@@ -668,13 +681,13 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
     });
     res.status(201).json(created);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create item' });
   }
 });
 
 router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const body = req.body ?? {};
     if (
       (typeof body.code === 'string' && body.code.trim() !== '') ||
@@ -766,7 +779,8 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
       return res.status(400).json({ error: 'No editable field provided.' });
     }
 
-    const updated = await withTenantContext(platformConfigContext(req), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const cur = await client.query('SELECT id, code FROM items WHERE id = $1', [req.params.id]);
       if (!cur.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       if (departmentTouched) {
@@ -800,14 +814,15 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
     });
     res.json(updated);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update item' });
   }
 });
 
 router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       // Serialize FK writers before counting: no concurrent action insertion
       // may slip between a truthful count and the ON DELETE SET NULL edge.
       const cur = await client.query('SELECT id, code FROM items WHERE id = $1 FOR UPDATE', [req.params.id]);
@@ -851,6 +866,7 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
     });
     res.json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete item' });
   }
 });
@@ -867,7 +883,6 @@ function linkRefusal(status: number, error: string): { status: number; error: st
 
 router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const otherRaw = req.body?.otherItemId;
     const pair = canonicalLinkPair(req.params.id, otherRaw);
     if (!pair) {
@@ -886,7 +901,8 @@ router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDom
     }
     const [first, second] = pair;
 
-    const created = await withTenantContext(platformConfigContext(req), async (client) => {
+    const created = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const items = await client.query('SELECT id FROM items WHERE id = ANY($1)', [[first, second]]);
       if ((items.rowCount ?? 0) !== 2) {
         const mine = await client.query('SELECT id FROM items WHERE id = $1', [req.params.id]);
@@ -921,13 +937,13 @@ router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDom
     });
     res.status(201).json(created);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create item link' });
   }
 });
 
 router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     const linkId =
       (typeof req.body?.linkId === 'string' && req.body.linkId.trim()) ||
       (typeof req.query.linkId === 'string' && req.query.linkId.trim()) ||
@@ -940,7 +956,8 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireD
       return res.status(400).json({ error: 'Provide linkId or otherItemId to remove the link.' });
     }
 
-    const result = await withTenantContext(platformConfigContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       let del;
       if (linkId) {
         del = await client.query(
@@ -968,6 +985,7 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireD
     });
     res.json(result);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to remove item link' });
   }
 });
@@ -982,19 +1000,17 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireD
 // keeps its 403. Inaccessible item id stays the existing generic 404.
 router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const rawClientId = req.query.clientId;
     if (rawClientId !== undefined && rawClientId !== null && typeof rawClientId !== 'string') {
       throw scopeError(400, 'scope.id_invalid');
     }
     const explicitClient =
       typeof rawClientId === 'string' && rawClientId.trim() ? rawClientId.trim() : null;
-    if (explicitClient && (access.mode === 'platform' || explicitClient !== access.tenantId)) {
-      return res.status(403).json({ error: 'Cross-tenant link reads are forbidden.' });
-    }
-    const tenantId = access.mode === 'platform' ? null : access.tenantId;
-
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (explicitClient && (access.mode === 'platform' || explicitClient !== access.tenantId))
+        throw new DeferredRefusal(403, { error: 'Cross-tenant link reads are forbidden.' });
+      const tenantId = access.mode === 'platform' ? null : access.tenantId;
       const mine = await client.query('SELECT id FROM items WHERE id = $1', [req.params.id]);
       if (!mine.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       const links = await client.query(
@@ -1070,9 +1086,10 @@ router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxo
           state: evaluated ? 'evaluated' : 'not evaluated by your department',
         };
       });
-    });
+    }, readContext);
     res.json({ links: rows, count: rows.length });
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch item links' });
   }
 });

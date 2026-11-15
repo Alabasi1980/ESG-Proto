@@ -8,7 +8,8 @@
 // middleware stay in admin.ts.
 
 import type { Response } from 'express';
-import { withTenantContext, recordAuditLog } from '../../db/index.ts';
+import { recordAuditLog } from '../../db/index.ts';
+import { domainTransaction } from './initiativeScope.ts';
 import type { AuthenticatedRequest } from '../auth.ts';
 import { writeFailure } from './_shared.ts';
 import { platformGlobalContext } from './adminCommon.ts';
@@ -18,7 +19,7 @@ import { platformGlobalContext } from './adminCommon.ts';
  * assessment aggregate of any kind rides this projection. */
 export async function geOverview(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const data = await withTenantContext(platformGlobalContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
       const clients = (await client.query(
         `SELECT count(*)::int AS total,
                 count(*) FILTER (WHERE suspended IS NOT TRUE)::int AS active,
@@ -36,7 +37,7 @@ export async function geOverview(req: AuthenticatedRequest, res: Response): Prom
           pendingStaffLists,
         },
       };
-    });
+    }, platformGlobalContext);
     res.json(data);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to build GE overview');
@@ -59,7 +60,7 @@ export async function linkAllTenants(req: AuthenticatedRequest, res: Response): 
       res.status(400).json({ error: 'Explicit confirmation is required: pass { confirm: true } to run the bulk link.' });
       return;
     }
-    const result = await withTenantContext(platformGlobalContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
       const sRes = await client.query('SELECT id, code FROM services WHERE id = $1', [serviceId]);
       if (!sRes.rows[0]) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
       // Idempotent by PRE-FILTER (NOT EXISTS under the NULL-target read row of
@@ -86,7 +87,7 @@ export async function linkAllTenants(req: AuthenticatedRequest, res: Response): 
         payload: { serviceId, linked: ins.rowCount ?? 0 },
       });
       return { linked: ins.rowCount ?? 0, serviceCode: sRes.rows[0].code };
-    });
+    }, platformGlobalContext);
     res.json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to link service to all tenants');

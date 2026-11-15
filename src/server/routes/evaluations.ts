@@ -6,7 +6,6 @@
 
 import express, { type Response } from 'express';
 import {
-  withTenantContext,
   recordAuditLog,
 } from '../../db/index.ts';
 import {
@@ -39,6 +38,7 @@ import {
   type DbClient,
 } from './_shared.ts';
 import { requireDomainAccess } from '../access.ts';
+import { domainTransaction, DeferredRefusal, deferredFailure } from './initiativeScope.ts';
 import {
   LINKED_ITEM_SQL,
   SCOPED_ITEM_SQL,
@@ -206,19 +206,16 @@ async function versionedSnapshots(
 }
 
 /**
- * Enforces the caller's version against the lockstep pair. Returns null when
- * the caller may proceed; otherwise sends the 400/409 response (with BOTH
- * versions' {score, flags, evidence note, actor, time}) and returns the
- * snapshot for logging. Missing version → 400 (reload); mismatch → 409 (diff).
+ * Refusals carry the original wire body, but may leave the API only after
+ * rollback has settled. Missing version → 400; mismatch → 409.
  */
 async function enforcePairVersion(
-  res: Response,
   db: DbClient,
   evaluation: any | null,
   answer: any | null,
   provided: unknown,
   attempted: Record<string, unknown>
-): Promise<{ expectedVersion: number } | null> {
+): Promise<{ expectedVersion: number }> {
   const expected = evaluation?.version ?? 1;
   const answerVersion = answer?.version ?? 1;
   const snaps = await versionedSnapshots(db, evaluation, answer);
@@ -235,24 +232,24 @@ async function enforcePairVersion(
   };
   // Lockstep invariant: both rows bump together. A divergence is fail-closed.
   if (expected !== answerVersion) {
-    return void res.status(409).json({
+    throw new DeferredRefusal(409, {
       error:
         'This evaluation changed on the server (version drift). Reload the item to see the latest values, then retry.',
       code: 'version.conflict',
       conflict: { expectedVersion: expected, providedVersion: typeof provided === 'number' ? provided : null, ...snaps, attempted },
-    }) as unknown as null;
+    });
   }
   const check = checkVersion(outcome, provided, attempted);
   if (!check.ok) {
     const status = check.status;
-    return void res.status(status).json({
+    throw new DeferredRefusal(status, {
       error:
         status === 409
           ? 'Someone else updated this evaluation while you were editing (version conflict). Compare your values with the current ones below, reload, then retry.'
           : 'A version is required to save (optimistic locking). Reload the item and retry.',
       code: status === 409 ? 'version.conflict' : 'version.required',
       conflict: { expectedVersion: expected, providedVersion: check.conflict.providedVersion, ...snaps, attempted },
-    }) as unknown as null;
+    });
   }
   return { expectedVersion: expected };
 }
@@ -279,32 +276,31 @@ async function itemCodeFor(db: DbClient, itemId: string): Promise<string> {
 // they cannot resolve a platform identity under the bound 'work' purpose.
 router.get('/queue', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     // §9(b): a supplied departmentId is a UUID or a 400 — never a raw 22P02
     // escaping as a 500 from the uuid column comparison below.
     const namedDept = optionalScopeId(req.query.departmentId);
-    const tenantId = ownTenant(access, req.query.clientId);
-
-    if (access.mode === 'employee') {
-      if (!access.departmentId) {
-        return res.status(400).json({ error: 'Your user account has no department assignment.' });
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const tenantId = ownTenant(access, req.query.clientId);
+      if (access.mode === 'employee') {
+        if (!access.departmentId) {
+          throw new DeferredRefusal(400, { error: 'Your user account has no department assignment.' });
+        }
+        if (namedDept && namedDept !== access.departmentId) {
+          throw new DeferredRefusal(403, {
+            error: 'Employees may only access items assigned to their own department.',
+            code: 'scope.department_mismatch',
+          });
+        }
       }
-      if (namedDept && namedDept !== access.departmentId) {
-        return res.status(403).json({
-          error: 'Employees may only access items assigned to their own department.',
-          code: 'scope.department_mismatch',
-        });
-      }
-    }
-    // §9(c): the E department pin is an EXPLICIT handler-level predicate on the
-    // assignment row itself (`a.department_id = own`), asserted again on every
-    // returned row — it does not rest on FORCE RLS or on the imported
-    // EMPLOYEE_ITEM_SQL string. W/C keep departmentId as a narrowing filter
-    // only, never as authorization.
-    const ownDept = ownDepartment(access);
-    const deptFilter = ownDept ?? namedDept;
+      // §9(c): the E department pin is an EXPLICIT handler-level predicate on the
+      // assignment row itself (`a.department_id = own`), asserted again on every
+      // returned row — it does not rest on FORCE RLS or on the imported
+      // EMPLOYEE_ITEM_SQL string. W/C keep departmentId as a narrowing filter
+      // only, never as authorization.
+      const ownDept = ownDepartment(access);
+      const deptFilter = ownDept ?? namedDept;
 
-    const rows = await withTenantContext(readContext(req), async (client) => {
       // Fixed parameter contract of the scope.ts predicates: $1 trusted tenant,
       // $2 optional linked service (NULL = any linked service), $3 own E
       // department. An unlinked/unassigned row can never enter the set. The
@@ -340,13 +336,14 @@ router.get('/queue', authMiddleware, requireDomainAccess, async (req: Authentica
         ,
         params
       );
-      return result.rows.map((row) => ({ ...row, status: queueStatusFor(row) }));
-    });
-    // §9(c) defence-in-depth: refuse (never filter) if any E row leaked.
-    assertOwnDepartmentRows(access, rows);
+      const rows = result.rows.map((row) => ({ ...row, status: queueStatusFor(row) }));
+      assertOwnDepartmentRows(access, rows);
+      return rows;
+    }, readContext);
 
     res.json({ items: rows, count: rows.length });
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Queue fetch error:', err);
     readFailure(res, err, 'Failed to fetch evaluation queue');
   }
@@ -361,17 +358,9 @@ router.get('/queue', authMiddleware, requireDomainAccess, async (req: Authentica
 // 400 before any SQL (§9(b)).
 router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const access = req.access!;
     // B16-B1: employees own-dept ONLY. client_admin files nothing (confirm at
     // client scope instead); ge_admin never files fresh evaluations (GE rates
     // via reasoned correction, never by fresh evaluation).
-    if (user.role === 'client_admin') {
-      return res.status(403).json({ error: B16_CLIENT_CREATE_EVAL_REFUSAL });
-    }
-    if (user.role === 'ge_admin') {
-      return res.status(403).json({ error: B16_GE_CREATE_EVAL_REFUSAL });
-    }
     const body = req.body ?? {};
     const { score, notEvaluated, notApplicable, naReason, evidenceNote } = body;
 
@@ -417,22 +406,25 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
 
     // §3.3: tenant is always the caller's own (a supplied clientId compares,
     // never selects); the department is always the caller's own for E.
-    const clientId = ownTenant(access, body.clientId);
-    const ownDept = ownDepartment(access);
-    if (!ownDept) {
-      return res.status(403).json({ error: 'Your user account has no department assignment.', code: 'scope.department_mismatch' });
-    }
-    const namedDept = optionalScopeId(body.departmentId);
-    if (namedDept && namedDept !== ownDept) {
-      return res.status(403).json({
-        error: 'Employees may only access items assigned to their own department.',
-        code: 'scope.department_mismatch',
-      });
-    }
-    const departmentId = ownDept;
     const note = typeof evidenceNote === 'string' ? evidenceNote : '';
-
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const access = req.access!;
+      if (user.role === 'client_admin') throw new DeferredRefusal(403, { error: B16_CLIENT_CREATE_EVAL_REFUSAL });
+      if (user.role === 'ge_admin') throw new DeferredRefusal(403, { error: B16_GE_CREATE_EVAL_REFUSAL });
+      const clientId = ownTenant(access, body.clientId);
+      const ownDept = ownDepartment(access);
+      if (!ownDept) {
+        throw new DeferredRefusal(403, { error: 'Your user account has no department assignment.', code: 'scope.department_mismatch' });
+      }
+      const namedDept = optionalScopeId(body.departmentId);
+      if (namedDept && namedDept !== ownDept) {
+        throw new DeferredRefusal(403, {
+          error: 'Employees may only access items assigned to their own department.',
+          code: 'scope.department_mismatch',
+        });
+      }
+      const departmentId = ownDept;
       const assignRes = await client.query(
         'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
         [clientId, itemId, departmentId]
@@ -471,17 +463,13 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
         const existingAnsRes = existingAnswer.rows[0]
           ? await client.query('SELECT * FROM answers WHERE id = $1', [existingAnswer.rows[0].id])
           : { rows: [] };
-        const gate = await enforcePairVersion(
-          res,
+        await enforcePairVersion(
           client,
           existingEval.rows[0],
           existingAnsRes.rows[0] ?? null,
           body.version,
           { score, notEvaluated: finalNotEvaluated, notApplicable: finalNotApplicable, evidenceNote: note }
         );
-        if (!gate) {
-          throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
-        }
       }
 
       // Pair write WITHOUT `ON CONFLICT` and WITHOUT `RETURNING`:
@@ -555,12 +543,11 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
       });
 
       return { evaluation: evalRes.rows[0], answer: ansRes.rows[0] };
-    });
+    }, readContext);
 
     res.status(201).json(result);
   } catch (err: any) {
-    // B9-C: the version gate already sent the 400/409 response with the diff.
-    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+    if (deferredFailure(res, err)) return;
     console.error('Evaluation save error:', err);
     const mapped = toFrozenError(err);
     res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to save evaluation draft', code: errCode(err) });
@@ -602,11 +589,11 @@ export function submitActorGate(input: SubmitActorGateInput): SubmitActorGate {
 
 router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
     // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
     const evaluationId = scopeId(req.params.id, true)!;
 
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
       if (user.id !== evaluation.evaluator_id) {
@@ -644,16 +631,12 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, req
 
       // B9-C (A-15): submit requires the caller's answer version.
       const gate = await enforcePairVersion(
-        res,
         client,
         evaluation,
         answer,
         req.body?.version,
         { action: 'submit' }
       );
-      if (!gate) {
-        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
-      }
 
       const updRes = await client.query(
         `UPDATE answers SET status = 'submitted', version = version + 1, updated_at = NOW()
@@ -698,12 +681,11 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, req
       });
 
       return { evaluation, answer: updRes.rows[0] };
-    });
+    }, readContext);
 
       res.json(result);
     } catch (err: any) {
-      // B9-C: the version gate already sent the 400/409 response with the diff.
-      if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+      if (deferredFailure(res, err)) return;
       console.error('Evaluation submit error:', err);
       if (err?.statusCode === 409 && err?.conflictPayload) {
         return res.status(409).json({ error: err.message, ...err.conflictPayload });
@@ -731,7 +713,6 @@ async function handleEvaluationDecision(
   decision: 'approve' | 'return'
 ) {
   try {
-    const user = req.user!;
     // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
     const evaluationId = scopeId(req.params.id, true)!;
     const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
@@ -739,7 +720,8 @@ async function handleEvaluationDecision(
       return res.status(400).json({ error: 'A return comment is required so the department knows what to rework.' });
     }
 
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
 
       if (!answer) {
@@ -778,16 +760,12 @@ async function handleEvaluationDecision(
 
       // B9-C (A-15): approve/return requires the caller's answer version.
       const vgate = await enforcePairVersion(
-        res,
         client,
         evaluation,
         answer,
         req.body?.version,
         { decision, comment: comment || null }
       );
-      if (!vgate) {
-        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
-      }
 
       const nextStatus = decision === 'approve' ? 'approved' : 'returned';
       const approvalStatus = decision === 'approve' ? 'approved' : 'rejected';
@@ -867,12 +845,11 @@ async function handleEvaluationDecision(
       }
 
       return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0], selfApproved: gate.selfApproved };
-    });
+    }, readContext);
 
       res.json(result);
     } catch (err: any) {
-      // B9-C: the version gate already sent the 400/409 response with the diff.
-      if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+      if (deferredFailure(res, err)) return;
       console.error('Evaluation decision error:', err);
       if (err?.statusCode === 409 && err?.conflictPayload) {
         return res.status(409).json({ error: err.message, ...err.conflictPayload });
@@ -898,8 +875,6 @@ router.post('/evaluations/:id/return', authMiddleware, requireFreshPassword, req
 // evaluation, E corrects its own-department authored one.
 router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const access = req.access!;
     // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
     const evaluationId = scopeId(req.params.id, true)!;
     const body = req.body ?? {};
@@ -940,7 +915,9 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, req
       afterNotEvaluated = true;
     }
 
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const access = req.access!;
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
       // R + L (W) / R + L + D (E) at the handler boundary as well as under
       // FORCE RLS: an unlinked or foreign-department pair is a generic 404.
@@ -972,16 +949,12 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, req
 
       // B9-C (A-15): correction requires the caller's version.
       const gate = await enforcePairVersion(
-        res,
         client,
         evaluation,
         answer,
         body.version,
         { newScore, notEvaluated, notApplicable, naReason, reason: reason.trim() }
       );
-      if (!gate) {
-        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
-      }
 
       const before = {
         score: evaluation.score,
@@ -1031,12 +1004,11 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, req
       });
 
       return { evaluation: evalRes.rows[0], answer: ansRes.rows[0], before, after };
-    });
+    }, readContext);
 
     res.json(result);
   } catch (err: any) {
-    // B9-C: the version gate already sent the 400/409 response with the diff.
-    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+    if (deferredFailure(res, err)) return;
     console.error('Evaluation correction error:', err);
     if (err?.statusCode === 409 && err?.conflictPayload) {
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
@@ -1054,28 +1026,27 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, req
 // item — it is never the general audit feed.
 router.get('/evaluations', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const itemId = req.query.itemId;
     if (!itemId || typeof itemId !== 'string') {
       return res.status(400).json({ error: 'itemId query parameter is required.' });
     }
-    ownTenant(access, req.query.clientId);
-    if (access.mode === 'employee') {
-      if (!access.departmentId) {
-        return res.status(400).json({ error: 'Your user account has no department assignment.' });
-      }
-      // §9(b): malformed departmentId is a 400 BEFORE it can be compared.
-      const namedDept = optionalScopeId(req.query.departmentId);
-      if (namedDept && namedDept !== access.departmentId) {
-        return res.status(403).json({
-          error: 'Employees may only access items assigned to their own department.',
-          code: 'scope.department_mismatch',
-        });
-      }
-    }
     const id = scopeId(itemId, true)!;
-
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      ownTenant(access, req.query.clientId);
+      if (access.mode === 'employee') {
+        if (!access.departmentId) {
+          throw new DeferredRefusal(400, { error: 'Your user account has no department assignment.' });
+        }
+        // §9(b): malformed departmentId is a 400 BEFORE it can be compared.
+        const namedDept = optionalScopeId(req.query.departmentId);
+        if (namedDept && namedDept !== access.departmentId) {
+          throw new DeferredRefusal(403, {
+            error: 'Employees may only access items assigned to their own department.',
+            code: 'scope.department_mismatch',
+          });
+        }
+      }
       // L (+ D for E) at the handler boundary as well as under FORCE RLS.
       await assertVisibleItem(client, access, id);
       const itemRes = await client.query(
@@ -1136,10 +1107,11 @@ router.get('/evaluations', authMiddleware, requireDomainAccess, async (req: Auth
       }
 
       return { item: itemRes.rows[0], evaluation, answers, history };
-    });
+    }, readContext);
 
     res.json(data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Evaluation history error:', err);
     readFailure(res, err, 'Failed to fetch evaluation history');
   }
@@ -1163,18 +1135,17 @@ router.get('/evaluations', authMiddleware, requireDomainAccess, async (req: Auth
 // dept-approved; otherwise 409 naming departments.
 router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const access = req.access!;
     // §10 ruling 2 (Shield-06): OD-08 — GE never early-approves. The §3 matrix
     // (`C:R+L`) already refuses P/W before this handler; this is the explicit
     // handler-level twin so the rule does not rest on the dispatcher alone.
-    if (user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only client administrators may client-approve evaluations.' });
-    }
     // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
     const evaluationId = scopeId(req.params.id, true)!;
 
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const access = req.access!;
+      if (user.role !== 'client_admin')
+        throw new DeferredRefusal(403, { error: 'Only client administrators may client-approve evaluations.' });
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
       // R + L for C: own company and a linked item, asserted at the handler
       // boundary as well as under FORCE RLS.
@@ -1204,16 +1175,12 @@ router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassw
 
       // B9-C (A-15): client approval requires the caller's version.
       const gate = await enforcePairVersion(
-        res,
         client,
         evaluation,
         answer,
         req.body?.version,
         { action: 'client-approve' }
       );
-      if (!gate) {
-        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
-      }
 
       // Disclosure scope: every department assignment under the same disclosure.
       const itemRes = await client.query('SELECT disclosure_id FROM items WHERE id = $1', [evaluation.item_id]);
@@ -1291,11 +1258,11 @@ router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassw
       });
 
       return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
-    });
+    }, readContext);
 
     res.json(result);
   } catch (err: any) {
-    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+    if (deferredFailure(res, err)) return;
     console.error('Client approval error:', err);
     if (err?.statusCode === 409 && err?.conflictPayload) {
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
@@ -1310,13 +1277,8 @@ router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassw
 // Comment is required; the item goes back to dept scope with reason preserved.
 router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const access = req.access!;
     // §10 ruling 2 (Shield-06): OD-08 — GE never early-returns at client scope
     // either. The §3 matrix (`C:R+L`) already refuses P/W before this handler.
-    if (user.role !== 'client_admin') {
-      return res.status(403).json({ error: 'Only client administrators may return evaluations from client scope.' });
-    }
     // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
     const evaluationId = scopeId(req.params.id, true)!;
     const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
@@ -1324,7 +1286,11 @@ router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPasswo
       return res.status(400).json({ error: 'A return comment is required so the department knows what to rework.' });
     }
 
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const access = req.access!;
+      if (user.role !== 'client_admin')
+        throw new DeferredRefusal(403, { error: 'Only client administrators may return evaluations from client scope.' });
       const { evaluation, answer } = await loadEvaluationWithAnswer(client, evaluationId);
       // R + L for C: own company and a linked item, asserted at the handler
       // boundary as well as under FORCE RLS.
@@ -1352,16 +1318,12 @@ router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPasswo
       }
 
       const gate = await enforcePairVersion(
-        res,
         client,
         evaluation,
         answer,
         req.body?.version,
         { action: 'client-return', comment }
       );
-      if (!gate) {
-        throw Object.assign(new Error('__VERSION_CONFLICT_RESPONSE_SENT__'), { statusCode: 499 });
-      }
 
       const updRes = await client.query(
         `UPDATE answers SET status = 'returned', version = version + 1, updated_at = NOW()
@@ -1410,11 +1372,11 @@ router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPasswo
       });
 
       return { evaluation, answer: updRes.rows[0], approval: apprRes.rows[0] };
-    });
+    }, readContext);
 
     res.json(result);
   } catch (err: any) {
-    if (err?.message === '__VERSION_CONFLICT_RESPONSE_SENT__') return;
+    if (deferredFailure(res, err)) return;
     console.error('Client return error:', err);
     if (err?.statusCode === 409 && err?.conflictPayload) {
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
@@ -1431,10 +1393,8 @@ router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPasswo
 // matrix inside requireDomainAccess, and every row passes the linked predicate.
 router.get('/client-review', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const tenantId = ownTenant(access, req.query.clientId);
-
-    const groups = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const tenantId = ownTenant(req.access!, req.query.clientId);
       const rowsRes = await client.query(
         `SELECT d.id AS disclosure_id, d.code AS disclosure_code, d.title AS disclosure_title,
                 s.code AS standard_code,
@@ -1480,7 +1440,7 @@ router.get('/client-review', authMiddleware, requireDomainAccess, async (req: Au
           naReason: r.na_reason,
         });
       }
-      return [...byDisclosure.values()].map((g) => {
+      const groups = [...byDisclosure.values()].map((g) => {
         const total = g.departments.length;
         const approved = g.departments.filter((x: any) => x.answerStatus === 'approved' || x.answerStatus === 'client_approved').length;
         const clientApproved = g.departments.filter((x: any) => x.answerStatus === 'client_approved').length;
@@ -1505,10 +1465,12 @@ router.get('/client-review', authMiddleware, requireDomainAccess, async (req: Au
           incompleteDepartments: gate.ok ? [] : (gate as { ok: false; incomplete: string[] }).incomplete,
         };
       });
-    });
+      return { tenantId, groups, count: groups.length };
+    }, readContext);
 
-    res.json({ tenantId, groups, count: groups.length });
+    res.json(data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Client-review queue error:', err);
     readFailure(res, err, 'Failed to fetch client-review queue');
   }
@@ -1606,25 +1568,25 @@ async function loadGeScopeRows(
 // unmapped item is refused there rather than dropped here.
 router.get('/reviews/ge-check', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const scopeRaw = req.query.scope;
     if (!isGeFinalScope(scopeRaw)) {
       return res.status(400).json({ error: 'scope must be disclosure or tenant.' });
     }
-    const clientId = ownTenant(access, req.query.clientId);
-    const scopeRef =
-      scopeRaw === 'tenant'
-        ? clientId
-        : typeof req.query.scopeRef === 'string' && req.query.scopeRef.trim()
-          ? req.query.scopeRef.trim()
-          : null;
-    if (!scopeRef) {
-      return res.status(400).json({ error: 'scopeRef (disclosure id) is required for disclosure scope.' });
-    }
-    // An id is an id: malformed input is a 400 before any SQL, never a 500.
-    scopeId(scopeRef, true);
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const clientId = ownTenant(access, req.query.clientId);
+      const scopeRef =
+        scopeRaw === 'tenant'
+          ? clientId
+          : typeof req.query.scopeRef === 'string' && req.query.scopeRef.trim()
+            ? req.query.scopeRef.trim()
+            : null;
+      if (!scopeRef) {
+        throw new DeferredRefusal(400, { error: 'scopeRef (disclosure id) is required for disclosure scope.' });
+      }
+      // An id is an id: malformed input is a 400 before any SQL, never a 500.
+      scopeId(scopeRef, true);
 
-    const data = await withTenantContext(readContext(req), async (client) => {
       const { items: scoped } = await loadGeScopeRows(client, clientId, scopeRaw, scopeRef);
       const items = await linkedItemsOnly(client, access, scoped);
       const gate = geFinalGate(
@@ -1650,10 +1612,11 @@ router.get('/reviews/ge-check', authMiddleware, requireDomainAccess, async (req:
         alreadyFrozen: (snapRes.rowCount ?? 0) > 0,
         snapshot: snapRes.rows[0] ?? null,
       };
-    });
+    }, readContext);
 
     res.json(data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('GE check error:', err);
     readFailure(res, err, 'Failed to run GE final checklist');
   }
@@ -1669,36 +1632,33 @@ router.get('/reviews/ge-check', authMiddleware, requireDomainAccess, async (req:
 // provisioning can never interleave with a freeze.
 router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const access = req.access!;
-    if (user.role !== 'ge_admin') {
-      return res.status(403).json({ error: 'Only platform administrators may freeze a GE final review.' });
-    }
     const body = req.body ?? {};
     if (!isGeFinalScope(body.scope)) {
       return res.status(400).json({ error: 'scope must be disclosure or tenant.' });
     }
     const scope = body.scope;
-    // §3.3: own tenant only — a supplied clientId is a comparison, never a
-    // selector (403 scope.tenant_mismatch on a foreign one).
-    const clientId = ownTenant(access, body.clientId);
-    const scopeRef =
-      scope === 'tenant'
-        ? clientId
-        : typeof body.scopeRef === 'string' && body.scopeRef.trim()
-          ? body.scopeRef.trim()
-          : null;
-    if (!scopeRef) {
-      return res.status(400).json({ error: 'scopeRef (disclosure id) is required for disclosure scope.' });
-    }
-    // §9(b): a malformed scopeRef is a 400 BEFORE any SQL.
-    scopeId(scopeRef, true);
     if (typeof body.confirm !== 'boolean' || body.confirm !== true) {
       return res.status(400).json({ error: 'Explicit confirmation is required: pass { confirm: true } to freeze.' });
     }
-
-    // ONE trusted work transaction holds the whole operation (BF-01).
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const access = req.access!;
+      if (user.role !== 'ge_admin')
+        throw new DeferredRefusal(403, { error: 'Only platform administrators may freeze a GE final review.' });
+      // §3.3: own tenant only — a supplied clientId is a comparison, never a
+      // selector (403 scope.tenant_mismatch on a foreign one).
+      const clientId = ownTenant(access, body.clientId);
+      const scopeRef =
+        scope === 'tenant'
+          ? clientId
+          : typeof body.scopeRef === 'string' && body.scopeRef.trim()
+            ? body.scopeRef.trim()
+            : null;
+      if (!scopeRef) {
+        throw new DeferredRefusal(400, { error: 'scopeRef (disclosure id) is required for disclosure scope.' });
+      }
+      // §9(b): a malformed scopeRef is a 400 BEFORE any SQL.
+      scopeId(scopeRef, true);
       // BF-01: the shared tenant lock — byte-identical key to the provisioning
       // section of POST /gri/commit (spec §8 vs concurrent provisioning).
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,1717005))',
@@ -1849,10 +1809,11 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDo
       });
 
       return { snapshot: snapRes.rows[0], aggregate, finalApprovals: finalApprovals.length };
-    });
+    }, readContext);
 
     res.status(201).json(result);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('GE final error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to freeze GE final review', code: errCode(err) });
   }
@@ -1866,10 +1827,9 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDo
 // and simply loses the payload: never a partial payload, never a rewritten hash.
 router.get('/reviews/snapshots', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const tenantId = ownTenant(access, req.query.clientId);
-
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const tenantId = ownTenant(access, req.query.clientId);
       const result = await client.query(
         `SELECT s.id, s.client_id, s.scope_type, s.scope_ref, s.payload, s.content_hash,
                 s.created_by, u.name AS created_by_name, s.created_at,
@@ -1890,11 +1850,12 @@ router.get('/reviews/snapshots', authMiddleware, requireDomainAccess, async (req
         delete metadata.payload;
         rows.push(metadata);
       }
-      return rows;
-    });
+      return { tenantId, items: rows, count: rows.length };
+    }, readContext);
 
-    res.json({ tenantId, items: rows, count: rows.length });
+    res.json(data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Snapshots list error:', err);
     readFailure(res, err, 'Failed to fetch snapshots');
   }
@@ -1907,9 +1868,9 @@ router.get('/reviews/snapshots', authMiddleware, requireDomainAccess, async (req
 // partial blob and no hash rewrite, ever.
 router.get('/reviews/snapshots/:id', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const id = scopeId(req.params.id, true)!;
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const snapRes = await client.query(
         `SELECT s.id, s.client_id, s.scope_type, s.scope_ref, s.payload, s.content_hash,
                 s.created_by, u.name AS created_by_name, s.created_at
@@ -1934,10 +1895,11 @@ router.get('/reviews/snapshots/:id', authMiddleware, requireDomainAccess, async 
         [snapshot.id]
       );
       return { snapshot, notes: notesRes.rows };
-    });
+    }, readContext);
 
     res.json(data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Snapshot view error:', err);
     readFailure(res, err, 'Failed to fetch snapshot');
   }
@@ -1948,8 +1910,6 @@ router.get('/reviews/snapshots/:id', authMiddleware, requireDomainAccess, async 
 // W only (matrix), own tenant only (R), append-only, existing 2,000-char cap.
 router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const access = req.access!;
     // §9(b): a malformed :id is a 400 scope.id_invalid BEFORE any SQL.
     const snapshotId = scopeId(req.params.id, true)!;
     const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
@@ -1960,7 +1920,9 @@ router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword
       return res.status(400).json({ error: 'note must be at most 2000 characters.' });
     }
 
-    const created = await withTenantContext(readContext(req), async (client) => {
+    const created = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const access = req.access!;
       const snapRes = await client.query(
         'SELECT id, client_id, payload FROM review_snapshots WHERE id = $1', [snapshotId]);
       const snapshot = snapRes.rows[0];
@@ -1993,10 +1955,11 @@ router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword
       });
 
       return insRes.rows[0];
-    });
+    }, readContext);
 
     res.status(201).json(created);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Snapshot note error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to add snapshot note', code: errCode(err) });
   }

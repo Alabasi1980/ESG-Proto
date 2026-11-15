@@ -48,6 +48,7 @@ import {
 } from './_shared.ts';
 import { SAFE_USER_COLUMNS, assertTenantExists, platformTarget } from './adminCommon.ts';
 import { scopeError, scopeId } from '../scope.ts';
+import { DeferredRefusal, deferredFailure } from './initiativeScope.ts';
 
 /** Same locked boundary as U2-D: live session -> live tab/generation -> matrix
  * -> platformConfigContext on ONE client, held through mutation/audit/commit.
@@ -78,16 +79,15 @@ function explicitTarget(req: AuthenticatedRequest): string {
 export async function createUser(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const target = explicitTarget(req);
-    const creator = req.user!;
-    const validation = validateNewUser(
-      { id: creator.id, role: creator.role, clientId: creator.clientId ?? null },
-      req.body ?? {}
-    );
-    if (!validation.ok) { res.status(validation.status).json({ error: validation.error }); return; }
-    const input = validation.user;
-    if (input.effectiveClientId !== target) throw scopeError(403, 'scope.tenant_mismatch');
-    if (input.departmentId) scopeId(input.departmentId, true);
     const created = await configurationTransaction(req, target, async (client) => {
+      const creator = req.user!;
+      const validation = validateNewUser(
+        { id: creator.id, role: creator.role, clientId: creator.clientId ?? null }, req.body ?? {}
+      );
+      if (!validation.ok) throw new DeferredRefusal(validation.status, { error: validation.error });
+      const input = validation.user;
+      if (input.effectiveClientId !== target) throw scopeError(403, 'scope.tenant_mismatch');
+      if (input.departmentId) scopeId(input.departmentId, true);
       // E-mail uniqueness is case-insensitive inside the target tenant (C3 -> 409).
       const dupe = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [input.email]);
       if ((dupe.rowCount ?? 0) > 0) {
@@ -148,6 +148,7 @@ export async function createUser(req: AuthenticatedRequest, res: Response): Prom
 
     res.status(201).json(created);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     writeFailure(res, err, 'Failed to create user');
   }
 }
@@ -165,13 +166,11 @@ export async function deactivateUser(req: AuthenticatedRequest, res: Response): 
       return;
     }
     const targetId = scopeId(req.params.id, true)!;
-    if (targetId === req.access!.actorId) {
-      res.status(400).json({ error: 'You cannot change your own active status.' });
-      return;
-    }
     const target = explicitTarget(req);
 
     const updated = await configurationTransaction(req, target, async (client) => {
+      if (targetId === req.access!.actorId)
+        throw new DeferredRefusal(400, { error: 'You cannot change your own active status.' });
       const found = await client.query(
         `SELECT ${SAFE_USER_COLUMNS} FROM users u
          LEFT JOIN clients c ON u.client_id = c.id
@@ -219,6 +218,7 @@ export async function deactivateUser(req: AuthenticatedRequest, res: Response): 
     });
     res.json(updated);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     writeFailure(res, err, 'Failed to update user');
   }
 }

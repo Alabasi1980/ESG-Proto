@@ -8,7 +8,8 @@
 // handlers only resolve their server-selected context and pin their rows.
 
 import type { Response } from 'express';
-import { withTenantContext, recordAuditLog } from '../../db/index.ts';
+import { recordAuditLog } from '../../db/index.ts';
+import { domainTransaction } from './initiativeScope.ts';
 import type { AuthenticatedRequest } from '../auth.ts';
 import { readContext, platformConfigContext, writeFailure } from './_shared.ts';
 import { optionalScopeId, ownDepartment, scopeId } from '../scope.ts';
@@ -17,9 +18,9 @@ import { SAFE_USER_COLUMNS, adminTenantContext, platformTarget } from './adminCo
 /** §3.4 row 3 — P@T target REQUIRED; W/C own departments; E own department only. */
 export async function listDepartments(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
-    const { context, tenant, platform } = adminTenantContext(req, req.query.clientId);
-    const rows = await withTenantContext(context, async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const { tenant, platform } = adminTenantContext(req, req.query.clientId);
       const params: any[] = [tenant];
       let where = 'd.client_id = $1';
       // §9(c) defence-in-depth beside FORCE RLS: an employee row is EXACTLY its
@@ -36,7 +37,7 @@ export async function listDepartments(req: AuthenticatedRequest, res: Response):
         params
       );
       return result.rows;
-    });
+    }, live => adminTenantContext(live, req.query.clientId).context);
     res.json(rows);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch departments');
@@ -55,7 +56,7 @@ export async function setDepartmentHead(req: AuthenticatedRequest, res: Response
     // before it can reach SQL (§9(b) — a malformed id is 400, never a raw 22P02).
     const headUserId: string | null = raw === null || raw === '' ? null : scopeId(raw, true)!;
 
-    const updated = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
       // Target-bound read: a department outside T is simply not visible (404).
       const deptRes = await client.query(
         'SELECT id, client_id, code, name FROM departments WHERE id = $1 AND client_id = $2',
@@ -97,7 +98,7 @@ export async function setDepartmentHead(req: AuthenticatedRequest, res: Response
         payload: { departmentCode: dept.code, headUserId },
       });
       return upd.rows[0];
-    });
+    }, live => platformConfigContext(live, target));
     res.json(updated);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to set department head');
@@ -111,8 +112,7 @@ export async function setDepartmentHead(req: AuthenticatedRequest, res: Response
 export async function listUsers(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const target = optionalScopeId(req.query.clientId);
-    const context = target ? platformConfigContext(req, target) : readContext(req);
-    const rows = await withTenantContext(context, async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
       const params: any[] = [];
       let where = ' WHERE u.client_id IS NULL';
       if (target) {
@@ -127,7 +127,7 @@ export async function listUsers(req: AuthenticatedRequest, res: Response): Promi
         params
       );
       return result.rows;
-    });
+    }, live => target ? platformConfigContext(live, target) : readContext(live));
     res.json(rows);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch users');

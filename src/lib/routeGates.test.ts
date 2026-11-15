@@ -13,6 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { classifyRoute } from '../server/accessRegistry.ts';
 import {
   FRESH_GATE_ALLOWLIST,
   NOTIFICATION_INBOX_LIMIT,
@@ -216,22 +217,49 @@ test('U2-F E3-02: admin write catches use writeFailure; raw PG collapses, own st
 // scanned automatically and a prose mention never drags an unrelated file in.
 // Non-vacuity (synthetic caller in / non-caller out) is the companion test.
 
-/** Strip block + full-line // comments: only code counts as a call site. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+// Mask literals/comments without shifting offsets. This bounded call-expression
+// reader balances argument delimiters; prose/imports/declarations are not calls.
+function maskCode(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g,
+    text => text.replace(/[^\r\n]/g, ' '));
 }
-
-/** Discovery core over a file->source corpus (synthetic corpora in tests). */
+function calls(src: string) {
+  const code = maskCode(src), result: { name: string; args: string[]; at: number; end: number }[] = [];
+  for (const m of code.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+    if (/\bfunction\s*$/.test(code.slice(Math.max(0,m.index!-24),m.index))) continue;
+    let depth = 1, start = m.index!+m[0].length, end = start;
+    const args: string[] = [];
+    for (; end < code.length; end++) {
+      const ch = code[end];
+      if ('([{'.includes(ch)) depth++;
+      else if (')]}'.includes(ch)) depth--;
+      if (!depth || (ch === ',' && depth === 1)) {
+        args.push(src.slice(start,end).trim()); start = end+1;
+        if (!depth) break;
+      }
+    }
+    result.push({ name:m[1],args,at:m.index!,end:end+1 });
+  }
+  return result;
+}
+const nullish = (value = '') => /^(?:null|undefined|void\s+0)?$/.test(value.trim());
 function selectNullTargetFiles(corpus: Record<string, string>): string[] {
-  const pattern = /platformConfigContext\(\s*req\s*,\s*null\s*\)|platformGlobalContext\s*\(/;
-  return Object.entries(corpus)
-    .filter(([, code]) => pattern.test(stripComments(code)))
-    .map(([file]) => file)
-    .sort();
+  return Object.entries(corpus).filter(([, src]) => calls(src).some(call => {
+    if (call.name === 'platformGlobalContext') return true;
+    if (call.name === 'platformConfigContext') return nullish(call.args[1]);
+    if (call.name !== 'domainTransaction') return false;
+    const selector = call.args[2];
+    if (nullish(selector) || selector === 'platformGlobalContext') return true;
+    // A forwarded default/null argument is a reachable Auto path too.
+    if (/^[\w$]+$/.test(selector ?? '')
+      && [...maskCode(src).matchAll(/\b([\w$]+)\s*(?::[^,)=]+)?\s*=\s*(?:null|undefined)\b/g)]
+        .some(match => match[1]===selector)) return true;
+    assert.ok(selector === 'readContext' || /\b(?:readContext|platformConfigContext|adminTenantContext)\s*\(/.test(maskCode(selector ?? '')),
+      `Unclassified context selector: ${selector}`);
+    return false;
+  })).map(([file]) => file).sort();
 }
-
-/** Walk src/server recursively and select the NULL-target callers. */
-function discoverNullTargetFiles(serverRoot: string): string[] {
+function serverCorpus(serverRoot: string) {
   const corpus: Record<string, string> = {};
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -242,34 +270,88 @@ function discoverNullTargetFiles(serverRoot: string): string[] {
     }
   };
   walk(serverRoot);
-  return selectNullTargetFiles(corpus);
+  return corpus;
+}
+
+/** Table-specific, alias/quoted/schema/JOIN aware: COUNT(*) is not a row star.
+ * This is an additional conservative ring, not a blanket ban on catalog stars. */
+function sensitiveStars(src: string): string[] {
+  const sql = src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, '').replace(/"/g, '');
+  return [...sql.matchAll(/\bSELECT\s+([\s\S]*?)\bFROM\s+([\s\S]*?)(?=\bSELECT\b|;|$)/gi)]
+    .filter(m => /\b(?:FROM|JOIN)\s+(?:\w+\.)?(?:answers|review_snapshots)\b/i.test(`FROM ${m[2]}`)
+      && /(?:^|,)\s*(?:\w+\s*\.\s*)?\*(?:\s*(?:,|$))/.test(m[1].trim()))
+    .map(m => m[0]);
+}
+function reachableSources(corpus: Record<string,string>, files: string[], roots?:string[]): string[] {
+  // Follow borrowed function bodies rather than importing entire work-only
+  // modules (scope.ts contains legitimate W/E answer stars).
+  const definitions = new Map<string,string>();
+  for (const src of Object.values(corpus)) {
+    const masked = maskCode(src);
+    for (const match of masked.matchAll(/\bfunction\s+(\w+)\s*\(/g)) {
+      // Declarations are excluded by calls(); find the parameter close directly.
+      const open = masked.indexOf('(',match.index!); let end = open+1, depth = 1;
+      for (; end < masked.length && depth; end++) {
+        if (masked[end] === '(') depth++; else if (masked[end] === ')') depth--;
+      }
+      const brace = masked.indexOf('{',end); if (brace < 0) continue;
+      depth = 1; end = brace+1;
+      for (; end < masked.length && depth; end++) {
+        if (masked[end] === '{') depth++; else if (masked[end] === '}') depth--;
+      }
+      definitions.set(match[1],src.slice(brace,end));
+    }
+  }
+  const sources = roots ?? files.map(file => corpus[file]), seen = new Set<string>();
+  for (let i = 0; i < sources.length; i++) for (const call of calls(sources[i])) {
+    if (seen.has(call.name)) continue;
+    seen.add(call.name);
+    const body = definitions.get(call.name); if (body) sources.push(body);
+  }
+  return sources;
+}
+function targetlessOperations(src:string):string[] {
+  const sites=calls(src),roots:string[]=[];
+  const routes=sites.filter(c => ['get','post','put','patch','delete'].includes(c.name) && /^['"]\//.test(c.args[0] ?? ''));
+  const permitsP=(at:number) => {
+    const enclosing=routes.filter(r => r.at<at && r.end>at);
+    if (!enclosing.length) return undefined;
+    return enclosing.some(r => classifyRoute(r.name.toUpperCase(),r.args[0].slice(1,-1))?.matrix.some(m => m.context==='P'));
+  };
+  for (const c of sites.filter(c => ['domainTransaction','withTenantContext'].includes(c.name))) {
+    const selector=c.name==='domainTransaction'?c.args[2]:c.args[0];
+    const auto=c.name==='domainTransaction' && (nullish(selector) || /^[\w$]+$/.test(selector ?? '') && selector!=='readContext');
+    const explicit=selector==='platformGlobalContext' || calls(selector ?? '').some(s => s.name==='platformGlobalContext'
+      || s.name==='platformConfigContext' && nullish(s.args[1]));
+    if (!auto && !explicit) continue;
+    let possible=permitsP(c.at);
+    if (possible===undefined) {
+      const owner=[...maskCode(src).slice(0,c.at).matchAll(/\bfunction\s+(\w+)\s*\(/g)].at(-1)?.[1];
+      const forwarded=owner?sites.filter(s => s.name===owner):[];
+      if (forwarded.length && forwarded.every(s => permitsP(s.at)===false)) possible=false;
+    }
+    if (possible!==false) roots.push(/^[\w$]+$/.test(c.args[1])?`${c.args[1]}();`:c.args[1]);
+  }
+  return roots;
+}
+function forbiddenProjection(src:string):boolean {
+  const sql=src.replace(/"/g,'');
+  return [...sql.matchAll(/\bSELECT\s+([\s\S]*?)\bFROM\s+([\s\S]*?)(?=\bSELECT\b|;|$)/gi)].some(m =>
+    /\b(?:FROM|JOIN)\s+(?:\w+\.)?(?:answers|review_snapshots)\b/i.test(`FROM ${m[2]}`)
+    && /\b(?:value|correction_history|payload|score|justification)\b/i.test(m[1]));
 }
 
 test('U2-F R2 Shield-2 pin: P summary reads of answers/review_snapshots are explicit-column/count only', () => {
-  const pSummaryFiles = discoverNullTargetFiles(SERVER_ROOT);
+  const corpus = serverCorpus(SERVER_ROOT), pSummaryFiles = selectNullTargetFiles(corpus);
   // Low-1 regression guard: the provisioning NULL-target probes ARE scanned.
   assert.ok(pSummaryFiles.includes('routes/adminProvisioning.ts'),
     `pin surface must include adminProvisioning.ts (got: ${pSummaryFiles.join(', ') || 'EMPTY'})`);
   assert.ok(pSummaryFiles.length >= 4, `pin surface must not be vacuous (got ${pSummaryFiles.length})`);
-  for (const file of pSummaryFiles) {
-    const src = fs.readFileSync(path.join(SERVER_ROOT, file), 'utf8');
-    // Scan QUERIES, not comments: strip // and /* */ first (the file's own
-    // comments legitimately mention the pin itself).
-    const code = stripComments(src);
-    assert.ok(!/SELECT\s+(?:\w+\.)?\*\s+FROM/i.test(code), `${file}: no SELECT * or alias.* in the P summary path`);
-    const reads = [...code.matchAll(/SELECT\s+([\s\S]{0,240}?)\s+FROM\s+(answers|review_snapshots)/gi)];
-    assert.equal(reads.length, file.endsWith('adminClients.ts') ? 2 : 0,
-      `${file}: exactly the two sanctioned explicit-column reads (no other NULL-target file reads them)`);
-    for (const m of reads) {
-      const cols = m[1].replace(/\s+/g, ' ').trim();
-      assert.ok(cols.length > 0 && !/(?:^|,)\s*(?:\w+\.)?\*/.test(cols),
-        `${file}: explicit column projection required before FROM ${m[2]} (got "${cols.slice(0, 60)}")`);
-      assert.ok(!/(^|,)\s*(value|correction_history|payload)\b/i.test(cols),
-        `${file}: never project an answer value/history or snapshot payload`);
-    }
-    assert.ok(!/FROM\s+evaluations/i.test(code),
-      `${file}: no P summary path may read an evaluation row (scores stay out)`);
-  }
+  for (const source of reachableSources(corpus,pSummaryFiles)) assert.deepEqual(sensitiveStars(source), [],
+    'no sensitive row stars in a selected caller or its borrowed helpers');
+  const roots=pSummaryFiles.flatMap(file => targetlessOperations(corpus[file]));
+  for (const source of reachableSources(corpus,[],roots)) assert.equal(forbiddenProjection(source),false,
+    'reachable CfgØ operations never project assessment values/history/payload/score');
   const opsCode = fs.readFileSync(path.join(SERVER_ROOT, 'routes/adminPlatformOps.ts'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   assert.ok(!/FROM\s+(answers|review_snapshots)/i.test(opsCode),
@@ -287,24 +369,39 @@ test('U2-F R2 Shield-2 pin: P summary reads of answers/review_snapshots are expl
 // handler is absent, and a SYNTHETIC future caller is picked up by the same
 // selection function with no list to edit (while a prose mention is not).
 test('U2-F R3 Low-1: pin discovery is call-site-derived and non-vacuous', () => {
-  const discovered = discoverNullTargetFiles(SERVER_ROOT);
+  const discovered = selectNullTargetFiles(serverCorpus(SERVER_ROOT));
   for (const f of [
     'routes/adminClients.ts', 'routes/adminCommon.ts',
-    'routes/adminPlatformOps.ts', 'routes/adminProvisioning.ts',
+    'routes/adminPlatformOps.ts', 'routes/adminProvisioning.ts', 'taxonomy.ts',
+    'routes/initiatives.ts', 'routes/reports.ts',
   ]) assert.ok(discovered.includes(f), `${f} must join the NULL-target pin surface`);
   assert.ok(!discovered.includes('routes/adminStaff.ts'),
     'a readContext-only handler must NOT be dragged into the pin surface');
   // Synthetic corpus: brand-new caller auto-included, non-caller and prose-only
   // mention excluded — proving the selection, not today's file list.
-  const corpus: Record<string, string> = {
-    'routes/adminExisting.ts': 'withTenantContext(platformConfigContext(req, null), op);',
-    'routes/adminFuture.ts': '// header\nwithTenantContext(platformGlobalContext(req), op);',
-    'routes/workOnly.ts': 'withTenantContext(readContext(req), op);',
-    'routes/proseOnly.ts': '// one day this would call platformConfigContext(req, null)',
-  };
-  assert.deepEqual(selectNullTargetFiles(corpus),
-    ['routes/adminExisting.ts', 'routes/adminFuture.ts'],
-    'synthetic caller in, non-caller and prose mention out');
+  const forms = ['platformConfigContext(req, null)', 'platformConfigContext(req)',
+    'platformConfigContext(req, undefined)', 'platformGlobalContext(req)',
+    'domainTransaction(req, op)', 'domainTransaction(req, op, null)', 'domainTransaction(req, op, undefined)',
+    'domainTransaction(req, op, live => platformConfigContext(live))',
+    'domainTransaction(req, op, platformGlobalContext)',
+    'function forwarded(req,op,target=null) { return domainTransaction(req, op, target); }'];
+  for (const form of forms) for (const sql of ['SELECT * FROM answers',
+    'SELECT s.* FROM review_snapshots s', 'SELECT s.* FROM services x JOIN public.review_snapshots s ON true',
+    'SELECT a.* FROM "public"."answers" a']) {
+    const invocation=form.startsWith('platform')?`withTenantContext(${form}, op)`:form;
+    const corpus = { 'caller.ts':`${invocation}; function op() { return borrowed(); }`,
+      'borrowed.ts':`function borrowed() { return db.query('${sql}'); }` };
+    assert.deepEqual(selectNullTargetFiles(corpus), ['caller.ts'], form);
+    assert.ok(reachableSources(corpus,['caller.ts']).some(src => sensitiveStars(src).length), `${form}: ${sql}`);
+    const blob={ 'caller.ts':`${invocation}; function op() { return borrowed(); }`,
+      'borrowed.ts':"function borrowed() { return db.query('SELECT a.value FROM answers a'); }" };
+    assert.ok(reachableSources(blob,[],targetlessOperations(blob['caller.ts'])).some(forbiddenProjection), `${form}: borrowed values refused`);
+  }
+  for (const sql of ['SELECT COUNT(*) FROM answers','SELECT client_id, item_id FROM answers',
+    'SELECT * FROM services','SELECT s.* FROM services s']) assert.deepEqual(sensitiveStars(sql),[]);
+  assert.deepEqual(selectNullTargetFiles({ prose:'// platformConfigContext(req)\nimport { platformGlobalContext } from "x";',
+    work:'domainTransaction(req, op, readContext);', explicit:'domainTransaction(req, op, live => platformConfigContext(live, target));' }), []);
+  assert.throws(() => selectNullTargetFiles({unknown:'domainTransaction(req, op, staleContext);'}),/Unclassified context/);
 });
 
 // U2-F round 3 (Shield Low-2): the F-03 fresh-gate failure path must not echo

@@ -5,7 +5,7 @@ import { authMiddleware, type AuthenticatedRequest } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
 import { resolveLinkedService, scopeId } from '../scope.ts';
 import { REPORT_GATE_CODE, REPORT_GATE_REFUSAL, reportGateStatus, validateReportSettingsInput, isNotifiedState } from '../../lib/reports.ts';
-import { requireFreshPassword } from './_shared.ts';
+import { requireFreshPassword, platformConfigContext, readContext } from './_shared.ts';
 import { domainTransaction, configurationService, domainTenant, domainFailure, validateDomainIds } from './initiativeScope.ts';
 
 export async function loadReportSettings(client: pg.PoolClient, tenant: string, service: string | null) {
@@ -27,8 +27,8 @@ export function registerReportSettings(router: Router) {
   router.get('/report-settings', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
     try {
       validateDomainIds(req);
-      const target = req.access!.mode === 'platform' ? domainTenant(req, req.query.clientId) : null;
       const data = await domainTransaction(req, async client => {
+        validateDomainIds(req);
         const tenant = domainTenant(req, req.query.clientId);
         const service = req.access!.mode === 'platform'
           ? await configurationService(client, tenant, req.query.serviceId, false)
@@ -36,7 +36,8 @@ export function registerReportSettings(router: Router) {
         const settings = await loadReportSettings(client, tenant, service), gate = reportGateStatus(settings);
         return { clientId:tenant,serviceId:service,settings:publicSettings(settings),
           gate:gate.ok ? { ok:true } : { ok:false,code:REPORT_GATE_CODE,refusal:REPORT_GATE_REFUSAL } };
-      }, target);
+      }, live => live.access!.mode === 'platform'
+        ? platformConfigContext(live, domainTenant(live, req.query.clientId)) : readContext(live));
       res.json(data);
     } catch (err) { domainFailure(res, err, 'Failed to fetch report settings'); }
   });
@@ -44,10 +45,12 @@ export function registerReportSettings(router: Router) {
   router.put('/report-settings', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
     try {
       validateDomainIds(req);
-      const tenant = domainTenant(req, req.body?.clientId), service = scopeId(req.body?.serviceId, true)!, body = req.body ?? {};
+      const service = scopeId(req.body?.serviceId, true)!, body = req.body ?? {};
       const validation = validateReportSettingsInput(body);
       if (!validation.ok) return res.status(409).json({ error:REPORT_GATE_REFUSAL,code:REPORT_GATE_CODE,detail:validation.error });
       const saved = await domainTransaction(req, async client => {
+        validateDomainIds(req);
+        const tenant = domainTenant(req, req.body?.clientId);
         await configurationService(client, tenant, service);
         // Serialize same-target settings creation without changing identities or
         // relying on a legacy NULL-service row / nullable unique constraint.
@@ -67,7 +70,7 @@ export function registerReportSettings(router: Router) {
         await recordAuditLog(client, { clientId:tenant,userId:req.access!.actorId,action:'REPORT_SETTINGS_SAVED',entityType:'report_settings',
           entityId:row.id,payload:{ targetTenant:tenant,serviceId:service,disclosureLevel:body.disclosureLevel,reportLevel:body.reportLevel,notified } });
         return row;
-      }, tenant);
+      }, live => platformConfigContext(live, domainTenant(live, req.body?.clientId)));
       res.json({ settings:publicSettings(saved),gate:{ ok:true } });
     } catch (err) { domainFailure(res, err, 'Failed to save report settings'); }
   });

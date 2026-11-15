@@ -15,9 +15,7 @@
 // by notifyUsers on insert under the server-side notify context.
 
 import express, { type Response } from 'express';
-import {
-  withTenantContext,
-} from '../../db/index.ts';
+import { domainTransaction, boundaryFailure } from './initiativeScope.ts';
 import {
   authMiddleware,
   type AuthenticatedRequest,
@@ -34,7 +32,6 @@ const router = express.Router();
 /** B12 (S-23): own inbox, newest first. */
 router.get('/notifications', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const q = req.query as Record<string, unknown>;
     const unreadOnly = q.unreadOnly === 'true' || q.unreadOnly === '1';
     const limitRaw = Number(q.limit ?? NOTIFICATION_INBOX_LIMIT);
@@ -44,7 +41,8 @@ router.get('/notifications', authMiddleware, requireDomainAccess, async (req: Au
     const offsetRaw = Number(q.offset ?? 0);
     const offset = Number.isFinite(offsetRaw) ? Math.max(Math.floor(offsetRaw), 0) : 0;
 
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const params: any[] = [access.actorId];
       let where = 'WHERE n.user_id = $1';
       if (unreadOnly) {
@@ -61,10 +59,11 @@ router.get('/notifications', authMiddleware, requireDomainAccess, async (req: Au
         params
       );
       return { items: result.rows, count: result.rows.length, limit, offset };
-    });
+    }, readContext);
 
     res.json(data);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     console.error('Notifications list error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch notifications' });
   }
@@ -73,16 +72,17 @@ router.get('/notifications', authMiddleware, requireDomainAccess, async (req: Au
 /** B12 (S-23): unread badge number for the caller's inbox. */
 router.get('/notifications/unread-count', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const result = await client.query(
         'SELECT COUNT(*)::int AS n FROM notifications WHERE user_id = $1 AND read_at IS NULL',
         [access.actorId]
       );
       return { unreadCount: result.rows[0]?.n ?? 0 };
-    });
+    }, readContext);
     res.json(data);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     console.error('Unread count error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch unread count' });
   }
@@ -91,8 +91,8 @@ router.get('/notifications/unread-count', authMiddleware, requireDomainAccess, a
 /** B12 (S-23): mark one own notification read (scope + ownership, else 404). */
 router.post('/notifications/:id/read', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const updated = await withTenantContext(readContext(req), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const upd = await client.query(
         `UPDATE notifications SET read_at = COALESCE(read_at, NOW())
           WHERE id = $1 AND user_id = $2 RETURNING id, read_at`,
@@ -102,9 +102,10 @@ router.post('/notifications/:id/read', authMiddleware, requireFreshPassword, req
         throw Object.assign(new Error('Notification not found.'), { statusCode: 404 });
       }
       return upd.rows[0];
-    });
+    }, readContext);
     res.json(updated);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     console.error('Notification read error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to mark notification read' });
   }
@@ -113,16 +114,17 @@ router.post('/notifications/:id/read', authMiddleware, requireFreshPassword, req
 /** B12 (S-23): mark all own unread notifications in the permitted scope read. */
 router.post('/notifications/read-all', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       const upd = await client.query(
         'UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL',
         [access.actorId]
       );
       return { updated: upd.rowCount ?? 0 };
-    });
+    }, readContext);
     res.json(data);
   } catch (err: any) {
+    if (boundaryFailure(res, err)) return;
     console.error('Read-all error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to mark notifications read' });
   }

@@ -22,11 +22,11 @@ import express, { type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import {
   isDatabaseConfigured,
-  withTenantContext,
   recordAuditLog,
 } from '../../db/index.ts';
 import { authMiddleware, type AuthenticatedRequest } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal } from './initiativeScope.ts';
 import { parseGRIFile, type ParsedGRIStandard } from '../../lib/griParser.ts';
 import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../../lib/scoring.ts';
 import { resolveImportTenant } from '../../lib/tenantAccess.ts';
@@ -68,6 +68,14 @@ function weightForPriority(priority?: string): number {
   return priority === 'high' ? 3 : priority === 'low' ? 1 : 2;
 }
 
+function liveImportTenant(live: AuthenticatedRequest, rawClientId: unknown) {
+  const user = live.user!;
+  if (user.role !== 'ge_admin') throw new DeferredRefusal(403, { error: B16_CLIENT_GRI_REFUSAL });
+  const result = resolveImportTenant({ id: user.id, role: user.role, clientId: user.clientId ?? null }, rawClientId);
+  if (!result.ok) throw new DeferredRefusal(result.status, { error: result.error, code: result.code });
+  return result;
+}
+
 // ----------------------------------------------------------------------
 // 4. Import GRI Data (.xlsx / .csv) — P only, AUTHENTICATED BEFORE the parser
 // (§3.2: the previous public preview closes; auth + the domain wrapper —
@@ -94,13 +102,6 @@ router.post('/gri/preview', authMiddleware, requireDomainAccess, validateGriIds,
 router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAccess, validateGriIds,
   async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user!;
-    // B16-B2: GRI import is GE-only (the wrapper's P-only matrix already
-    // refuses client roles; this keeps the bilingual refusal as defence-in-depth).
-    if (user.role !== 'ge_admin') {
-      return res.status(403).json({ error: B16_CLIENT_GRI_REFUSAL });
-    }
-
     const { standards, clientId: rawClientId, serviceId: rawServiceId } =
       req.body as { standards: ParsedGRIStandard[]; clientId?: unknown; serviceId?: unknown };
     if (!standards || !Array.isArray(standards) || standards.length === 0) {
@@ -112,22 +113,13 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
 
     // B1/B2: ge_admin may target any tenant explicitly; tenant-less ge_admin
     // without clientId → 400 "choose a tenant" (never orphan rows).
-    const tenantResolution = resolveImportTenant(
-      { id: user.id, role: user.role, clientId: user.clientId ?? null },
-      rawClientId
-    );
-    if (!tenantResolution.ok) {
-      return res.status(tenantResolution.status).json({ error: tenantResolution.error, code: tenantResolution.code });
-    }
-    const effectiveClientId = tenantResolution.effectiveClientId;
-    const explicitTenant = tenantResolution.explicit;
-
     // §24 R5 invariant: purpose/target are SERVER-selected here — target T is
     // the validated explicit clientId, purpose the constant platform.config.
     // Runs in the C1 target-bound configuration context (RLS + audit).
-    const result = await withTenantContext(
-      platformConfigContext(req, effectiveClientId),
+    const result = await domainTransaction(req,
       async (client) => {
+        const user = req.user!;
+        const { effectiveClientId, explicit: explicitTenant } = liveImportTenant(req, rawClientId);
         // The explicit tenant must exist (ge_admin names it by id).
         const tenantCheck = await client.query('SELECT id, code, name FROM clients WHERE id = $1', [effectiveClientId]);
         if ((tenantCheck.rowCount ?? 0) === 0) {
@@ -392,7 +384,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
           unmappedStandards,
           setupNotice,
         };
-      }
+      }, live => platformConfigContext(live, liveImportTenant(live, rawClientId).effectiveClientId)
     );
 
     res.json({
@@ -401,6 +393,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
       ...result,
     });
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Commit GRI error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to commit GRI data' });
   }
@@ -437,7 +430,7 @@ router.get('/standards', authMiddleware, requireDomainAccess, validateGriIds, as
       return res.json([]);
     }
 
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
       // Fetch standards with count of disclosures and items
       const query = `
         SELECT s.id, s.code, s.title, s.category, s.version, s.created_at,
@@ -452,10 +445,11 @@ router.get('/standards', authMiddleware, requireDomainAccess, validateGriIds, as
 
       const result = await client.query(query);
       return result.rows;
-    });
+    }, readContext);
 
     res.json(rows);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     res.status(500).json({ error: err.message || 'Failed to fetch standards' });
   }
 });
@@ -485,9 +479,8 @@ router.get('/dashboard/stats', authMiddleware, requireDomainAccess, validateGriI
       });
     }
 
-    const access = req.access!;
-
-    const data = await withTenantContext(readContext(req), async (client) => {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
       // Check if standards and items exist
       const itemsCountRes = await client.query('SELECT COUNT(*)::int as count FROM items');
       const itemsCount = itemsCountRes.rows[0]?.count || 0;
@@ -582,10 +575,11 @@ router.get('/dashboard/stats', authMiddleware, requireDomainAccess, validateGriI
         itemsCount,
         ...scoreResult,
       };
-    });
+    }, readContext);
 
     res.json(data);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     res.status(500).json({ error: err.message || 'Failed to fetch dashboard stats' });
   }
 });

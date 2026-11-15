@@ -13,7 +13,6 @@
 
 import express, { type Response } from 'express';
 import {
-  withTenantContext,
   recordAuditLog,
 } from '../../db/index.ts';
 import {
@@ -21,6 +20,7 @@ import {
   type AuthenticatedRequest,
 } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal } from './initiativeScope.ts';
 import { assertActionBinding, scopeId, scopeError } from '../scope.ts';
 import {
   ACTION_STATUSES,
@@ -57,7 +57,6 @@ const router = express.Router();
 // B1. List actions in scope, optional status/department filters.
 router.get('/actions', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const namedStatus = typeof req.query.status === 'string' && req.query.status.trim()
       ? req.query.status.trim()
       : null;
@@ -75,13 +74,13 @@ router.get('/actions', authMiddleware, requireDomainAccess, async (req: Authenti
     // a foreign clientId or a department outside own company is a 403.
     if (namedClient) {
       scopeId(namedClient, true);
-      if (namedClient !== access.tenantId) {
-        return res.status(403).json({ error: 'Cross-tenant action access is forbidden.' });
-      }
     }
     if (namedDept) scopeId(namedDept, true);
 
-    const rows = await withTenantContext(readContext(req), async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (namedClient && namedClient !== access.tenantId)
+        throw new DeferredRefusal(403, { error: 'Cross-tenant action access is forbidden.' });
       if (namedDept && !(await client.query('SELECT 1 FROM departments WHERE id = $1', [namedDept])).rowCount) {
         throw scopeError(403, 'scope.department_mismatch');
       }
@@ -109,10 +108,11 @@ router.get('/actions', authMiddleware, requireDomainAccess, async (req: Authenti
         params
       );
       return result.rows;
-    });
+    }, readContext);
 
     res.json({ items: rows, count: rows.length });
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Actions list error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch actions' });
   }
@@ -123,11 +123,6 @@ router.get('/actions', authMiddleware, requireDomainAccess, async (req: Authenti
 // service for a standalone action (assertActionBinding in scope.ts).
 router.post('/actions', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
-    // Defence in depth: the matrix already refuses every non-W context.
-    if (access.mode !== 'consultant') {
-      return res.status(403).json({ error: B16_ACTION_OPEN_REFUSAL });
-    }
     const body = req.body ?? {};
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     const description = typeof body.description === 'string' ? body.description.trim() : '';
@@ -147,13 +142,11 @@ router.post('/actions', authMiddleware, requireFreshPassword, requireDomainAcces
     }
     // Effective tenant is the server-derived A; a supplied clientId may only
     // agree with it (explicit mismatch -> 403), never widen the scope.
-    if (body.clientId !== undefined && body.clientId !== null && body.clientId !== '') {
-      if (body.clientId !== access.tenantId) {
-        return res.status(403).json({ error: 'Cross-tenant action access is forbidden.' });
-      }
-    }
-
-    const created = await withTenantContext(readContext(req), async (client) => {
+    const created = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (access.mode !== 'consultant') throw new DeferredRefusal(403, { error: B16_ACTION_OPEN_REFUSAL });
+      if (body.clientId !== undefined && body.clientId !== null && body.clientId !== '' && body.clientId !== access.tenantId)
+        throw new DeferredRefusal(403, { error: 'Cross-tenant action access is forbidden.' });
       await assertActionBinding(client, access, { itemId, serviceId, departmentId });
       const insRes = await client.query(
         `INSERT INTO actions (client_id, item_id, service_id, owner_department_id, title, description, due_date, status)
@@ -172,10 +165,11 @@ router.post('/actions', authMiddleware, requireFreshPassword, requireDomainAcces
       });
 
       return insRes.rows[0];
-    });
+    }, readContext);
 
     res.status(201).json(created);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Action create error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create action' });
   }
@@ -189,11 +183,7 @@ router.post('/actions', authMiddleware, requireFreshPassword, requireDomainAcces
 // (→ in_progress) + evidence only. E/P never reach here (matrix + mode check).
 router.patch('/actions/:id', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const access = req.access!;
     const actionId = req.params.id;
-    if (access.mode !== 'consultant' && access.mode !== 'client') {
-      return res.status(403).json({ error: B16_ACTION_CLOSE_REFUSAL });
-    }
     const body = req.body ?? {};
     const hasStatus = body.status !== undefined && body.status !== null;
     const hasEvidence = typeof body.evidenceNote === 'string';
@@ -212,7 +202,10 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, requireDomain
       nextStatus = body.status;
     }
 
-    const updated = await withTenantContext(readContext(req), async (client) => {
+    const updated = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (access.mode !== 'consultant' && access.mode !== 'client')
+        throw new DeferredRefusal(403, { error: B16_ACTION_CLOSE_REFUSAL });
       const found = await client.query('SELECT * FROM actions WHERE id = $1', [actionId]);
       const action = found.rows[0];
       // Outside the caller's RLS scope the row is simply not visible.
@@ -295,10 +288,11 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, requireDomain
       }
 
       return updRes.rows[0];
-    });
+    }, readContext);
 
     res.json(updated);
   } catch (err: any) {
+    if (deferredFailure(res, err)) return;
     console.error('Action patch error:', err);
     res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update action' });
   }

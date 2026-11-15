@@ -13,7 +13,8 @@
 // answers/evaluations row in a platform context.
 
 import type { Response } from 'express';
-import { withTenantContext, recordAuditLog } from '../../db/index.ts';
+import { recordAuditLog } from '../../db/index.ts';
+import { domainTransaction } from './initiativeScope.ts';
 import type { AuthenticatedRequest } from '../auth.ts';
 import {
   assignUnassignRefusal,
@@ -46,19 +47,18 @@ const ASSIGNMENT_COLUMNS = `a.id, a.client_id, a.item_id, a.department_id,
 /** §3.4 row 16 — P@T target; W/C L; E L+D (own department pinned below). */
 export async function listAssignments(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const access = req.access!;
     const namedClient = optionalScopeId(req.query.clientId);
     const namedDept = optionalScopeId(req.query.departmentId);
     const namedItem = optionalScopeId(req.query.itemId);
-    const { context, tenant, platform } = adminTenantContext(req, namedClient);
-    let departmentFilter: string | null = namedDept;
-    if (!platform && access.mode === 'employee') {
-      const own = ownDepartment(access)!;
-      // E may only ever ask for its own department (comparison, never authority).
-      if (namedDept && namedDept !== own) throw scopeError(403, 'scope.department_mismatch');
-      departmentFilter = own;
-    }
-    const rows = await withTenantContext(context, async (client) => {
+    const rows = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const { tenant, platform } = adminTenantContext(req, namedClient);
+      let departmentFilter: string | null = namedDept;
+      if (!platform && access.mode === 'employee') {
+        const own = ownDepartment(access)!;
+        if (namedDept && namedDept !== own) throw scopeError(403, 'scope.department_mismatch');
+        departmentFilter = own;
+      }
       const params: any[] = [tenant];
       let where = 'a.client_id = $1';
       if (departmentFilter) {
@@ -80,7 +80,7 @@ export async function listAssignments(req: AuthenticatedRequest, res: Response):
         params
       );
       return result.rows;
-    });
+    }, live => adminTenantContext(live, namedClient).context);
     res.json({ items: rows, count: rows.length });
   } catch (err: any) {
     writeFailure(res, err, 'Failed to fetch assignments');
@@ -95,7 +95,7 @@ export async function createAssignment(req: AuthenticatedRequest, res: Response)
     const target = platformTarget(body.clientId);
     const itemId = scopeId(body.itemId, true)!;
     const departmentId = scopeId(body.departmentId, true)!;
-    const result = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
       await assertTenantExists(client, target);
       const iRes = await client.query('SELECT id, code FROM items WHERE id = $1', [itemId]);
       if (!iRes.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
@@ -145,7 +145,7 @@ export async function createAssignment(req: AuthenticatedRequest, res: Response)
         [target, itemId, departmentId]
       );
       return { assigned: true, existed: true, id: cur.rows[0].id };
-    });
+    }, live => platformConfigContext(live, target));
     res.status(result.existed ? 200 : 201).json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to assign item');
@@ -162,7 +162,7 @@ export async function deleteAssignment(req: AuthenticatedRequest, res: Response)
     const target = platformTarget(body.clientId ?? query.clientId);
     const itemId = scopeId(body.itemId ?? query.itemId, true)!;
     const departmentId = scopeId(body.departmentId ?? query.departmentId, true)!;
-    const result = await withTenantContext(platformConfigContext(req, target), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
       await assertTenantExists(client, target);
       const cur = await client.query(
         'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
@@ -190,7 +190,7 @@ export async function deleteAssignment(req: AuthenticatedRequest, res: Response)
         payload: { itemId, departmentId },
       });
       return { unassigned: true };
-    });
+    }, live => platformConfigContext(live, target));
     res.json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to unassign item');
@@ -205,7 +205,6 @@ export async function deleteAssignment(req: AuthenticatedRequest, res: Response)
 export async function assignNotApplicable(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const body = req.body ?? {};
-    const tenant = ownTenant(req.access!, body.clientId);
     const itemId = scopeId(body.itemId, true)!;
     const departmentId = scopeId(body.departmentId, true)!;
     const naReason = typeof body.naReason === 'string' ? body.naReason.trim() : '';
@@ -215,7 +214,8 @@ export async function assignNotApplicable(req: AuthenticatedRequest, res: Respon
         error: 'naReason is required, one of: not-applicable, legal-prohibitions, confidentiality-constraints, information-unavailable-incomplete.',
       }); return;
     }
-    const result = await withTenantContext(readContext(req), async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      const tenant = ownTenant(req.access!, body.clientId);
       const asg = await client.query(
         'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
         [tenant, itemId, departmentId]
@@ -255,7 +255,7 @@ export async function assignNotApplicable(req: AuthenticatedRequest, res: Respon
         payload: { itemId, departmentId, naReason },
       });
       return { evaluationId: evalIns.rows[0].id, notApplicable: true, naReason };
-    });
+    }, readContext);
     res.status(201).json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to mark item N/A');
