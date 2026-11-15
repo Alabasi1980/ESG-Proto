@@ -108,3 +108,16 @@
 | 2026-11-15 | TeraAgent | Verified H10-0 | lime: card `rgb(228,237,184)` · input `rgb(247,248,227)` (ألوان المالك بلا تغيير) · lint 0 · 227/227 · build 0 |
 | 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H10-0` Accepted → Closed — COMPLIANT |
 | 2026-11-15 | TeraAgent | Delegated (parallel) | `H10a` (DashboardView + ClientDashboardView + توسيع الحارس) و`H10b` (GeOverviewView + EsgProfileView) — كاتبان متوازيان، ملفات متباعدة |
+| 2026-11-15 | engineering-agent-typescript | Handback H10a | DashboardView + ClientDashboardView مرّحلتان (±0 سطر) + الحارس 27→31 بأربعة مسارات مسمّاة |
+| 2026-11-15 | engineering-agent-typescript | Handback H10b | GeOverviewView + EsgProfileView مرّحلتان (±0 سطر) — صفر عائلات خارج التوكنز |
+| 2026-11-15 | design-reviewer/agent | Defect found (H10a) | `--brand` كنص/أيقونة في الداكن ≈1.6:1 — سُجّل ISS-001 ويتطلب توكن `--brand-text` + contrast pass |
+| 2026-11-15 | TeraAgent | Verified H10a+H10b | lint 0 · **227/227** · build 0 · الحارس 31 · صفر `bg-white|slate-|dark:|#hex` في الملفات الأربعة |
+| 2026-11-15 | TeraAgent | Issue logged | `ISSUES_AND_GAPS.md` أُنشئ: ISS-001 (تباين داكن) · ISS-002 (بقية الشاشات) · ISS-003/004 (ملاحظات) |
+| 2026-11-15 | Owner | Preview findings | صور: حقول/بطاقات بيضاء بنص فاتح في Staff lists وSettings — غير مقروءة في الثيم الداكن |
+| 2026-11-15 | TeraAgent | Root cause (measured) | الصفحتان غير مرّحلتين: `bg-white` ثابت + فروع `dark:text-*` فاتحة → نص أبيض على أبيض (أسوأ حالة 1.05:1) — 15 نصاً في Settings وحدها |
+| 2026-11-15 | TeraAgent | Token defect confirmed | ISS-001: `--brand` كنص/أيقونة في الداكن = 1.61:1 (شارة RLS) — يحتاج توكن `--brand-text` |
+| 2026-11-15 | TeraAgent | Re-prioritized | إصلاح ما يراه المالك الآن أولاً: Settings + Staff lists + توكن brand-text قبل بقية الدفعات |
+| 2026-11-15 | engineering-agent-typescript | Handback H10-2a | SettingsView (826 سطراً) مرّحل كاملاً: 151 `dark:` → 0 · 310 كلاساً حرفياً → توكنز · بطاقات الإحصاء `bg-surface-3` |
+| 2026-11-15 | engineering-agent-typescript | Handback H10-2b | StaffLists مرّحل + توكن `--brand-text` (ge/lime #026B38 · dark #86DCA8) + 10 استبدالات brand→brand-text في 4 ملفات |
+| 2026-11-15 | TeraAgent | Measured result | Settings (dark): **صفر بطاقات بيضاء** · النصوص المنخفضة **15 → 4** · الباقي: شارة RLS في Header (1.61) + محتوى `ServicesManage` غير المرّحل |
+| 2026-11-15 | TeraAgent | New token gaps | `text-success` على `surface-3` = 3.85 ge / 4.17 lime · `text-warning` = 4.30 ge → يحتاج قرار قيم (دلالات فاتحة على سطح غائر) |
