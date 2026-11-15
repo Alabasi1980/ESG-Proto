@@ -136,3 +136,9 @@
 | 2026-11-15 | engineering-agent-typescript | Handback P2 | TaxonomyManage (510/151) مرّحل · ±0 · صفر بقايا |
 | 2026-11-15 | TeraAgent | Verified P1/P2 | lint 0 · 227/227 · build 0 · صفر مخالفات في الأربعة · **صفحتا Gap Analysis وStandards مكتملتان**: صفر أسطح بيضاء · عيب واحد عالمي (Tenant 4.23) |
 | 2026-11-15 | TeraAgent | False-positive caught | قياس أول بعد انتهاء الجلسة كان على صفحة الدخول لا على الصفحة المطلوبة — أعيد القياس بعد الدخول (شفافية) |
+| 2026-11-15 | engineering-agent-typescript | Handback P3a | Actions + Notifications مرّحلان (±0) + إصلاح TENANT (4.23→9.19) + اسم/قسم المستأجر |
+| 2026-11-15 | engineering-agent-typescript | Handback P3b | Reports (بلا مساس بكتلة الطباعة) + AuditLog مرّحلان · الحارس 41→45 |
+| 2026-11-15 | TeraAgent | Contract update | استثناء الطباعة/PDF مُقنَّن في العقد (لا يُلوَّن أبداً) + بوابة التركيب إلزامية |
+| 2026-11-15 | TeraAgent | Verified P3 | lint 0 · 227/227 · build 0 · صفر مخالفات في الأربعة (Reports نظيف خارج كتلة الطباعة) |
+| 2026-11-15 | TeraAgent | Stop-rule applied | ISS-007 (سطر القسم 3.44 في ge) سُجّل بدل جولة رابعة — يُصلح مع أول دفعة تلمس Sidebar |
+| 2026-11-15 | TeraAgent | Progress | **19 ملفاً نظيفاً** · المتبقي: ClientDetail(63) · ImportGRI(211) · Setup(52) ≈ 326 كلاساً |
