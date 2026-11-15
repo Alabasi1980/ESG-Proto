@@ -34,64 +34,76 @@
   --focus-ring: #038947;
 }
 
-[data-theme="abyss"] {
-  /* Verbatim from THEME_02_ABYSS.md §2 (dark-first, hover lightens). */
-  --surface: #0B1319;
-  --surface-2: #152331;
-  --surface-3: #1D2D3A;
-  --border: #253A4B;
-  --border-strong: #3A5266;
-  --text: #EFF4F1;
-  --muted: #9DB0BC;
-  --brand: #46B275;
-  --brand-strong: #5CC184;
-  --brand-soft: rgb(70 178 117 / .16);
-  --brand-ink: #052E1C;
-  --accent: #F16B3B;
-  --accent-soft: rgb(241 107 59 / .16);
-  --success: #46B275;
-  --success-soft: rgb(70 178 117 / .16);
-  --warning: #FBBF24;
-  --warning-soft: rgb(251 191 36 / .14);
-  --danger: #FB7185;
-  --danger-soft: rgb(251 113 133 / .14);
-  --info: #38BDF8;
-  --info-soft: rgb(56 189 248 / .14);
-  --sidebar-bg: #080E13;
-  --sidebar-text: #E6EDEA;
-  --sidebar-muted: #7E93A1;
-  --sidebar-active: #46B275;
-  --sidebar-active-text: #052E1C;
+[data-theme="dark"] {
+  /* Verbatim from DARK_THEME_RULES.md §2 (approved dark spec D-H08-03, supersedes H01 abyss). */
+  --surface: #152331;
+  --surface-2: #1D3029;
+  --surface-3: #263B33;
+  --border: #456347;
+  --border-strong: #93A987;
+  --text: #F1F6D6;
+  --muted: #CAD6AE;
+  --brand: #026F39;
+  --brand-strong: #027B40;
+  --brand-soft: #294834;
+  --brand-ink: #F1F6D6;
+  --accent: #AFD139;
+  --accent-soft: #303F27;
+  --success: #69D59A;
+  --success-soft: #294834;
+  --warning: #F16B3B;
+  --warning-soft: #36281F;
+  --danger: #FF8D79;
+  --danger-soft: #422A2B;
+  --info: #9BCEEB;
+  --info-soft: #253849;
+  --sidebar-bg: #152331;
+  --sidebar-text: #F1F6D6;
+  --sidebar-muted: #CAD6AE;
+  --sidebar-active: #026F39;
+  --sidebar-active-text: #F1F6D6;
   --focus-ring: #AFD139;
 }
 
-[data-theme="stone"] {
-  /* Verbatim from THEME_03_STONE.md §2 (accent #C2571F approved as-is). */
-  --surface: #F7F6F3;
-  --surface-2: #FFFFFF;
-  --surface-3: #ECEAE4;
-  --border: #E0DDD5;
-  --border-strong: #B9B4A6;
-  --text: #1D2422;
-  --muted: #5C6560;
-  --brand: #152331;
-  --brand-strong: #0B141C;
-  --brand-soft: #E7EBEE;
+[data-theme="lime"] {
+  /* v4.2 from THEME_03_LIME.md §2 (H07d; owner-fixed card and inputs remain literal).
+   * WHY: the owner found v3 too yellow and v4.1 too washed out, so the page alone
+   * takes a quieter GE-lime hue while the fixed card stays visibly deeper in tone.
+   * The owner-fixed creamy inputs remain lighter than the page, not near its tone;
+   * the card separates by tone and green-tinted shadow, not a dark border.
+   * lime = surfaces · green = action · navy = reading · peach = demo note.
+   * 20 identity tokens stay inside the 4-colour palette; --brand-ink is the single
+   * achromatic token (mandated #FFFFFF, 4.49 contrast = documented GAP-002 exception). */
+  --surface: #EEF4D7;
+  --surface-2: #F7F8E3;
+  --surface-3: #E4EDB8;
+  --border: #CBD79B;
+  --border-strong: #498D6B;
+  --text: #152331;
+  --muted: #4C6176;
+  --brand: #038947;
+  --brand-strong: #026B38;
+  --brand-soft: #E4F1EB;
   --brand-ink: #FFFFFF;
-  --accent: #C2571F;
-  --accent-soft: #F9E7D7;
+  --accent: #F16B3B;
+  --accent-soft: #F8ECE2;
   --success: #038947;
   --success-soft: #E2F1E7;
   --warning: #B45309;
   --warning-soft: #FEF3C7;
   --danger: #BE123C;
   --danger-soft: #FFE4E6;
-  --info: #3A6B7C;
-  --info-soft: #E4EDEF;
-  --sidebar-bg: #FFFFFF;
-  --sidebar-text: #2A3431;
-  --sidebar-muted: #7A847F;
-  --sidebar-active: #152331;
-  --sidebar-active-text: #FFFFFF;
-  --focus-ring: #152331;
+  --info: #0369A1;
+  --info-soft: #E0F2FE;
+  --sidebar-bg: #E9F0C6;
+  --sidebar-text: #152331;
+  --sidebar-muted: #52667A;
+  --sidebar-active: #038947;
+  --sidebar-active-text: #FCFDF4;
+  --focus-ring: #038947;
+  /* WHY per-theme and not @theme: the neutral shadow in tokens.css is the structural
+   * default shared by ge/abyss; lime needs a green-tinted shadow so the card separates
+   * from the page by tone + shadow instead of a dark border (D-H06-01 #1).
+   * Consumed as shadow-[var(--shadow)] (CLASS_SPEC.md). */
+  --shadow: 0 1px 2px rgb(20 46 30 / .10), 0 12px 32px rgb(20 46 30 / .16);
 }

@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useLayoutEffect } from 'react';
 
-export type TenantTheme = 'ge' | 'abyss' | 'stone';
+export type TenantTheme = 'ge' | 'lime' | 'dark';
 
 // WHY a literal session constant: the server-enforced tenant theme column
 // lands in a later batch (THEME_TOKENS.md §5) — H02b wires the mechanism only.
-const TENANT_THEME: TenantTheme = 'ge';
+// TEMPORARY preview override (prototype only — removed at transfer; server session takes over per D-H01-01)
+const PARAM = new URLSearchParams(window.location.search).get('theme');
+const TENANT_THEME: TenantTheme = 'ge';   // unchanged default
+const theme = (PARAM === 'ge' || PARAM === 'lime' || PARAM === 'dark') ? PARAM : TENANT_THEME;
 
 interface ThemeContextType {
   theme: TenantTheme;
@@ -19,10 +22,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // so no localStorage, no picker UI, no fetch — the client applies the
   // session value only.
   useLayoutEffect(() => {
-    document.documentElement.setAttribute('data-theme', TENANT_THEME);
+    document.documentElement.setAttribute('data-theme', theme);
   }, []);
 
-  return <ThemeContext.Provider value={{ theme: TENANT_THEME }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme }}>{children}</ThemeContext.Provider>;
 };
 
 export function useTheme() {

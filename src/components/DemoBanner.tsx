@@ -14,9 +14,9 @@ export const DemoBanner: React.FC = () => {
     <div
       role="note"
       aria-live="polite"
-      className="w-full border-b border-amber-500/30 bg-amber-50 px-4 py-1.5 text-center dark:border-amber-400/20 dark:bg-amber-950/40"
+      className="w-full border-b border-accent/15 bg-accent-soft px-4 py-1.5 text-center"
     >
-      <span className="text-[11px] font-semibold tracking-wide text-amber-700 dark:text-amber-300">
+      <span className="text-[11px] font-semibold text-text">
         {t.common.demoBanner}
       </span>
     </div>
