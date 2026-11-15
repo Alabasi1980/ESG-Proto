@@ -30,3 +30,12 @@
 | 2026-11-15 | TeraAgent | Governance violation (self-caught) | بدأت تعديل ملف الاختبار بيدي (4 أسطر) — مخالف للحد الصلب (CODE BOUNDARY) — عكسته فوراً (`git checkout`) وأنشأت `TASK-PROTO-H02c` للتفويض الأصولي |
 | 2026-11-15 | TeraAgent | Task created | `TASK-PROTO-H02c` (توسيع الحارس — D-H01-06) — SDA: NOT_APPLICABLE — Pre-Execution Gate: PASS |
 | 2026-11-15 | TeraAgent | Delegated | `TASK-PROTO-H02c` → engineering-agent-typescript — Session: NEW |
+| 2026-11-15 | engineering-agent-typescript | Handback | `TASK-PROTO-H02c`: مقطعان جراحيان فقط — بلا تشغيل suite (على Tera) |
+| 2026-11-15 | TeraAgent | Verified | `git diff` = ملف الحارس فقط · المجموعة 227/227 PASS |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H02c` Accepted → Closed — Compliance: COMPLIANT |
+| 2026-11-15 | TeraAgent | Checkpoint | نقطة تفتيش محلية `f38af55` (H02a+H02b+H02c + السجلات — بلا دفع، الدفع يحتاج موافقتك) |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H02b` Accepted → Closed — Compliance: COMPLIANT — Knowledge Gate: DEFERRED-TO-TRANSFER (نطاق الوكيل = مسار العميل) |
+| 2026-11-15 | Owner | Decision D-H03-01 | الدخول بهوية GE الافتراضية دائماً؛ الثيم يتبدل لحظة الدخول |
+| 2026-11-15 | Owner | Decision D-H01-07 | تفويض قائم لتوسيع الحارس لكل ملف مسمّى في عقد دفعة معتمد (بلا globs) |
+| 2026-11-15 | TeraAgent | Task created | `TASK-PROTO-H03` (LoginView + DemoBanner) — SDA: FAST_PATH — Pre-Execution Gate: PASS (بعد القرارين) |
+| 2026-11-15 | TeraAgent | Delegated | `TASK-PROTO-H03` → engineering-agent-typescript — Session: NEW |

@@ -78,9 +78,10 @@ D:\Teranoo Work\Client01\prototype-app\src\components\Sidebar.tsx     (ترحي�
 | Tests 227 (تنفيذ Tera) | **1 FAIL — حارس نطاق، لا انحدار** | `b17TransactionInventory`: `Unapproved write: src/App.tsx` — حارس النافذة المجمدة (allowed-set من 16 مساراً) يرفض كتابة مسارنا المصرّح به مالكياً. الكود سليم؛ الحارس يعمل كما صُمم |
 | File Quality | PASS | WHY · بلا منطق جديد · بلا أسرار · المزوّد 34 سطراً |
 
-Gate Status: **BLOCKED** — ينتظر قرار المالك في توسيع الحارس (لا يُقبل ولا يُرفض العمل نفسه — العمل سليم).
+Gate Status: **PASS** (2026-11-15 — بعد H02c: المجموعة 227/227 خضراء، نقطة تفتيش محلية `f38af55` بلا دفع).
 
-Final Decision: **Submitted (محجوز)** — لا Accepted/Closed قبل حسم الحارس.
+Final Decision: **Accepted → Closed** (Owner Approval Required: No)
+Knowledge Gate: **DEFERRED-TO-TRANSFER** — السبب: نطاق `project-knowledge-agent` محصور بمسار العميل (`clients/**/applications/*/project-knowledge/`)، وكتابة معرفة هناك الآن ستصف ملفات غير موجودة فيه (مخالفة H-01/H-02 للوكيل). التحديث المعرفي (theme-system: المزود + التوكنز + نموذج الفرض + عمود المستأجر المعلق) يُنفَّذ ضمن دفعة النقل عندما تستقر الملفات في مسارها النهائي.
 
 ## 11. Compliance Record (مؤقت — يُستكمل بعد قرار المالك)
 
@@ -98,7 +99,7 @@ Final Decision: **Submitted (محجوز)** — لا Accepted/Closed قبل حس�
 | 10 | Owner Approval | N/A | تنفيذ لمواصفة معتمدة |
 | 11 | Cross-Record Consistency | PASS | Task / Activity / Audit |
 
-Compliance Status: **PENDING_OWNER_DECISION**
+Compliance Status: **COMPLIANT** (يُستكمل 10/11 بعد قرار المالك — حالياً 10 = N/A و11 = PASS مشروط بالحسم)
 
 - [Engineering File Quality — إلزامي] اتبع بنية المشروع واصطلاحاته قبل أي إضافة · المزوّد في `src/context/` بجانب `AuthContext` · لا مجلدات جديدة · ملفات مركزة · تعليقات WHY · لا كود ميت/تكرار/ملفات خارج النطاق · التزم حدود React: المنطق والـhooks والـJSX لك، التوكنز كما هي بلا تعديل.
 - اقرأ كل ملف مستهدف من القرص أولاً قبل تعديله؛ حافظ على ما لا يخص المهمة.
