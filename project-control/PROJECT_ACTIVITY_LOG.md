@@ -56,3 +56,7 @@
 | 2026-11-15 | engineering-agent-typescript | Handback H06b | 10 تبديلات كلاس في LoginView + 2 في DemoBanner — صفر تغيير منطقي/هيكلي |
 | 2026-11-15 | TeraAgent | Verified | lint 0 · 227/227 · build 0 · قياس حي: ظل أخضر `rgba(20,46,30)` · حقول كريمية/إطار `#498D6B` · شريط خوخي · نص كحلي — لقطتان محفوظتان |
 | 2026-11-15 | TeraAgent | Post-Execution Review | PASS — `H06b` = READY FOR OWNER ACCEPTANCE (بصري) · ملاحظة: Lime صار أقرب لـge |
+| 2026-11-15 | Owner | Decision D-H06-02 | قيم Lime المعتمدة نصّاً (خلفية #F1F6D6 · بطاقة #E4EDB8 · حقول #F7F8E3 · زر #038947 · نص #152331) — تسود على D-H01-09 |
+| 2026-11-15 | ui-designer | Handback H07 | Lime v3 — القيم الخمس byte-exact · ge/abyss بلا مساس · `#037D40` أُزيل من الكتلة |
+| 2026-11-15 | TeraAgent | Verified H07 | قياس حي: page/card/input/button مطابقة · ظل أخضر · lint 0 · 227/227 · build 0 |
+| 2026-11-15 | TeraAgent | Post-Execution Review | PASS — H07 = READY FOR OWNER ACCEPTANCE · Follow-up: شارة الهيدر 3.87 تحتاج `text-brand-strong` |

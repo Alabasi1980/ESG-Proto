@@ -59,3 +59,22 @@ Matrix: توكنز → `ui-designer` · SDA: `NOT_APPLICABLE` · Security: `Low`
 
 - تنسيق مطابق للكتل المجاورة · تعليقات WHY · بلا تكرار · N/A للبحث/Vitality/Semgrep/Playwright (توكنز فقط — اذكر السبب).
 - أداة خارج صلاحياتك: توقف واطلبها. Handback ≤80 سطراً بلا diffs. أي غموض = STOP.
+
+## 9. Tera Post-Execution Review (2026-11-15 — قياس حي)
+
+| Check | Result | Evidence (قياس فعلي) |
+|---|---|---|
+| القيم الخمس حرفياً | PASS | page `rgb(241,246,214)`=#F1F6D6 · card `rgb(228,237,184)`=#E4EDB8 · input `rgb(247,248,227)`=#F7F8E3 · button `rgb(3,137,71)`=#038947 + نص أبيض · النص كحلي `#152331` |
+| الظل الأخضر | PASS | `rgba(20,46,30,.16)` على البطاقة |
+| حد الحقول | PASS | `rgb(73,141,107)` = `#498D6B` (أخضر هادئ) |
+| ge/abyss بلا مساس | PASS | عدّ القيم: `#037D40` مرة واحدة في تعليق فقط · `#C2571F` = 0 |
+| lint / tests / build | PASS | 0 · **227/227** · 0 |
+| الشريط البرتقالي | PASS | خوخي `#F8ECE2` + نص كحلي |
+
+Gate Status: **PASS** — Final Decision: **READY FOR OWNER ACCEPTANCE** (Owner Approval Required: Yes — بصري)
+ملاحظات مُعلنة (لا تمنع القبول، موثقة): (1) `--brand-ink` أبيض على `#038947` = **4.49** هامشي (D-H06-02 قبله موثقاً — GAP-002 مفتوح). (2) `--sidebar-active-text` = `#FCFDF4` = 4.39. (3) شارة الهيدر `bg-brand-soft text-brand` = 3.87 → تحتاج مهمة مكوّن منفصلة (`text-brand-strong` = 5.72) — Follow-up.
+
+## 10. Compliance Record
+
+Pre-Execution PASS · Targets PASS · No secrets PASS · Design Source D-H06-02 · Review PASS · Activity PASS · Handback PASS (≤80) · Diff PASS · CLI Done · **Owner Approval = PENDING** · Cross-Record PASS.
+Compliance Status: **PENDING_OWNER_APPROVAL**
