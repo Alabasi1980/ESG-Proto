@@ -71,3 +71,38 @@ Matrix: توكنز/هوية بصرية → `ui-designer` · SDA: `NOT_APPLICABLE
 - البحث الإلزامي: N/A (الاشتقاق من لوحة ملزمة — لا مراجع خارجية جديدة) — اذكر السبب.
 - Vitality/Semgrep/Playwright: N/A (CSS بلا واجهة منفذة) — اذكر السبب.
 - إن احتجت أداة خارج صلاحياتك: توقف واطلبها. الـhandback ≤80 سطراً بلا diffs. أي غموض = STOP.
+
+## 10. Tera Post-Execution Review (2026-11-15 — فحص فعلي + تنفيذ مباشر)
+
+| Check | Result | Notes |
+|---|---|---|
+| Allowed Write Targets | PASS | `git diff` = `themes.css` (كتلة stone فقط، تبدأ سطر 68) + ملف المواصفة — لا شيء غيرهما |
+| ge/abyss untouched | PASS | الفرق يبدأ عند كتلة stone؛ الكتلتان مطابقتان |
+| stone/C2571F removed | PASS | عدّ `stone|C2571F` في الملف = 0 · المفاتيح الآن ge/abyss/lime |
+| Spec ≡ CSS | PASS | القيم المقروءة من المتصفح: surface `#f5f8e7` · brand `#037d40` · rail `#eff5d8` · text `rgb(21,35,49)` |
+| `lint` + `tests` + `build` (Tera) | PASS | lint 0 · **227/227** (بعد تثبيت سجلات الحوكمة) · build 0 |
+| Visual | PASS | الدخول بثيم Lime مقروء ومتّسق: أسطح لايم، إجراء أخضر `#037D40`، نص كحلي، تحذير برتقالي — لقطة محفوظة `h05-lime-login.png` |
+| D-H01-08 compliance | PASS | 20 توكن هوية مشتقة من الأربعة · 8 دلالات وحدها خارجها · صفر عائلة دخيلة |
+| D-H01-09 compliance | PASS | brand `#037D40` + brand-ink `#F7FBEC` = 4.98:1 |
+
+Gate Status: **PASS** — Final Decision: **READY FOR OWNER ACCEPTANCE**
+Owner Approval Required: **Yes** — Owner Approval Status: **Pending** (هوية بصرية)
+ملاحظة تشغيلية: `lime` غير قابل للوصول من الجلسة حتى `H05b` (تحديث `TenantTheme`) — مبني ومُتحقَّق لكنه غير مربوط.
+
+## 11. Compliance Record
+
+| # | Check | Result | Verified By |
+|---|---|---|---|
+| 1 | Pre-Execution Gate PASS | PASS | Tera |
+| 2 | Allowed Write Targets respected | PASS | Tera |
+| 3 | No secrets | PASS | Tera |
+| 4 | Design Source documented | PASS | D-H01-08 + اللوحة الملزمة |
+| 5 | Post-Execution Review PASS | PASS | Tera |
+| 6 | Activity log updated | PASS | Tera |
+| 7 | Handback recorded (≤80) | PASS | Tera |
+| 8 | Diff matches handback | PASS | Tera |
+| 9 | CLI documented | Done | lint/tests/build/preview (Tera) |
+| 10 | Owner Approval before CLOSED | PENDING | بانتظار قبولك للهوية |
+| 11 | Cross-Record Consistency | PASS | Task / Activity / Audit |
+
+Compliance Status: **PENDING_OWNER_APPROVAL**

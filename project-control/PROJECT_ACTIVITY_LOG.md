@@ -42,3 +42,12 @@
 | 2026-11-15 | engineering-agent-typescript | Handback | 3 ملفات (LoginView + DemoBanner + الحارس) · SEMGREP PASS · صرّح بأن التحقق البصري على Tera · أبلغ فجوة نظامية (حارس النطاق يقترن بكل ملفات الشجرة غير المحفوظة) |
 | 2026-11-15 | TeraAgent | Verified | lint PASS · 227/227 · build PASS · literals=0/dark=0 · diff=3 ملفات · الدخول يتبع الثيم بمقاس فعلي ×3 + 3 لقطات مختلفة |
 | 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H03` Accepted → Closed — Compliance: COMPLIANT — نقص الدليل البصري من H02b مغلق |
+| 2026-11-15 | Owner | Decision D-H01-08 | قاعدة غلبة الهوية + استبدال Stone بـGE Lime |
+| 2026-11-15 | ui-designer | STOP (round 1) | تعارض رياضي: الأبيض على `#038947` = 4.49 (< AA) — لم يكتب شيئاً وطلب قراراً |
+| 2026-11-15 | TeraAgent | System gap logged | GAP-002 (ادعاء 5.0:1 في THEME_01_GE مقابل 4.49 الفعلي → الثيم المعتمد غير AA) |
+| 2026-11-15 | Owner | Decision D-H01-09 | الخيار B (AA) مطبّقاً على الثيمات الثلاثة؛ ge يُصحَّح في H05c |
+| 2026-11-15 | ui-designer | Handback (round 2) | `THEME_03_LIME.md` + استبدال كتلة stone بكتلة lime — ge/abyss بلا مساس · Spec≡CSS 27/27 |
+| 2026-11-15 | TeraAgent | Verified | lint 0 · 227/227 · build 0 · stone/C2571F=0 · قيم Lime مقروءة من المتصفح · لقطة الدخول محفوظة |
+| 2026-11-15 | TeraAgent | Post-Execution Review | PASS — القرار: READY FOR OWNER ACCEPTANCE (هوية بصرية) |
+| 2026-11-15 | Owner | Decision D-H06-01 | خمس ملاحظات بصرية على ثيم Lime (طبقات أوضح · ظل أخضر · حقول كريمية · تخفيف البرتقالي · ليموني مساعد) |
+| 2026-11-15 | TeraAgent | Task created + delegated | `TASK-PROTO-H06a` (صقل التوكنز + مواصفة كلاسات) → ui-designer — Session: NEW |
