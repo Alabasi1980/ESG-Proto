@@ -10,6 +10,10 @@
 //   npm run showcase              # up (default): ensure DB, seed, serve
 //   npm run showcase -- reset     # wipe container + DB, then up
 //   npm run showcase -- up --wipe # same as reset
+//   npm run showcase -- persistent            # adopt-or-create the shared DB (volume b17-showcase-data,
+//                                            # 127.0.0.1:55432; secrets in repo-root .env), then seed + serve
+//   npm run showcase -- persistent-reset --wipe # DESTROYS shared-DB data (container+volume kept),
+//                                            # then full re-apply + re-seed + serve
 //
 // Required env (values never written to any file, never logged):
 //   SHOWCASE_GE_EMAIL / SHOWCASE_GE_PASSWORD
@@ -23,7 +27,8 @@
 // ESG import, report settings) -> verification -> SHOWCASE_URL, foreground.
 import { randomBytes } from 'node:crypto';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -376,37 +381,228 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
   log(`SUMMARY items=${after.items} standards=${after.standards} disclosures=${after.disclosures} departments=${deptRows.length} esgRows=${profile.json.rows.length}`);
 }
 
-async function serve(base: string, child: ChildProcess): Promise<void> {
-  log('showcase is running - press Ctrl+C to stop.');
-  log(`SHOWCASE_URL=${base}`); // required final line for the operator
-  await new Promise<void>(resolve => {
-    const stop = () => { try { child.kill(); } catch { /* already gone */ } resolve(); };
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
-    child.on('exit', code => { log(`server process exited (code=${code})`); resolve(); });
+// ---- PERSISTENT shared-DB mode (owner-approved permanent on-machine DB) ----
+// WHY a separate path with shared seed logic: every session reaches one
+// durable local DB (named volume, no --rm) instead of a per-run throwaway
+// container, while migrate() + seed() stay shared so both modes prove the
+// same content. Secrets live ONLY in the repo-root .env (gitignored via
+// .env*); SHOWCASE_* account passwords stay runtime-env per run (the owner's
+// showcase password differs from live by design) and are never persisted.
+// B17_PERSISTENT_* overrides exist so verification can run entirely on
+// throwaway names/ports/files without touching the real shared DB.
+const PERSISTENT_CONTAINER_DEFAULT = 'b17-showcase';
+const PERSISTENT_VOLUME_DEFAULT = 'b17-showcase-data';
+const PERSISTENT_PORT_DEFAULT = 55432;
+const PERSISTENT_ENV_FILE_DEFAULT = path.join(ROOT, '.env');
+const PERSISTENT_DB_URL_KEY = 'B17_DEMO_DATABASE_URL';
+const PERSISTENT_JWT_KEY = 'B17_DEMO_JWT_SECRET';
+const PERSISTENT_PG_PASSWORD_KEY = 'B17_DEMO_PG_PASSWORD';
+
+interface PersistentConfig {
+  container: string;
+  volume: string;
+  port: number;
+  envFile: string;
+}
+
+interface PersistentSecrets {
+  databaseUrl: string;
+  jwtSecret: string;
+  pgPassword: string;
+  rolePassword: string;
+}
+
+function resolvePersistentConfig(): PersistentConfig {
+  const container = process.env.B17_PERSISTENT_CONTAINER?.trim() || PERSISTENT_CONTAINER_DEFAULT;
+  const volume = process.env.B17_PERSISTENT_VOLUME?.trim() || PERSISTENT_VOLUME_DEFAULT;
+  const rawPort = process.env.B17_PERSISTENT_PORT?.trim() || '';
+  const port = rawPort ? Number(rawPort) : PERSISTENT_PORT_DEFAULT;
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    die(`invalid B17_PERSISTENT_PORT=${JSON.stringify(rawPort)} — expected a TCP port number.`);
+  const envFile = process.env.B17_PERSISTENT_ENV_FILE?.trim() || PERSISTENT_ENV_FILE_DEFAULT;
+  return { container, volume, port, envFile };
+}
+
+/** Parse KEY=value lines (skips blanks/comments, strips matching quotes). */
+function parseEnvText(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq < 0) continue;
+    let key = t.slice(0, eq).trim();
+    if (key.startsWith('export ')) key = key.slice('export '.length).trim();
+    let val = t.slice(eq + 1).trim();
+    if (val.length >= 2 && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))))
+      val = val.slice(1, -1);
+    if (!out.has(key)) out.set(key, val);
+  }
+  return out;
+}
+
+/** Read the persisted secrets file (missing file = all keys absent). Values are never logged. */
+function readPersistedSecrets(envFile: string): Map<string, string> {
+  if (!existsSync(envFile)) return new Map();
+  return parseEnvText(readFileSync(envFile, 'utf8'));
+}
+
+/** Append ONLY missing keys (creates the file when absent). Logs key names, never values. */
+function persistMissingSecrets(envFile: string, missing: Array<[string, string]>): void {
+  if (!missing.length) return;
+  const block = missing.map(([k, v]) => `${k}=${v}`).join('\n');
+  if (!existsSync(envFile)) {
+    writeFileSync(envFile, `# B17 showcase persistent secrets (generated locally; never commit — .env* is gitignored).\n${block}\n`);
+  } else {
+    const cur = readFileSync(envFile, 'utf8');
+    appendFileSync(envFile, `${cur.length === 0 || cur.endsWith('\n') ? '' : '\n'}${block}\n`);
+  }
+  log(`persisted ${missing.length} secret(s) to ${envFile} (keys: ${missing.map(([k]) => k).join(', ')}; values never printed)`);
+}
+
+/** WHY a TCP probe before `docker run`: a taken port must fail fast with a
+ * clear message — never silently fall back to another port. */
+function isPortListening(host: string, port: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const sock = new net.Socket();
+    const done = (v: boolean) => { try { sock.destroy(); } catch { /* already closed */ } resolve(v); };
+    sock.setTimeout(500);
+    sock.once('connect', () => done(true));
+    sock.once('timeout', () => done(false));
+    sock.once('error', () => done(false));
+    sock.connect(port, host);
   });
 }
 
-async function main(): Promise<void> {
-  process.chdir(ROOT);
-  const args = process.argv.slice(2);
-  const cmd = args.find(a => !a.startsWith('-')) ?? 'up';
-  const wipe = args.includes('--wipe') || cmd === 'reset';
-  if (cmd !== 'up' && cmd !== 'reset')
-    die(`unknown subcommand '${cmd}' — usage: npm run showcase [up|reset] [--wipe]`);
-  const creds = requireEnv();
+function persistentContainerExists(cfg: PersistentConfig): boolean {
+  return docker('ps', '-a', '--filter', `name=^${cfg.container}$`, '--format', '{{.Names}}') === cfg.container;
+}
 
-  if (wipe) {
-    try { docker('rm', '-f', CONTAINER); log('wiped container', CONTAINER); }
-    catch { /* not present */ }
+/** Adopt an existing same-named container, or refuse it when it is NOT the
+ * persistent one. WHY refuse: a container without the named volume is a live
+ * ephemeral from another session (--rm); adopting it would hijack its DB and
+ * destroying it would wipe that session's data — so stop/remove first. */
+async function adoptPersistentContainer(cfg: PersistentConfig): Promise<void> {
+  const autoRemove = docker('inspect', '-f', '{{.HostConfig.AutoRemove}}', cfg.container);
+  const mounts = docker('inspect', '-f', '{{range .Mounts}}{{.Name}} {{end}}', cfg.container);
+  if (autoRemove === 'true' || !mounts.split(/\s+/).includes(cfg.volume))
+    die(`refusing persistent adoption: container '${cfg.container}' exists WITHOUT the named volume '${cfg.volume}' (likely a live ephemeral from another session). Stop/remove it first, then re-run — nothing was adopted or destroyed.`);
+  if (docker('inspect', '-f', '{{.State.Running}}', cfg.container) !== 'true') {
+    docker('start', cfg.container);
+    log('started existing persistent container', cfg.container);
+  } else {
+    log('reusing persistent container', cfg.container);
   }
-  const { port, pgPassword } = await ensureContainer();
-  const admin = await waitPg(port, pgPassword);
-  const databaseUrl = await ensureRoleAndDb(admin, pgPassword, port);
-  process.env.DATABASE_URL = databaseUrl; // in-memory only; replaces any ambient value
-  await migrate(creds.griCsv, ESG_CSV);
+  await assertPersistentBinding(cfg);
+}
 
-  const jwtSecret = randomBytes(32).toString('hex'); // never logged, never written
+async function assertPersistentBinding(cfg: PersistentConfig): Promise<void> {
+  // WHY poll: `docker run --detach` returns before the port mapping is
+  // queryable; one immediate `docker port` would race container start.
+  for (let i = 0; i < 30; i++) {
+    try {
+      const binding = docker('port', cfg.container, '5432/tcp');
+      if (binding === `127.0.0.1:${cfg.port}`) return;
+      die(`unexpected binding for '${cfg.container}': ${binding} (expected exactly 127.0.0.1:${cfg.port}); refusing to use another port.`);
+    } catch { /* not published yet — keep polling */ }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  die(`port mapping for '${cfg.container}' never appeared (expected 127.0.0.1:${cfg.port}); inspect the container, then re-run.`);
+}
+
+async function createPersistentContainer(cfg: PersistentConfig, pgPassword: string): Promise<void> {
+  if (await isPortListening('127.0.0.1', cfg.port))
+    die(`port 127.0.0.1:${cfg.port} is already in use — refusing to silently pick another port. Free it and re-run (or point B17_PERSISTENT_PORT at a throwaway for verification).`);
+  try {
+    // WHY /var/lib/postgresql (not .../data): postgres:18 keeps PGDATA in a
+    // versioned subdirectory for pg_upgrade; mounting .../data aborts init.
+    docker('run', '--detach', '--name', cfg.container,
+      '-e', `POSTGRES_PASSWORD=${pgPassword}`, '-v', `${cfg.volume}:/var/lib/postgresql`,
+      '-p', `127.0.0.1:${cfg.port}:5432`, 'postgres:18');
+  } catch (err: any) {
+    const firstLine = String(err?.message ?? err).split('\n')[0].split(pgPassword).join('<redacted>');
+    die(`could not create persistent container '${cfg.container}' on 127.0.0.1:${cfg.port} (name or port taken?): ${firstLine}`);
+  }
+  log('created persistent container', cfg.container);
+  await assertPersistentBinding(cfg);
+}
+
+/** Resolve the three persistent secrets: read from the env file when present,
+ * else recover-or-generate (the superuser password is recoverable from an
+ * adopted container via printenv like the ephemeral flow; a missing role URL
+ * is rebuilt and the live role re-converged by ALTER below), then append only
+ * the missing keys. Values are never printed. */
+function ensurePersistentSecrets(cfg: PersistentConfig, containerExists: boolean): PersistentSecrets {
+  const existing = readPersistedSecrets(cfg.envFile);
+  let pgPassword = existing.get(PERSISTENT_PG_PASSWORD_KEY) ?? '';
+  if (!pgPassword) {
+    pgPassword = containerExists
+      ? docker('exec', cfg.container, 'printenv', 'POSTGRES_PASSWORD').trim()
+      : randomBytes(24).toString('hex');
+    if (!pgPassword) die(`container '${cfg.container}' has no POSTGRES_PASSWORD to recover — remove the container or repair ${cfg.envFile}, then re-run.`);
+  }
+  let jwtSecret = existing.get(PERSISTENT_JWT_KEY) ?? '';
+  if (!jwtSecret) jwtSecret = randomBytes(32).toString('hex'); // stable across restarts so sessions survive
+  let databaseUrl = existing.get(PERSISTENT_DB_URL_KEY) ?? '';
+  if (!databaseUrl)
+    databaseUrl = `postgresql://${ROLE}:${randomBytes(24).toString('hex')}@127.0.0.1:${cfg.port}/${DB_NAME}`;
+  // WHY validate shape before use: a hand-edited URL pointing elsewhere must
+  // fail fast here, never silently seed the wrong database.
+  let rolePassword = '';
+  try {
+    const u = new URL(databaseUrl);
+    if (u.hostname !== '127.0.0.1' || Number(u.port) !== cfg.port
+      || u.pathname.replace(/^\//, '') !== DB_NAME || !u.password)
+      die(`secret ${PERSISTENT_DB_URL_KEY} in ${cfg.envFile} does not point at 127.0.0.1:${cfg.port}/${DB_NAME} — fix or remove that line, then re-run.`);
+    try { rolePassword = decodeURIComponent(u.password); } catch { rolePassword = u.password; }
+  } catch (err: any) {
+    if (err?.message?.startsWith('secret ')) throw err;
+    die(`secret ${PERSISTENT_DB_URL_KEY} in ${cfg.envFile} is not a valid URL — fix or remove that line, then re-run.`);
+  }
+  if (!rolePassword) die(`secret ${PERSISTENT_DB_URL_KEY} in ${cfg.envFile} carries no password — remove that line, then re-run.`);
+  const missing: Array<[string, string]> = [];
+  if (!existing.get(PERSISTENT_PG_PASSWORD_KEY)) missing.push([PERSISTENT_PG_PASSWORD_KEY, pgPassword]);
+  if (!existing.get(PERSISTENT_JWT_KEY)) missing.push([PERSISTENT_JWT_KEY, jwtSecret]);
+  if (!existing.get(PERSISTENT_DB_URL_KEY)) missing.push([PERSISTENT_DB_URL_KEY, databaseUrl]);
+  persistMissingSecrets(cfg.envFile, missing);
+  return { databaseUrl, jwtSecret, pgPassword, rolePassword };
+}
+
+/** Persistent twin of ensureRoleAndDb: identical create path, plus ALTER
+ * convergence so a rebuilt role URL always matches the live role (a no-op
+ * rewrite when the password already matches). */
+async function ensurePersistentRoleAndDb(admin: pg.Client, rolePassword: string): Promise<void> {
+  const esc = rolePassword.replace(/'/g, "''"); // interpolated like the ephemeral flow; hex has no quotes, belt kept
+  if (!(await admin.query(`SELECT 1 FROM pg_roles WHERE rolname='${ROLE}'`)).rowCount)
+    await admin.query(`CREATE ROLE ${ROLE} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '${esc}'`);
+  else
+    await admin.query(`ALTER ROLE ${ROLE} WITH PASSWORD '${esc}'`);
+  if (!(await admin.query(`SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'`)).rowCount)
+    await admin.query(`CREATE DATABASE ${DB_NAME} OWNER ${ROLE}`);
+  await admin.end();
+}
+
+/** persistent-reset data wipe: database rows go, container + volume stay. */
+async function dropAndRecreatePersistentDb(admin: pg.Client, cfg: PersistentConfig): Promise<void> {
+  // WHY print first: persistent-reset destroys data by design; the operator
+  // sees exactly what goes (database rows) and what stays (container+volume).
+  log(`persistent-reset will DESTROY: every row in database '${DB_NAME}' on container '${cfg.container}' (container + volume '${cfg.volume}' are KEPT).`);
+  await admin.query(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
+  await admin.query(`CREATE DATABASE ${DB_NAME} OWNER ${ROLE}`);
+  log(`database '${DB_NAME}' dropped + recreated (container + volume kept)`);
+}
+
+/** Last line group of every persistent run: routable facts only, never values. */
+function printPersistentCard(base: string, cfg: PersistentConfig): void {
+  log('— persistent connection card —');
+  log(`endpoint: ${base}`);
+  log(`database: host=127.0.0.1 port=${cfg.port} name=${DB_NAME}`);
+  log(`storage : container=${cfg.container} volume=${cfg.volume}`);
+  log(`secrets : ${cfg.envFile} (values never printed)`);
+}
+
+/** Boot the repo server in sanctioned scratch mode; shared by both flows. */
+async function bootServer(databaseUrl: string, jwtSecret: string): Promise<{ base: string; child: ChildProcess; killChild: () => void }> {
   const child = spawn(process.execPath, ['--import', 'tsx', 'server.ts'], {
     cwd: ROOT,
     env: { ...process.env, B17_SCRATCH_OPT_IN: 'YES', JWT_SECRET: jwtSecret, DATABASE_URL: databaseUrl, NODE_ENV: '' },
@@ -429,6 +625,73 @@ async function main(): Promise<void> {
     child.on('exit', code => { clearTimeout(timer); reject(new Error(`server exited ${code} before listen; output:\n${out}`)); });
   });
   log('server booted (scratch mode, Vite dev SPA):', base);
+  return { base, child, killChild };
+}
+
+async function persistentMain(cmd: 'persistent' | 'persistent-reset', wipe: boolean, creds: ReturnType<typeof requireEnv>): Promise<void> {
+  if (cmd === 'persistent-reset' && !wipe)
+    die(`'persistent-reset' destroys ALL data in database '${DB_NAME}' — re-run as: npm run showcase -- persistent-reset --wipe`);
+  if (cmd === 'persistent' && wipe)
+    die(`'persistent' never accepts --wipe (that would risk the shared DB) — use 'persistent-reset --wipe' to rebuild data.`);
+  const cfg = resolvePersistentConfig();
+  const containerExists = persistentContainerExists(cfg);
+  if (containerExists) await adoptPersistentContainer(cfg);
+  else if (await isPortListening('127.0.0.1', cfg.port)) // WHY probe before secrets: a doomed run must not persist anything
+    die(`port 127.0.0.1:${cfg.port} is already in use — refusing to silently pick another port. Free it and re-run (or point B17_PERSISTENT_PORT at a throwaway for verification).`);
+  const secrets = ensurePersistentSecrets(cfg, containerExists);
+  if (!containerExists) await createPersistentContainer(cfg, secrets.pgPassword);
+  const admin = await waitPg(cfg.port, secrets.pgPassword);
+  if (cmd === 'persistent-reset') await dropAndRecreatePersistentDb(admin, cfg);
+  await ensurePersistentRoleAndDb(admin, secrets.rolePassword);
+  process.env.DATABASE_URL = secrets.databaseUrl; // in-memory only; replaces any ambient value
+  await migrate(creds.griCsv, ESG_CSV);
+
+  const { base, child, killChild } = await bootServer(secrets.databaseUrl, secrets.jwtSecret);
+  log(`persistent database: 127.0.0.1:${cfg.port}/${DB_NAME} (container=${cfg.container} volume=${cfg.volume})`);
+  try {
+    await seed(base, creds);
+  } catch (err: any) {
+    killChild();
+    die(err?.message ?? String(err));
+  }
+  printPersistentCard(base, cfg);
+  await serve(base, child);
+}
+
+async function serve(base: string, child: ChildProcess): Promise<void> {
+  log('showcase is running - press Ctrl+C to stop.');
+  log(`SHOWCASE_URL=${base}`); // required final line for the operator
+  await new Promise<void>(resolve => {
+    const stop = () => { try { child.kill(); } catch { /* already gone */ } resolve(); };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+    child.on('exit', code => { log(`server process exited (code=${code})`); resolve(); });
+  });
+}
+
+async function main(): Promise<void> {
+  process.chdir(ROOT);
+  const args = process.argv.slice(2);
+  const cmd = args.find(a => !a.startsWith('-')) ?? 'up';
+  const wipe = args.includes('--wipe') || cmd === 'reset';
+  if (cmd !== 'up' && cmd !== 'reset' && cmd !== 'persistent' && cmd !== 'persistent-reset')
+    die(`unknown subcommand '${cmd}' — usage: npm run showcase [up|reset|persistent|persistent-reset] [--wipe]`);
+  const creds = requireEnv();
+
+  if (cmd === 'persistent' || cmd === 'persistent-reset') return persistentMain(cmd, wipe, creds);
+
+  if (wipe) {
+    try { docker('rm', '-f', CONTAINER); log('wiped container', CONTAINER); }
+    catch { /* not present */ }
+  }
+  const { port, pgPassword } = await ensureContainer();
+  const admin = await waitPg(port, pgPassword);
+  const databaseUrl = await ensureRoleAndDb(admin, pgPassword, port);
+  process.env.DATABASE_URL = databaseUrl; // in-memory only; replaces any ambient value
+  await migrate(creds.griCsv, ESG_CSV);
+
+  const jwtSecret = randomBytes(32).toString('hex'); // never logged, never written
+  const { base, child, killChild } = await bootServer(databaseUrl, jwtSecret);
 
   try {
     await seed(base, creds);

@@ -125,7 +125,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // D-H01-07 (2026-11-15, owner-authorized): view-migration batch H03 — 2 paths only.
     // Exact files named in TASK-PROTO-H03 — no globs, no implicit paths (LoginView + DemoBanner → tokens).
     'src/views/LoginView.tsx','src/components/DemoBanner.tsx',
-    ...newFiles]);
+    ...newFiles,
+    // Owner-authorized persistent shared-DB infra (showcase script + container/DB) — exact path only.
+    'scripts/b17-showcase.ts']);
   // G1 ruling 4 (§11): the TWO reviewer-owned report paths are excluded from
   // the executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -134,7 +136,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file));
-  assert.equal(allowed.size,26); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views)
+  assert.equal(allowed.size,27); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });
