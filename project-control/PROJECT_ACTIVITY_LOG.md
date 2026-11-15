@@ -129,3 +129,10 @@
 | 2026-11-15 | engineering-agent-typescript | Handback H11b | InitiativesView مرّحل كاملاً (±0) — 99 كلاساً · صفر بقايا |
 | 2026-11-15 | TeraAgent | Verified H11 | lint 0 · 227/227 · build 0 · صفر مخالفات في الثلاثة · تدقيق GapAnalysis (داكن): نص منخفض=1 فقط (Tenant 4.23) · صفر أسطح بيضاء |
 | 2026-11-15 | TeraAgent | Progress | 11 شاشة/مكوّناً مرّحل (Login · Dashboard · ClientDashboard · GeOverview · EsgProfile · Settings · StaffLists · Services · GapAnalysis · Standards · Initiatives) — المتبقي 11 ملفاً (~1489 كلاساً) |
+| 2026-11-15 | Owner | Rule enforced | «لا ستايل محلي» + «التحقق من كل المكوّنات في كل صفحة» — أُضيفت للعقد كقاعدة ملزمة مع فحص آلي |
+| 2026-11-15 | TeraAgent | Composition map built | جرد آلي: 11 ملفاً نظيفاً · 11 خاماً · التضمينات مكشوفة (GapAnalysis→3 · Standards→1 · Settings→1) |
+| 2026-11-15 | engineering-agent-typescript | Handback P1a | EvaluationPanel (995 سطراً / 278 كلاساً / 142 dark) مرّحل · ±0 · بطاقات التقييم دلالية لا هوية |
+| 2026-11-15 | engineering-agent-typescript | Handback P1b | ClientReview + GeFinal مرّحلان · الحارس 37→41 بأربعة مسارات |
+| 2026-11-15 | engineering-agent-typescript | Handback P2 | TaxonomyManage (510/151) مرّحل · ±0 · صفر بقايا |
+| 2026-11-15 | TeraAgent | Verified P1/P2 | lint 0 · 227/227 · build 0 · صفر مخالفات في الأربعة · **صفحتا Gap Analysis وStandards مكتملتان**: صفر أسطح بيضاء · عيب واحد عالمي (Tenant 4.23) |
+| 2026-11-15 | TeraAgent | False-positive caught | قياس أول بعد انتهاء الجلسة كان على صفحة الدخول لا على الصفحة المطلوبة — أعيد القياس بعد الدخول (شفافية) |
