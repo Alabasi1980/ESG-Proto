@@ -43,3 +43,25 @@ Matrix: React/TS → المتخصص · SDA: `FAST_PATH` (توكنز مثبتة +
 
 - [Engineering File Quality]: اقرأ الملفين أولاً · جراحي · بلا إعادة تنسيق · تعليقات WHY فقط عند اللزوم.
 - إن احتجت أداة خارج صلاحياتك: توقف واطلبها. Handback ≤80 سطراً بلا diffs. أي غموض = STOP.
+
+## 8. Tera Post-Execution Review (2026-11-15 — قياس حي + لقطات)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Allowed Write Targets | PASS | `git status -- src/` = LoginView + DemoBanner فقط (زائد ملفات الدفعة السابقة) |
+| literals/dark/shadow-xl | PASS | العدّ = 0 في الملفين |
+| lint / tests / build (Tera) | PASS | 0 · 227/227 · 0 |
+| #1 بطاقة أغمق + ظل أخضر بلا حدود داكنة | PASS | page `rgb(242,244,235)` · card `rgb(228,232,211)` · shadow `rgba(20,46,30,.10/.16)` — بلا `border` |
+| #2 حقول كريمية بإطار أخضر هادئ | PASS | input `rgb(237,241,223)` · border `rgb(73,141,107)` = `#498D6B` — وأفتح من البطاقة |
+| #3 كحلي للنصوص | PASS | `rgb(21,35,49)` في الصفحة والعناوين; الأخضر محصور في brand/interactive |
+| #4 تخفيف الشريط البرتقالي | PASS | `rgb(248,236,226)` خوخي + نص كحلي (كان `warning-soft` كهرماني) |
+| #5 ليموني مساعد | PASS | S للأسطح −44% إلى −57% مقابل v1 (قياس H06a) |
+| Deviation موثق | DemoBanner بقي بعرض كامل (3 مواضع تركيب منها الهيدر الملتصق) — بديل المالك المسموح | §3 |
+
+Gate Status: **PASS** — Final Decision: **READY FOR OWNER ACCEPTANCE** (Owner Approval Required: Yes — بصري)
+ملاحظة صادقة: Lime أصبح أقرب إلى **ge** (كلاهما فاتح) — الفصل الآن في دفء/كريمية الأسطح وإطار الحقول الأخضر، وليس في الدرجة. لو رآهما المالك متطابقين، الرافعة الآمنة: رفع تشبّع `border`/`surface-3` في Lime فقط.
+
+## 9. Compliance Record
+
+Pre-Execution PASS · Allowed Targets PASS · No secrets PASS · Design Source D-H06-01 · Review PASS · Activity PASS · Handback PASS · Diff matches PASS · CLI done · Owner Approval = PENDING (بصري) · Cross-Record PASS.
+Compliance Status: **PENDING_OWNER_APPROVAL**

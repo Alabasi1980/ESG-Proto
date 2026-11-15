@@ -51,3 +51,8 @@
 | 2026-11-15 | TeraAgent | Post-Execution Review | PASS — القرار: READY FOR OWNER ACCEPTANCE (هوية بصرية) |
 | 2026-11-15 | Owner | Decision D-H06-01 | خمس ملاحظات بصرية على ثيم Lime (طبقات أوضح · ظل أخضر · حقول كريمية · تخفيف البرتقالي · ليموني مساعد) |
 | 2026-11-15 | TeraAgent | Task created + delegated | `TASK-PROTO-H06a` (صقل التوكنز + مواصفة كلاسات) → ui-designer — Session: NEW |
+| 2026-11-15 | ui-designer | Handback H06a | توكنز Lime v2 (11 توكن معدّل) + `--shadow` مخضرّ داخل الكتلة + CLASS_SPEC (12 صفاً) — ge/abyss بلا مساس · ΔL=7.0 · S −44%..−57% |
+| 2026-11-15 | TeraAgent | Decision (mechanism) | رفض تحويل DemoBanner إلى «حبة» (3 مواضع تركيب منها الهيدر) → بديل المالك المسموح: خلفية خوخية بعرض كامل |
+| 2026-11-15 | engineering-agent-typescript | Handback H06b | 10 تبديلات كلاس في LoginView + 2 في DemoBanner — صفر تغيير منطقي/هيكلي |
+| 2026-11-15 | TeraAgent | Verified | lint 0 · 227/227 · build 0 · قياس حي: ظل أخضر `rgba(20,46,30)` · حقول كريمية/إطار `#498D6B` · شريط خوخي · نص كحلي — لقطتان محفوظتان |
+| 2026-11-15 | TeraAgent | Post-Execution Review | PASS — `H06b` = READY FOR OWNER ACCEPTANCE (بصري) · ملاحظة: Lime صار أقرب لـge |
