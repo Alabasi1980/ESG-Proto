@@ -64,3 +64,39 @@ D:\Teranoo Work\Client01\prototype-app\src\lib\b17TransactionInventory.test.ts  
 
 - Matrix: TS/React → `engineering-agent-typescript` · SDA: `FAST_PATH` (نمط مثبت من H02، ملفان، قابل للعكس) · Security: `Low` · QA: `QA_REQUIRED` (تنفيذ Tera) · Auditor: `NOT_REQUIRED` (العداد 2) · Model: sufficient.
 - Pre-Execution Gate: **PASS** (D-H03-01 + D-H01-07 محسومان 2026-11-15)
+
+## 9. Tera Post-Execution Review (2026-11-15 — فحص فعلي + تنفيذ مباشر)
+
+| Check | Result | Notes |
+|---|---|---|
+| Files within Allowed Write Targets | PASS | `git diff --stat -- src/` = LoginView(50) + DemoBanner(4) + guard(5) — لا شيء غيرهما |
+| Zero literals / zero `dark:` in 2 files | PASS | `literals=0` · `dark=0` · `slate-750/850` المتكررة = 0 (فحص Tera المباشر) |
+| `lint` + `tests` + `build` (تنفيذ Tera) | PASS | lint exit 0 · **227/227** · build exit 0 (تحذير الـchunk السابق نفسه) |
+| Visual ×3 (تنفيذ Tera: preview + computed + لقطات) | **PASS** | الدخول صار يتبع الثيم: ge `rgb(244,246,244)` · abyss `rgb(11,19,25)` · stone `rgb(247,246,243)` — 3 لقطات مختلفة الأحجام (44/47/46KB) محفوظة في مجلد المهمة. **نقص H02b البصري مغلق** |
+| Contrast (Abyss) | PASS | التسميات `text-muted` = `#9DB0BC` على `#1D2D3A` ≈ 5.9:1 (AA) |
+| Guard extension | PASS | مساران مسمّيان فقط · `assert.size` 24→26 · تعليقان (D-H01-07 + D-H03-01) · منطق الحارس بلا مساس |
+| Behavior unchanged | PASS | 227 اختباراً خضراء + صفر تغيير في hooks/state/handlers |
+| File Quality | PASS | جراحي · بلا إعادة تنسيق · بلا كود ميت |
+
+**ملاحظتان للبوليش (ليستا رفضاً):** (1) شريط `DemoBanner` في Abyss يقرأ بدرجة زيتونية (شفافية `warning-soft` فوق الداكن) — مقروء لكنه ليس مثالياً بصرياً؛ يُحسَّن في جولة بوليش. (2) `hover:bg-surface-3` على زر اللغة = base نفسه (hover ميت) — نتيجة mapping حرفي؛ يُنظَّف مع بقية الهوامش لاحقاً.
+
+Gate Status: **PASS** — Final Decision: **Accepted → Closed** (Owner Approval Required: No)
+Knowledge Gate: DEFERRED-TO-TRANSFER (سياسة نطاق الوكيل نفسها في H02b).
+
+## 10. Compliance Record
+
+| # | Check | Result | Verified By |
+|---|---|---|---|
+| 1 | Pre-Execution Gate PASS documented | PASS | Tera |
+| 2 | Allowed Write Targets respected | PASS | Tera |
+| 3 | No secrets | PASS | Tera |
+| 4 | Design Source documented | PASS | H01 المعتمد + D-H03-01 |
+| 5 | Post-Execution Review PASS | PASS | Tera |
+| 6 | Activity log updated | PASS | Tera |
+| 7 | Handback recorded (≤80, بلا diffs) | PASS | Tera |
+| 8 | Diff matches handback | PASS | Tera (3 ملفات) |
+| 9 | CLI documented | Done | lint + tests + build + preview/Playwright (Tera) |
+| 10 | Owner Approval | N/A | قرارات D-H03-01/D-H01-07 سابقة للتنفيذ |
+| 11 | Cross-Record Consistency | PASS | Task / Activity / Audit |
+
+Compliance Status: **COMPLIANT**

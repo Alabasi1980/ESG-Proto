@@ -39,3 +39,6 @@
 | 2026-11-15 | Owner | Decision D-H01-07 | تفويض قائم لتوسيع الحارس لكل ملف مسمّى في عقد دفعة معتمد (بلا globs) |
 | 2026-11-15 | TeraAgent | Task created | `TASK-PROTO-H03` (LoginView + DemoBanner) — SDA: FAST_PATH — Pre-Execution Gate: PASS (بعد القرارين) |
 | 2026-11-15 | TeraAgent | Delegated | `TASK-PROTO-H03` → engineering-agent-typescript — Session: NEW |
+| 2026-11-15 | engineering-agent-typescript | Handback | 3 ملفات (LoginView + DemoBanner + الحارس) · SEMGREP PASS · صرّح بأن التحقق البصري على Tera · أبلغ فجوة نظامية (حارس النطاق يقترن بكل ملفات الشجرة غير المحفوظة) |
+| 2026-11-15 | TeraAgent | Verified | lint PASS · 227/227 · build PASS · literals=0/dark=0 · diff=3 ملفات · الدخول يتبع الثيم بمقاس فعلي ×3 + 3 لقطات مختلفة |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H03` Accepted → Closed — Compliance: COMPLIANT — نقص الدليل البصري من H02b مغلق |
