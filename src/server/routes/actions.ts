@@ -41,6 +41,18 @@ import {
 
 const router = express.Router();
 
+// G2 E3-02 byte-preserving collapse: an error WE raised (integer statusCode,
+// no 5-char SQLSTATE) keeps today's exact body — status + message, no code key;
+// a raw PostgreSQL diagnostic or unknown failure collapses to the route's
+// static fallback. (_shared writeFailure would ADD a `code` key for our own
+// scope.* errors — a wire change — so this twin stays file-local.)
+function actionFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode)
+    && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code));
+  if (own) { res.status(err.statusCode as number).json({ error: err.message || fallback }); return; }
+  res.status(500).json({ error: fallback });
+}
+
 // ----------------------------------------------------------------------
 // 9. Actions — Corrective Action lifecycle (FIX BATCH 8 / MP-40, WF-04)
 //
@@ -114,7 +126,7 @@ router.get('/actions', authMiddleware, requireDomainAccess, async (req: Authenti
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Actions list error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch actions' });
+    actionFailure(res, err, 'Failed to fetch actions');
   }
 });
 
@@ -171,7 +183,7 @@ router.post('/actions', authMiddleware, requireFreshPassword, requireDomainAcces
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Action create error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create action' });
+    actionFailure(res, err, 'Failed to create action');
   }
 });
 
@@ -294,7 +306,7 @@ router.patch('/actions/:id', authMiddleware, requireFreshPassword, requireDomain
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Action patch error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update action' });
+    actionFailure(res, err, 'Failed to update action');
   }
 });
 

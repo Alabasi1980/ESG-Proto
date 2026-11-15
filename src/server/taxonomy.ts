@@ -1,6 +1,6 @@
 import express, { type Response, type NextFunction } from 'express';
 import { recordAuditLog } from '../db/index.ts';
-import { domainTransaction, boundaryFailure, DeferredRefusal } from './routes/initiativeScope.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal } from './routes/initiativeScope.ts';
 import { authMiddleware, type AuthenticatedRequest } from './auth.ts';
 import { requireDomainAccess } from './access.ts';
 import { readContext, requireFreshPassword } from './routes/_shared.ts';
@@ -36,6 +36,19 @@ import {
 
 const router = express.Router();
 
+// G2 E3-02: an error WE raised (integer statusCode, no 5-char SQLSTATE) keeps
+// the exact body these handlers always sent — status + message, no code key;
+// a raw PostgreSQL diagnostic or unknown failure collapses to the route's
+// static fallback, so a handler bug can never become a database oracle.
+// (_shared writeFailure would ADD a `code` key for our own scope.* errors —
+// a wire change — so this byte-preserving twin stays file-local.)
+function catalogFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode)
+    && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code));
+  if (own) { res.status(err.statusCode as number).json({ error: err.message || fallback }); return; }
+  res.status(500).json({ error: fallback });
+}
+
 // U2-D carryover: validate every UUID-bearing input in this activated router,
 // including alternate body/query link filters, before domain SQL can run.
 function validateTaxonomyIds(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -46,7 +59,17 @@ function validateTaxonomyIds(req: AuthenticatedRequest, res: Response, next: Nex
       if (req.body?.[key] !== undefined && req.body[key] !== null) scopeId(req.body[key], true);
     }
     next();
-  } catch (err: any) { res.status(400).json({ error: err.message, code: err.code }); }
+  } catch (err: any) {
+    // scopeId is the only thrower here (own 400 scope.* codes): pass through
+    // byte-for-byte. The collapse arm is fail-closed defence for any
+    // unexpected non-own failure (E3-02 — never echo a PG diagnostic).
+    if (Number.isInteger(err?.statusCode)
+      && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code))) {
+      res.status(400).json({ error: err.message, code: err.code });
+      return;
+    }
+    res.status(400).json({ error: 'Invalid request input.' });
+  }
 }
 
 /** §22/§3.2: explicit invalid filters REFUSE (400 scope.id_invalid) — they
@@ -90,8 +113,8 @@ router.get('/services', authMiddleware, requireDomainAccess, validateTaxonomyIds
     }, readContext);
     res.json(rows);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch services' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to fetch services');
   }
 });
 
@@ -124,8 +147,8 @@ router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomy
     }, readContext);
     res.json(rows);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch disclosures' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to fetch disclosures');
   }
 });
 
@@ -158,8 +181,8 @@ router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, a
     }, readContext);
     res.json(rows);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch items' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to fetch items');
   }
 });
 
@@ -208,8 +231,8 @@ router.post('/services', authMiddleware, requireFreshPassword, requireDomainAcce
     });
     res.status(201).json(created);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create service' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to create service');
   }
 });
 
@@ -269,8 +292,8 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
     });
     res.json(updated);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update service' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to update service');
   }
 });
 
@@ -325,8 +348,8 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
     });
     res.status(201).json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to duplicate service' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to duplicate service');
   }
 });
 
@@ -362,8 +385,8 @@ router.post('/services/:id/standards', authMiddleware, requireFreshPassword, req
     });
     res.status(result.existed ? 200 : 201).json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to link standard' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to link standard');
   }
 });
 
@@ -395,8 +418,8 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, r
     });
     res.json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to unlink standard' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to unlink standard');
   }
 });
 
@@ -455,8 +478,8 @@ router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDoma
     });
     res.json(updated);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update standard' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to update standard');
   }
 });
 
@@ -496,8 +519,8 @@ router.delete('/standards/:id', authMiddleware, requireFreshPassword, requireDom
     });
     res.json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete standard' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to delete standard');
   }
 });
 
@@ -555,8 +578,8 @@ router.patch('/disclosures/:id', authMiddleware, requireFreshPassword, requireDo
     });
     res.json(updated);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update disclosure' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to update disclosure');
   }
 });
 
@@ -594,8 +617,8 @@ router.delete('/disclosures/:id', authMiddleware, requireFreshPassword, requireD
     });
     res.json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete disclosure' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to delete disclosure');
   }
 });
 
@@ -681,8 +704,8 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
     });
     res.status(201).json(created);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create item' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to create item');
   }
 });
 
@@ -814,8 +837,8 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
     });
     res.json(updated);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update item' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to update item');
   }
 });
 
@@ -866,8 +889,8 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
     });
     res.json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to delete item' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to delete item');
   }
 });
 
@@ -937,8 +960,8 @@ router.post('/items/:id/links', authMiddleware, requireFreshPassword, requireDom
     });
     res.status(201).json(created);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create item link' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to create item link');
   }
 });
 
@@ -985,8 +1008,8 @@ router.delete('/items/:id/links', authMiddleware, requireFreshPassword, requireD
     });
     res.json(result);
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to remove item link' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to remove item link');
   }
 });
 
@@ -1089,8 +1112,8 @@ router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxo
     }, readContext);
     res.json({ links: rows, count: rows.length });
   } catch (err: any) {
-    if (boundaryFailure(res, err)) return;
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch item links' });
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to fetch item links');
   }
 });
 

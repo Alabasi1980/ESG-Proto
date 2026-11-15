@@ -35,6 +35,16 @@ import { readContext, platformConfigContext, requireFreshPassword, B16_CLIENT_GR
 
 const router = express.Router();
 
+// G2 E3-02 byte-preserving collapse (see taxonomy catalogFailure): our own
+// errors keep today's exact body/status; raw PG or unknown collapses to the
+// static fallback so a handler bug can never become a database oracle.
+function griFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode)
+    && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code));
+  if (own) { res.status(err.statusCode as number).json({ error: err.message || fallback }); return; }
+  res.status(500).json({ error: fallback });
+}
+
 // U2-D carryover: reject malformed scope filters before any business query.
 function validateGriIds(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
@@ -43,7 +53,16 @@ function validateGriIds(req: AuthenticatedRequest, res: Response, next: NextFunc
       if (req.body?.[key] !== undefined) scopeId(req.body[key], true);
     }
     next();
-  } catch (err: any) { res.status(400).json({ error: err.message, code: err.code }); }
+  } catch (err: any) {
+    // scopeId is the only thrower here (own 400 scope.* codes); the collapse
+    // arm is fail-closed defence (E3-02 — never echo a PG diagnostic).
+    if (Number.isInteger(err?.statusCode)
+      && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code))) {
+      res.status(400).json({ error: err.message, code: err.code });
+      return;
+    }
+    res.status(400).json({ error: 'Invalid request input.' });
+  }
 }
 
 const upload = multer({
@@ -95,7 +114,7 @@ router.post('/gri/preview', authMiddleware, requireDomainAccess, validateGriIds,
     res.json(parseResult);
   } catch (err: any) {
     console.error('GRI preview parse error:', err);
-    res.status(500).json({ error: err.message || 'Failed to parse GRI file' });
+    griFailure(res, err, 'Failed to parse GRI file');
   }
 });
 
@@ -395,7 +414,7 @@ router.post('/gri/commit', authMiddleware, requireFreshPassword, requireDomainAc
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Commit GRI error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to commit GRI data' });
+    griFailure(res, err, 'Failed to commit GRI data');
   }
 });
 
@@ -450,7 +469,7 @@ router.get('/standards', authMiddleware, requireDomainAccess, validateGriIds, as
     res.json(rows);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
-    res.status(500).json({ error: err.message || 'Failed to fetch standards' });
+    griFailure(res, err, 'Failed to fetch standards');
   }
 });
 
@@ -580,7 +599,7 @@ router.get('/dashboard/stats', authMiddleware, requireDomainAccess, validateGriI
     res.json(data);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
-    res.status(500).json({ error: err.message || 'Failed to fetch dashboard stats' });
+    griFailure(res, err, 'Failed to fetch dashboard stats');
   }
 });
 

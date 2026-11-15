@@ -8,6 +8,25 @@ export const B17_VERSION = 'B17_U1';
 export const PREDECESSOR_SHAPE = '18851d69e9808bf86a41314173406ef9';
 export const B17_SHAPE = '4b4e39e3a13eae0d336d30fa94bbf52f';
 export const B17_CONTENT_VERSION = 'B17_U2D';
+// G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
+// the CANONICAL content label. Tera ruling: renaming it would strand every
+// existing local DB (including the owner's showcase) behind a version_drift
+// refusal with no upgrade path — the ledger has no intermediate-version
+// sequence to walk. Consistency is FOUR-WAY and is proved on a fresh scratch
+// by scripts/b17-domain-g2-od10.ts:
+//   1. this constant === the ledger row version applyB17ContentOffline inserts
+//      (b17ContentMigration.ts INSERT uses B17_CONTENT_VERSION);
+//   2. that row's checksum === b17ContentSource().checksum (sha256 of the
+//      current b17-content.sql) — else verifyB17 refuses b17.version_drift;
+//   3. that row's structure_checksum === B17_CONTENT_SHAPE === the live
+//      STRUCTURE_SQL catalog fingerprint — else b17.version_drift /
+//      b17.schema_drift (drift is REFUSED fail-closed, never silently
+//      accepted);
+//   4. b17-content.sql's own header/guard names the same 'B17_U2D' label.
+// Recovery after drift: restore the matching content file and/or catalog
+// structure (or re-apply on a DB that has no content row yet), then
+// assertB17Ready goes green again — the fresh-apply / drift-REFUSED /
+// restore-recovered cycle is the G2 proof.
 // U2-D: PG18 recomputation after narrow library/mapping, W selection,
 // target+linked Profile/settings policies, closed audit additions and the
 // item.actions count repair. Sanctioned definer set/owner ACLs unchanged.

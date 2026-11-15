@@ -457,3 +457,172 @@ test('U2-F R2-A lock order: auth_sessions FOR UPDATE precedes the users UPDATE, 
   assert.ok(src.indexOf('SELECT sid FROM auth_sessions') < updateAt,
     'never the reverse order (users row lock before sessions lock = the §15 deadlock)');
 });
+
+// ---------------------------------------------------------------------------
+// G2 (task §12) — E3-02 completeness pin, SHIELD-U2G-01 evaluations ring and
+// the legacy-helper no-any-client audit.
+// ---------------------------------------------------------------------------
+
+// G2 E3-02 (§12(1)): EVERY response construction in src/server that echoes an
+// error's `.message`/`.code` field must sit inside a sanctioned own-error
+// region — one of the collapse helpers (each runs the integer-statusCode own
+// test AND the 5-char SQLSTATE belt, then collapses to a static fallback), or
+// a catch whose own-error guard appears BEFORE the echo (forced-change 403
+// code, version-conflict payload, or Number.isInteger statusCode). The exact
+// per-file inventory is pinned: a NEW echo anywhere (catch or not, helper or
+// not) fails until this table is deliberately edited — that edit is the
+// reviewable act. Not matched by construction: globalJsonErrorHandler's
+// indirection through a local `message` variable (Express last-resort for
+// escaped errors; own-error contract pinned by errorHandler.test.ts) —
+// disclosed residual, unchanged this round.
+test('G2 E3-02: no raw err.message/err.code response construction outside sanctioned own-error paths', () => {
+  const HELPER_NAMES = ['writeFailure', 'readFailure', 'domainFailure', 'failure', 'catalogFailure',
+    'actionFailure', 'auditFailure', 'griFailure', 'inboxFailure', 'storageFailure', 'evalWriteFailure'];
+  const GUARDS = ['PASSWORD_CHANGE_REQUIRED_CODE', 'conflictPayload', 'Number.isInteger('];
+  const PATTERNS = [/error\s*:\s*[^,};]*?\.(?:message|code)\b/g, /code\s*:\s*err\??\.(?:message|code)\b/g];
+  const EXPECTED: Record<string, number> = {
+    'taxonomy.ts': 3, 'routes/actions.ts': 1, 'routes/audit.ts': 1, 'routes/evaluations.ts': 8,
+    'routes/gri.ts': 3, 'routes/initiativeScope.ts': 1, 'routes/notifications.ts': 1,
+    'routes/reports.ts': 1, 'routes/storage.ts': 1, 'routes/_shared.ts': 3,
+  };
+  const regionsOf = (src: string) => {
+    // Sanctioned collapse helpers cover their whole function body.
+    const regions: { start: number; end: number; spans?: [number, number][] }[] = [];
+    for (const name of HELPER_NAMES) {
+      const re = new RegExp(`(?:export\\s+)?function\\s+${name}\\s*\\(`, 'g');
+      for (const m of src.matchAll(re)) {
+        let i = m.index! + m[0].length, depth = 1;
+        for (; i < src.length && depth; i++) { if (src[i] === '(') depth++; else if (src[i] === ')') depth--; }
+        const brace = src.indexOf('{', i); if (brace < 0) continue;
+        let end = brace + 1; depth = 1;
+        for (; end < src.length && depth; end++) { if (src[end] === '{') depth++; else if (src[end] === '}') depth--; }
+        regions.push({ start: m.index!, end: end - 1 });
+      }
+    }
+    // Catch regions expose ONLY their guard spans: a guard covers echoes from
+    // its own condition through that if-block's closing `}` (regex literals
+    // masked so the `{5}` SQLSTATE test cannot fake a block boundary). A later
+    // statement in the same catch — an unguarded tail after a conflict branch —
+    // falls outside every span and is a violation.
+    for (const m of src.matchAll(/\bcatch\s*\((\w+)(?::[^)]+)?\)\s*\{/g)) {
+      let depth = 1, end = m.index! + m[0].length; const start = end;
+      for (; end < src.length && depth; end++) { if (src[end] === '{') depth++; else if (src[end] === '}') depth--; }
+      const body = src.slice(start, end - 1);
+      const masked = body.replace(/\/\^[^\n]*?\//g, s => s.replace(/[^\r\n]/g, ' '));
+      const spans: [number, number][] = [];
+      for (const guard of GUARDS) {
+        let at = body.indexOf(guard);
+        while (at >= 0) {
+          const close = masked.indexOf('}', at);
+          spans.push([start + at, close < 0 ? end : start + close]);
+          at = body.indexOf(guard, at + guard.length);
+        }
+      }
+      if (spans.length) regions.push({ start: m.index!, end: end - 1, spans });
+    }
+    return regions;
+  };
+  const corpus = serverCorpus(SERVER_ROOT);
+  const counts: Record<string, number> = {};
+  const violations: string[] = [];
+  let total = 0;
+  for (const [file, src] of Object.entries(corpus)) {
+    const regions = regionsOf(src);
+    for (const pattern of PATTERNS) for (const m of src.matchAll(pattern)) {
+      const at = m.index!;
+      const region = regions.find(r => at >= r.start && at <= r.end
+        && (!r.spans || r.spans.some(([s, e]) => at > s && at < e)));
+      if (region) { counts[file] = (counts[file] ?? 0) + 1; total++; }
+      else violations.push(`${file}:${src.slice(0, at).split('\n').length} ${m[0].replace(/\s+/g, ' ')}`);
+    }
+  }
+  assert.deepEqual(violations, [],
+    `raw error echo outside a sanctioned own-error path:\n${violations.join('\n')}`);
+  assert.deepEqual(counts, EXPECTED, 'sanctioned echo inventory must equal the reviewed table exactly');
+  assert.ok(total >= 20, `pin must not be vacuous (saw ${total})`);
+  for (const name of HELPER_NAMES) {
+    const src = Object.values(corpus).find(s => new RegExp(`function\\s+${name}\\s*\\(`).test(s));
+    assert.ok(src, `sanctioned helper ${name} must exist`);
+    assert.match(src, /\[0-9A-Z\]\{5\}|statusCode/, `${name} must discriminate own vs PG/unknown`);
+  }
+});
+
+// G2 SHIELD-U2G-01 (G1 ruling 1): the static `no FROM evaluations` ring is
+// re-added ON TOP of the table-scoped answers|review_snapshots ring for the
+// TARGETLESS-PLATFORM operation surface (platformGlobalContext /
+// platformConfigContext(req, null) / defaulted selectors). Runtime already
+// refuses (no platform.config SELECT policy on evaluations + FORCE RLS
+// default-deny); this is the source-level belt that was dropped in G1.
+test('G2 SHIELD-U2G-01: targetless-platform operations never read FROM/JOIN evaluations', () => {
+  const read = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/"/g, '');
+  const fromEvaluations = (src: string) => /\b(?:FROM|JOIN)\s+(?:\w+\.)?evaluations\b/i.test(read(src));
+  const corpus = serverCorpus(SERVER_ROOT);
+  const targetlessFiles = selectNullTargetFiles(corpus);
+  const roots = targetlessFiles.flatMap(file => targetlessOperations(corpus[file]));
+  assert.ok(roots.length >= 3, `targetless-platform operation roots must exist (saw ${roots.length})`);
+  const offenders = reachableSources(corpus, [], roots).filter(fromEvaluations);
+  assert.deepEqual(offenders.length, 0,
+    `a targetless-platform operation must never read the evaluations table (${offenders.length} source(s))`);
+  // Non-vacuity: the same discovery + detector flags a synthetic targetless
+  // reader, and a prose-only mention is NOT part of the surface.
+  const synthetic = {
+    'synthetic.ts': 'function handler(req){ return domainTransaction(req, op, platformGlobalContext); }'
+      + 'function op(){ return db.query(\'SELECT * FROM evaluations\'); }',
+  };
+  const syntheticRoots = targetlessOperations(synthetic['synthetic.ts']);
+  assert.ok(syntheticRoots.length >= 1, 'synthetic targetless call must be discovered');
+  assert.ok(reachableSources(synthetic, [], syntheticRoots).some(fromEvaluations),
+    'synthetic targetless reader must be flagged by the ring');
+  assert.deepEqual(selectNullTargetFiles({ prose: '// FROM evaluations platformGlobalContext' }), [],
+    'a prose mention alone must not join the surface');
+});
+
+// G2 (§12(5)) legacy-helper no-any-client verification: the retirement
+// checklist surface measured against ACTUAL source — business route files and
+// taxonomy never rebuild context from req.user, no optional-auth mount exists,
+// and every retired b11b/scope helper has zero live call sites. The single
+// sanctioned contextFromUser is the auth-internal fresh gate.
+test('G2 legacy-helper audit: contextFromUser only in the auth-internal fresh gate; no any-client/optional-auth fallback', () => {
+  const corpus = serverCorpus(SERVER_ROOT);
+  const RETIRED = ['evalClientScope', 'evalDepartmentScope', 'b11bOwnTenantScope', 'b11bRequireGeAdmin',
+    'b11bAssertPasswordFresh', 'b11bAssertTenantActive', 'reportTenantScope', 'initiativeSelectionScope'];
+  const contextSites: string[] = [];
+  const retiredSites: string[] = [];
+  const optionalAuthFiles: string[] = [];
+  for (const [file, src] of Object.entries(corpus)) {
+    const code = maskCode(src);
+    for (const m of code.matchAll(/\bcontextFromUser\s*\(/g)) {
+      const before = code.slice(Math.max(0, m.index! - 12), m.index!);
+      if (/\bfunction\s*$/.test(before)) continue; // the definition, not a call
+      contextSites.push(`${file}:${src.slice(0, m.index!).split('\n').length}`);
+    }
+    for (const name of RETIRED)
+      if (new RegExp(`\\b${name}\\s*\\(`).test(code)) retiredSites.push(`${file}:${name}`);
+    if (/\boptionalAuthMiddleware\b/.test(code)) optionalAuthFiles.push(file);
+  }
+  assert.deepEqual(retiredSites, [], 'no retired legacy helper may have a live call site');
+  assert.deepEqual(optionalAuthFiles, ['auth.ts'],
+    'optionalAuthMiddleware may appear only as its auth.ts definition — zero mounts anywhere');
+  const authCode = maskCode(corpus['auth.ts']);
+  assert.equal((authCode.match(/\boptionalAuthMiddleware\b/g) ?? []).length, 1,
+    'auth.ts keeps exactly the one definition');
+  assert.match(authCode, /function\s+optionalAuthMiddleware\s*\(/);
+  assert.equal(contextSites.length, 1,
+    `exactly one contextFromUser call is sanctioned, saw: ${contextSites.join(', ') || 'NONE'}`);
+  assert.ok(contextSites[0].startsWith('routes/_shared.ts:'),
+    `the only contextFromUser lives in _shared.ts (got ${contextSites[0]})`);
+  const shared = corpus['routes/_shared.ts'];
+  const gateAt = shared.indexOf('export async function requireFreshPassword');
+  const nextExport = shared.indexOf('\nexport ', gateAt + 10);
+  // First contextFromUser reference AFTER the gate starts (the definition at
+  // the top of the file precedes it and is not a call).
+  const callAt = maskCode(shared).indexOf('contextFromUser(', gateAt);
+  assert.ok(gateAt > 0 && callAt > gateAt && (nextExport < 0 || callAt < nextExport),
+    'contextFromUser must sit inside requireFreshPassword (the sanctioned auth-internal fresh gate)');
+  for (const file of Object.keys(corpus).filter(f => f === 'taxonomy.ts' || f.startsWith('routes/'))) {
+    if (file === 'routes/_shared.ts') continue;
+    assert.ok(!/\bcontextFromUser\s*\(/.test(maskCode(corpus[file])),
+      `${file} must never rebuild context from req.user (any-client fallback)`);
+  }
+});

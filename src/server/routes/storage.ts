@@ -41,6 +41,18 @@ import {
 
 const router = express.Router();
 
+// G2 E3-02: an error WE raised — or the frozen-scope mapping of a
+// FROZEN_SCOPE diagnostic (an own-authored refusal) — keeps today's exact
+// body; any other raw PG diagnostic or unknown failure collapses to the
+// static fallback, so a handler bug can never become a database oracle.
+function storageFailure(res: Response, err: any, fallback: string): void {
+  const mapped = toFrozenError(err) as { statusCode?: number; code?: string; message?: string };
+  const own = Number.isInteger(mapped.statusCode)
+    && !(typeof mapped.code === 'string' && /^[0-9A-Z]{5}$/.test(mapped.code));
+  if (own) { res.status(mapped.statusCode as number).json({ error: mapped.message || fallback }); return; }
+  res.status(500).json({ error: fallback });
+}
+
 // OD-06 (demo-scale): evidence attachments stay in DB bytea with a 5 MB cap.
 // Production object-storage migration is explicitly out of scope — see the
 // comment on the API upload path in routes.ts.
@@ -82,7 +94,11 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
             code: 'attachments.oversize',
           });
         }
-        return res.status(400).json({ error: multerErr.message || 'Upload failed.', code: 'attachments.upload' });
+        // E3-02 (G2): a non-size multer failure carries a LIBRARY message (it
+        // can reflect a client-supplied field name) and no statusCode of ours,
+        // so it collapses to the static own body — our own attachments.upload
+        // code stays; the size branch above keeps its exact own text.
+        return res.status(400).json({ error: 'Upload failed.', code: 'attachments.upload' });
       }
       const file = (req as any).file;
       if (!file) {
@@ -90,13 +106,12 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
       }
       const check = validateAttachment({ mime: file.mimetype, sizeBytes: file.size });
       if (!check.ok) {
-        return res.status(400).json({
-          error:
-            check.code === 'attachments.oversize'
-              ? 'File is too large. Evidence attachments are limited to 5 MB per file.'
-              : 'File type not allowed. Accepted types: PDF, PNG, JPEG, XLSX, CSV, TXT.',
-          code: check.code,
-        });
+        // Computed first so the response literal never echoes a result field
+        // (E3-02 pin: error fields carry own text, not `check.code` conditions).
+        const reason = check.code === 'attachments.oversize'
+          ? 'File is too large. Evidence attachments are limited to 5 MB per file.'
+          : 'File type not allowed. Accepted types: PDF, PNG, JPEG, XLSX, CSV, TXT.';
+        return res.status(400).json({ error: reason, code: check.code });
       }
 
       const created = await domainTransaction(req, async (client) => {
@@ -135,8 +150,7 @@ router.post('/answers/:id/attachments', authMiddleware, requireFreshPassword, re
     } catch (err: any) {
       if (deferredFailure(res, err)) return;
       console.error('Attachment upload error:', err);
-      const mapped = toFrozenError(err);
-      res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to upload attachment' });
+      storageFailure(res, err, 'Failed to upload attachment');
     }
   });
 });
@@ -163,7 +177,7 @@ router.get('/answers/:id/attachments', authMiddleware, requireDomainAccess, asyn
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Attachments list error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch attachments' });
+    storageFailure(res, err, 'Failed to fetch attachments');
   }
 });
 
@@ -190,7 +204,7 @@ router.get('/answers/:id/attachments/:attachId/download', authMiddleware, requir
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Attachment download error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to download attachment' });
+    storageFailure(res, err, 'Failed to download attachment');
   }
 });
 
@@ -242,8 +256,7 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Attachment delete error:', err);
-    const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to delete attachment' });
+    storageFailure(res, err, 'Failed to delete attachment');
   }
 });
 
@@ -291,7 +304,7 @@ router.get('/storage/usage', authMiddleware, requireDomainAccess, async (req: Au
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Storage usage error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch storage usage' });
+    storageFailure(res, err, 'Failed to fetch storage usage');
   }
 });
 

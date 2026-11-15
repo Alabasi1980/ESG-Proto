@@ -95,21 +95,63 @@ test('G1 pair refusals and every early response stay outside unsettled callbacks
 });
 
 test('G1 protected policies, route keys, auth/lifecycle and capabilities are byte-unchanged', () => {
-  const base='aa76695d1ea699aa0ba83a009507013e76e5265a';
+  const base='048a6f254a75bbe86b8ad7fd48e46348a1c60e10'; // G2 base = G1 evidence checkpoint
   for (const file of ['src/db/index.ts','src/db/b17.sql','src/db/b17-content.sql',
     'src/server/auth.ts','src/server/access.ts','src/server/workspace.ts','src/server/routes.ts',
     'src/server/accessRegistry.ts','src/lib/capabilities.ts','src/server/routes/admin.ts','src/server/routes/_shared.ts']) {
     assert.equal(readFileSync(file,'utf8').replace(/\r\n/g,'\n'),
       execFileSync('git',['show',`${base}:${file}`],{encoding:'utf8'}).replace(/\r\n/g,'\n'),file);
   }
+  // G2 §12(2): b17Readiness.ts is COMMENT-ONLY this round (any logic/constant
+  // change would strand the content-version contract — see the E1-04 note in
+  // that file). Strip full-line comments + blanks; the remaining code lines
+  // must equal the G2 base byte-for-byte (string constants included).
+  const codeOnly=(text:string) => text.split('\n').map(line => line.replace(/\r$/,''))
+    .filter(line => line.trim()!=='' && !line.trim().startsWith('//'));
+  assert.deepEqual(codeOnly(readFileSync('src/db/b17Readiness.ts','utf8')),
+    codeOnly(execFileSync('git',['show',`${base}:src/db/b17Readiness.ts`],{encoding:'utf8'})),
+    'b17Readiness.ts may change comments only (G2 E1-04)');
   assert.ok(readFileSync('src/server/routes/adminClients.ts','utf8').split('\n').length<=500);
-  const newFiles=['src/lib/domainTransaction.test.ts','src/lib/b17TransactionInventory.test.ts',
-    ...['run','proof','races','fixture'].map(name=>`scripts/b17-domain-g1-${name}.ts`)];
-  const allowed=new Set([...Object.keys(inventory).filter(file=>file!=='routes/reports.ts').map(file=>`src/server/${file}`),
-    'src/server/routes/initiativeScope.ts','src/server/routes/adminProvisioning.ts','src/lib/routeGates.test.ts',...newFiles]);
+  const newFiles=['scripts/b17-domain-g2-run.ts','scripts/b17-domain-g2-od10.ts',
+    'scripts/b17-domain-g2-census.ts','scripts/b17-domain-g2-mask.ts'];
+  const allowed=new Set(['src/server/taxonomy.ts',
+    'src/server/routes/actions.ts','src/server/routes/audit.ts','src/server/routes/gri.ts',
+    'src/server/routes/notifications.ts','src/server/routes/storage.ts','src/server/routes/evaluations.ts',
+    'src/server/routes/reports.ts','src/server/routes/initiatives.ts',
+    'src/lib/routeGates.test.ts','src/lib/b17TransactionInventory.test.ts','src/db/b17Readiness.ts',
+    ...newFiles]);
+  // G1 ruling 4 (§11): the TWO reviewer-owned report paths are excluded from
+  // the executor-scope guard by exact path only — never a glob/loophole — so
+  // append-rounds stay green without weakening the guard.
+  const reviewerReports=new Set(['project-control/qa-reports/B17-U2G-QA.md',
+    'security-reports/B17-U2G-fix-review.md']);
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
-    ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')].filter(Boolean);
-  assert.equal(allowed.size,24);
-  for (const file of changed) assert.ok(allowed.has(file.trim()),`Unapproved write: ${file}`);
+    ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
+    .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file));
+  assert.equal(allowed.size,16);
+  for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
+});
+
+// G2 OBS-3 (G1 Shield observation): the pre-lock authority-capture ring above
+// only walks files whose transaction boundaries are domainTransaction sites —
+// adminProvisioning's are configurationTransaction sites, so it was never
+// scanned. Same rule, extended surface: every `const/let x = req.(access|user|`
+// identity)` capture must sit INSIDE one of its three transactions.
+test('G2 OBS-3: adminProvisioning authority captures stay inside configurationTransaction boundaries', () => {
+  const raw=readFileSync(path.join(root,'routes/adminProvisioning.ts'),'utf8');
+  const code=mask(raw);
+  const sites=[...code.matchAll(/\bconfigurationTransaction\s*\(\s*req\s*,/g)].map(m => {
+    const start=m.index!;let end=start+m[0].length,depth=1;
+    for (;end<code.length && depth;end++) {
+      if (code[end]==='(') depth++;else if (code[end]===')') depth--;
+    }
+    return {start,end};
+  });
+  assert.equal(sites.length,3,'the three provisioning transactions are the scanned surface');
+  const captures=[...code.matchAll(/\b(?:const|let)\s+\w+\s*=\s*req\.(?:access|user|identity)\b/g)];
+  assert.ok(captures.length>=1,'non-vacuity: the file carries an authority capture to check');
+  for (const local of captures)
+    assert.ok(sites.some(site => local.index!>site.start && local.index!<site.end),
+      `adminProvisioning pre-lock authority capture at offset ${local.index} outside configurationTransaction`);
 });

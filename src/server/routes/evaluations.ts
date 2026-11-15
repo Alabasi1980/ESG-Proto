@@ -82,6 +82,22 @@ function readFailure(res: Response, err: any, fallback: string): void {
   res.status(500).json({ error: fallback });
 }
 
+/** G2 E3-02 write treatment: an error WE raised — or the frozen-scope mapping
+ * of a FROZEN_SCOPE diagnostic (an own-authored refusal) — keeps the exact
+ * historical body (status + message + errCode); any other raw PostgreSQL
+ * diagnostic or unknown failure collapses to the route's static fallback with
+ * NO code echoed, so a handler bug can never become a database oracle. */
+function evalWriteFailure(res: Response, err: any, fallback: string): void {
+  const mapped = toFrozenError(err) as { statusCode?: number; code?: string; message?: string };
+  const own = Number.isInteger(mapped.statusCode)
+    && !(typeof mapped.code === 'string' && /^[0-9A-Z]{5}$/.test(mapped.code));
+  if (own) {
+    res.status(mapped.statusCode as number).json({ error: mapped.message || fallback, code: errCode(err) });
+    return;
+  }
+  res.status(500).json({ error: fallback });
+}
+
 // ----------------------------------------------------------------------
 // 6B. Evaluation Workflow (FIX BATCH 3)
 //
@@ -549,8 +565,7 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Evaluation save error:', err);
-    const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to save evaluation draft', code: errCode(err) });
+        evalWriteFailure(res, err, 'Failed to save evaluation draft');
   }
 });
 
@@ -690,8 +705,7 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, req
       if (err?.statusCode === 409 && err?.conflictPayload) {
         return res.status(409).json({ error: err.message, ...err.conflictPayload });
       }
-      const mappedSubmit = toFrozenError(err);
-      res.status(mappedSubmit.statusCode || 500).json({ error: mappedSubmit.message || 'Failed to submit evaluation', code: errCode(err) });
+            evalWriteFailure(res, err, 'Failed to submit evaluation');
     }
   });
 
@@ -854,8 +868,7 @@ async function handleEvaluationDecision(
       if (err?.statusCode === 409 && err?.conflictPayload) {
         return res.status(409).json({ error: err.message, ...err.conflictPayload });
       }
-      const mappedDecision = toFrozenError(err);
-      res.status(mappedDecision.statusCode || 500).json({ error: mappedDecision.message || 'Failed to record evaluation decision', code: errCode(err) });
+            evalWriteFailure(res, err, 'Failed to record evaluation decision');
     }
 }
 
@@ -1010,10 +1023,21 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, req
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Evaluation correction error:', err);
-    if (err?.statusCode === 409 && err?.conflictPayload) {
-      return res.status(409).json({ error: err.message, ...err.conflictPayload });
-    }
-    res.status(err.statusCode || 500).json({ error: toFrozenError(err).message || 'Failed to correct evaluation', code: errCode(err) });
+      if (err?.statusCode === 409 && err?.conflictPayload) {
+        return res.status(409).json({ error: err.message, ...err.conflictPayload });
+      }
+      // E3-02 (G2): this line historically took its STATUS from `err` but its
+      // MESSAGE from the frozen-scope mapping. Own errors and the frozen belt
+      // keep that exact body byte-for-byte; any other raw PG diagnostic
+      // collapses to the static fallback (never echoed).
+      const mappedCorrection = toFrozenError(err);
+      const ownCorrection = (Number.isInteger(err?.statusCode)
+        && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code))) || mappedCorrection !== err;
+      if (ownCorrection) {
+        res.status(err.statusCode || 500).json({ error: mappedCorrection.message || 'Failed to correct evaluation', code: errCode(err) });
+        return;
+      }
+      res.status(500).json({ error: 'Failed to correct evaluation' });
   }
 });
 
@@ -1267,8 +1291,7 @@ router.post('/evaluations/:id/client-approve', authMiddleware, requireFreshPassw
     if (err?.statusCode === 409 && err?.conflictPayload) {
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
     }
-    const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to client-approve evaluation', code: errCode(err) });
+        evalWriteFailure(res, err, 'Failed to client-approve evaluation');
   }
 });
 
@@ -1381,8 +1404,7 @@ router.post('/evaluations/:id/client-return', authMiddleware, requireFreshPasswo
     if (err?.statusCode === 409 && err?.conflictPayload) {
       return res.status(409).json({ error: err.message, ...err.conflictPayload });
     }
-    const mapped = toFrozenError(err);
-    res.status(mapped.statusCode || 500).json({ error: mapped.message || 'Failed to return evaluation from client scope', code: errCode(err) });
+        evalWriteFailure(res, err, 'Failed to return evaluation from client scope');
   }
 });
 
@@ -1815,7 +1837,7 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDo
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('GE final error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to freeze GE final review', code: errCode(err) });
+    evalWriteFailure(res, err, 'Failed to freeze GE final review');
   }
 });
 
@@ -1961,7 +1983,7 @@ router.post('/reviews/snapshots/:id/notes', authMiddleware, requireFreshPassword
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     console.error('Snapshot note error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to add snapshot note', code: errCode(err) });
+    evalWriteFailure(res, err, 'Failed to add snapshot note');
   }
 });
 

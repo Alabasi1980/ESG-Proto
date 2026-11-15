@@ -10,7 +10,7 @@
 // stays append-only).
 
 import express, { type Response } from 'express';
-import { domainTransaction, boundaryFailure, DeferredRefusal } from './initiativeScope.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal } from './initiativeScope.ts';
 import {
   authMiddleware,
   type AuthenticatedRequest,
@@ -21,6 +21,15 @@ import {
 } from './_shared.ts';
 
 const router = express.Router();
+
+// G2 E3-02 byte-preserving collapse (see taxonomy catalogFailure): our own
+// errors keep today's exact body; raw PG/unknown collapses to the fallback.
+function auditFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode)
+    && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code));
+  if (own) { res.status(err.statusCode as number).json({ error: err.message || fallback }); return; }
+  res.status(500).json({ error: fallback });
+}
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
@@ -96,10 +105,12 @@ router.get('/audit-log', authMiddleware, requireDomainAccess, async (req: Authen
 
     res.json(data);
   } catch (err: any) {
-    if (err instanceof DeferredRefusal) { res.status(err.statusCode).json(err.body); return; }
-    if (boundaryFailure(res, err)) return;
+    // G2 fold: the hand-rolled instanceof DeferredRefusal arm is exactly what
+    // deferredFailure already does (byte-identical body/status), so the
+    // sanctioned helper owns it now.
+    if (deferredFailure(res, err)) return;
     console.error('Audit log read error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to read audit log' });
+    auditFailure(res, err, 'Failed to read audit log');
   }
 });
 

@@ -29,6 +29,16 @@ import {
 
 const router = express.Router();
 
+// G2 E3-02 byte-preserving collapse (see taxonomy catalogFailure): our own
+// errors keep today's exact body/status; raw PG or unknown collapses to the
+// static fallback.
+function inboxFailure(res: Response, err: any, fallback: string): void {
+  const own = Number.isInteger(err?.statusCode)
+    && !(typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code));
+  if (own) { res.status(err.statusCode as number).json({ error: err.message || fallback }); return; }
+  res.status(500).json({ error: fallback });
+}
+
 /** B12 (S-23): own inbox, newest first. */
 router.get('/notifications', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -65,7 +75,7 @@ router.get('/notifications', authMiddleware, requireDomainAccess, async (req: Au
   } catch (err: any) {
     if (boundaryFailure(res, err)) return;
     console.error('Notifications list error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch notifications' });
+    inboxFailure(res, err, 'Failed to fetch notifications');
   }
 });
 
@@ -84,7 +94,7 @@ router.get('/notifications/unread-count', authMiddleware, requireDomainAccess, a
   } catch (err: any) {
     if (boundaryFailure(res, err)) return;
     console.error('Unread count error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch unread count' });
+    inboxFailure(res, err, 'Failed to fetch unread count');
   }
 });
 
@@ -107,7 +117,7 @@ router.post('/notifications/:id/read', authMiddleware, requireFreshPassword, req
   } catch (err: any) {
     if (boundaryFailure(res, err)) return;
     console.error('Notification read error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to mark notification read' });
+    inboxFailure(res, err, 'Failed to mark notification read');
   }
 });
 
@@ -126,7 +136,7 @@ router.post('/notifications/read-all', authMiddleware, requireFreshPassword, req
   } catch (err: any) {
     if (boundaryFailure(res, err)) return;
     console.error('Read-all error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to mark notifications read' });
+    inboxFailure(res, err, 'Failed to mark notifications read');
   }
 });
 
