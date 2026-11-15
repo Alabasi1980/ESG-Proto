@@ -6,3 +6,5 @@
 | ISS-002 | 2026-11-15 | Medium | عدة شاشات غير مرّحلة بعد (19 ملفاً / ~2200 كلاس حرفي) → الثيم الداكن يظهر ناقصاً (بطاقات بيضاء) | جرد H10 | Tera | In Progress — دفعات H11–H17 |
 | ISS-003 | 2026-11-15 | Low | `DashboardView.tsx:145` نص يحتوي `&` خام في JSX → تحذير PartialParsing في Semgrep (سابق، ليس انحداراً) | semgrep | — | Open (تحسين لاحق، خارج نطاق الترحيل اللوني) |
 | ISS-004 | 2026-11-15 | Low | الموظف يرى «No Sustainability Data Imported Yet» مع وجود 541 بنداً — قد يكون سلوكاً صحيحاً (قيود دور) أو خللاً | لقطة h10-env-check | Tera | Open — تحقق عند ترحيل لوحات المتابعة (سلوك ≠ نطاق الستايل) |
+| ISS-005 | 2026-11-15 | Medium | أيقونات `text-brand` على `bg-brand-soft` في الثيم الداكن (SettingsView ×3، وبقية الشاشات لاحقاً) — لا يقيسها تدقيق النص (SVG)، وتبقى 1.61:1 بصرياً | H10-3b R2 | Tera | Open — تُعالَج باستبدال `text-brand`→`text-brand-text` في مواضع الأيقونات |
+| ISS-006 | 2026-11-15 | Low | بطاقة «Active Database Tables» تعرض «tables created» بلا رقم — القيمة غير مُعادة من الـAPI (أثر `workspace.invalid`) لا خطأ ستايل | لقطة dark-services-fixed | الجلسة الأخرى | Open — بيانات/جلسة، خارج نطاق الستايل |

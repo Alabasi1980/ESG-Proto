@@ -22,6 +22,9 @@
 | تمييز/لمسة | `--accent` / `--accent-soft` | #F16B3B / #FCE8D9 | نفسه | #F16B3B / #303F27 |
 | دلالات | `--success` `--warning` `--danger` `--info` (+ `-soft`) | — | — | — |
 | حلقة التركيز | `--focus-ring` → `ring-focus-ring` / `border-focus-ring` | #038947 | #038947 | #AFD139 |
+| **لون الهوية كنص/أيقونة** | `--brand-text` → `text-brand-text` | #026B38 | #026B38 | #86DCA8 |
+| **نجاح كنص** | `--success-text` → `text-success-text` | #026B38 | #026B38 | #69D59A |
+| **تحذير كنص** | `--warning-text` → `text-warning-text` | #8A4109 | #8A4109 | #FBBF24 |
 
 > **قاعدة الأدوار الثلاثة:** خلفية الصفحة `surface` · البطاقة `surface-2` · الحقل والصفوف الغائرة `surface-3`. **ثابتة في الثلاثة** — لا اجتهاد لكل ثيم.
 
@@ -94,8 +97,8 @@
               focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/30
 زر أساسي:     bg-brand text-brand-ink hover:bg-brand-strong
 زر ثانوي:     bg-surface-2 border border-border-strong text-text hover:bg-surface-3
-شارة نجاح:    bg-success-soft text-success    (مع أيقونة + نص دائماً)
-شارة تحذير:   bg-warning-soft text-warning
+شارة نجاح:    bg-success-soft text-success-text    (مع أيقونة + نص دائماً)
+شارة تحذير:   bg-warning-soft text-warning-text
 شارة خطر:     bg-danger-soft  text-danger
 شارة معلومة:  bg-info-soft    text-info
 صف جدول:      border-t border-border hover:bg-surface-3

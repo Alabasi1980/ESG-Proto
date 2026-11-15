@@ -121,3 +121,7 @@
 | 2026-11-15 | engineering-agent-typescript | Handback H10-2b | StaffLists مرّحل + توكن `--brand-text` (ge/lime #026B38 · dark #86DCA8) + 10 استبدالات brand→brand-text في 4 ملفات |
 | 2026-11-15 | TeraAgent | Measured result | Settings (dark): **صفر بطاقات بيضاء** · النصوص المنخفضة **15 → 4** · الباقي: شارة RLS في Header (1.61) + محتوى `ServicesManage` غير المرّحل |
 | 2026-11-15 | TeraAgent | New token gaps | `text-success` على `surface-3` = 3.85 ge / 4.17 lime · `text-warning` = 4.30 ge → يحتاج قرار قيم (دلالات فاتحة على سطح غائر) |
+| 2026-11-15 | engineering-agent-typescript | Handback H10-3a | ServicesManage: 61 `dark:`→0 · الحقول والفراغ والزر والبطاقة مرّحلة (±0 سطر) |
+| 2026-11-15 | engineering-agent-typescript | Handback H10-3b | توكنان نصّيان (success-text/warning-text) + 27 استبدالاً + Header brand-text ×2 + الحارس 31→34 |
+| 2026-11-15 | TeraAgent | Measured result | صفحة الإعدادات (داكن): **15 نصاً منخفضاً → 1** · **صفر أسطح بيضاء** · شارة RLS 1.61→6.19 · lint/build/227 خضراء |
+| 2026-11-15 | TeraAgent | Issues updated | ISS-005 (أيقونات brand) · ISS-006 (رقم الجداول مفقود = بيانات/جلسة) · العقد أُثري بالتوكنات النصية |
