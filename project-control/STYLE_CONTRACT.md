@@ -56,8 +56,25 @@
 | `border-slate-200`, `border-slate-700/800` | `border-border` |
 | `border-slate-300`, `border-slate-600` | `border-border-strong` |
 | `border-emerald-*` | `border-brand` |
+| `border-rose-*`, `border-red-*` | `border-danger` |
+| `border-amber-*`, `border-yellow-*` | `border-warning` |
+| `border-sky-*`, `border-blue-*` | `border-info` |
 | `ring-emerald-500` | `ring-focus-ring` |
 | `divide-slate-*` | `divide-border` |
+
+### عائلات خارج اللوحة (قرار H10 — لا تُعاد مناقشتها)
+| ممنوع | استخدم | السبب |
+|---|---|---|
+| `indigo-*`, `violet-*`, `purple-*` | `accent` (لمسة/أيقونة) أو `info` (معلومة) | خارج العائلات المسموحة |
+| `teal-*`, `cyan-*`, `orange-*`, `yellow-*` (كهوية) | `accent` / `warning` حسب الدور | — |
+| `text-slate-400` | `text-muted` | نص ثانوي |
+
+### قاعدة أسبقية (مهمة)
+```text
+إذا تعارض "الدور الدلالي" مع "جدول التحويل الحرفي" → الدور يغلب.
+مثال: بطاقة "لا توجد فجوة" = حالة نجاح → bg-success-soft text-success
+      (لا bg-brand-soft) — لأنها تعبّر عن حالة، لا عن هوية.
+```
 
 ### ممنوعات مطلقة في ملفات الشاشات
 ```text

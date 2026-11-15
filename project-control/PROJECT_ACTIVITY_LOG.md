@@ -102,3 +102,9 @@
 | 2026-11-15 | TeraAgent | Persistent mode adopted | `npm run showcase -- persistent` → endpoint `http://127.0.0.1:33971` · DB `127.0.0.1:55432/b17_showcase` · volume `b17-showcase-data` · أسرار من `.env` (لم تُطبع) |
 | 2026-11-15 | TeraAgent | Login verified (3 roles) | `owner@teranoo.com`=ge_admin 200 · `majid.khaireddin@gmail.com`=client_admin 200 · `mjd.alabasi@gmail.com`=employee 200 — عبر المتصفح على الخادم الصحيح |
 | 2026-11-15 | TeraAgent | Root cause (browser 401) | كانت جلسة المتصفح على تبويب AI Studio لا على خادمنا؛ أُصلح بفتح تبويب للـendpoint والصعود من هناك |
+| 2026-11-15 | TeraAgent | STYLE_CONTRACT created | عقد مركزي ملزم: أدوار التوكنز · جدول تحويل · أنماط مكوّنات · ممنوعات · بوابة قبول — مرجع أي جلسة تعمل على التطبيق |
+| 2026-11-15 | TeraAgent | Architectural defect caught | أدوار التوكنز غير متسقة (بطاقة=Lime surface-3 vs dark surface-2) → أوقفت الترحيل وأصلحت الأدوار أولاً |
+| 2026-11-15 | engineering-agent-typescript | Handback H10-0 | تبادل قيمتَي lime surface-2/surface-3 + 4 تبديلات دور في LoginView + زر اللغة → لـsurface-2 |
+| 2026-11-15 | TeraAgent | Verified H10-0 | lime: card `rgb(228,237,184)` · input `rgb(247,248,227)` (ألوان المالك بلا تغيير) · lint 0 · 227/227 · build 0 |
+| 2026-11-15 | TeraAgent | Task closed | `TASK-PROTO-H10-0` Accepted → Closed — COMPLIANT |
+| 2026-11-15 | TeraAgent | Delegated (parallel) | `H10a` (DashboardView + ClientDashboardView + توسيع الحارس) و`H10b` (GeOverviewView + EsgProfileView) — كاتبان متوازيان، ملفات متباعدة |
