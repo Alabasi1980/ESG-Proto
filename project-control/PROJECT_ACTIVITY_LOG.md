@@ -125,3 +125,7 @@
 | 2026-11-15 | engineering-agent-typescript | Handback H10-3b | توكنان نصّيان (success-text/warning-text) + 27 استبدالاً + Header brand-text ×2 + الحارس 31→34 |
 | 2026-11-15 | TeraAgent | Measured result | صفحة الإعدادات (داكن): **15 نصاً منخفضاً → 1** · **صفر أسطح بيضاء** · شارة RLS 1.61→6.19 · lint/build/227 خضراء |
 | 2026-11-15 | TeraAgent | Issues updated | ISS-005 (أيقونات brand) · ISS-006 (رقم الجداول مفقود = بيانات/جلسة) · العقد أُثري بالتوكنات النصية |
+| 2026-11-15 | engineering-agent-typescript | Handback H11a | GapAnalysis + Standards مرّحلتان (±0) + الحارس 34→37 بثلاثة مسارات |
+| 2026-11-15 | engineering-agent-typescript | Handback H11b | InitiativesView مرّحل كاملاً (±0) — 99 كلاساً · صفر بقايا |
+| 2026-11-15 | TeraAgent | Verified H11 | lint 0 · 227/227 · build 0 · صفر مخالفات في الثلاثة · تدقيق GapAnalysis (داكن): نص منخفض=1 فقط (Tenant 4.23) · صفر أسطح بيضاء |
+| 2026-11-15 | TeraAgent | Progress | 11 شاشة/مكوّناً مرّحل (Login · Dashboard · ClientDashboard · GeOverview · EsgProfile · Settings · StaffLists · Services · GapAnalysis · Standards · Initiatives) — المتبقي 11 ملفاً (~1489 كلاساً) |
