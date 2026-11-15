@@ -150,3 +150,7 @@
 | 2026-11-15 | Owner | Acceptance D-STYLE-01 | اعتماد نهائي لطبقة الستايل والثيمات الثلاثة بعد المعاينة |
 | 2026-11-15 | TeraAgent | Handoff artifact | `STYLE_HANDOFF.md` أُنشئ: القواعد · أوامر التحقق · إضافة التوكنات · الحالة · المفتوح |
 | 2026-11-15 | TeraAgent | Batch closure | P1..P6 مغلقة · ISS-007/008/009 مغلقة · ISS-010 استثناء معتمد · الترحيل مكتمل (22 ملفاً) |
+| 2026-11-15 | engineering-agent-typescript | Handback FINAL-1 | ISS-003 مُغلق: `&amp;` في DashboardView:145 — تحذير PartialParsing اختفى |
+| 2026-11-15 | ui-designer | Handback FINAL-2 | صقل الشريط: وزن العنصر النشط + تسلسل + إيقاع مسافات + شارات + hover بأمان الشريط (3 مواضع) + `&amp;` |
+| 2026-11-15 | TeraAgent | Verified FINAL | lint 0 · 227/227 · build 0 · لقطة ge تُظهر شريطاً متسقاً وعنصراً نشطاً واضحاً |
+| 2026-11-15 | TeraAgent | Records created | `PROJECT_STATE.md` + `TASK_REGISTRY.md` — بوابة سياق لأي جلسة |

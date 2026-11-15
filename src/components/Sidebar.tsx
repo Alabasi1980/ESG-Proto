@@ -216,16 +216,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className={`print:hidden fixed inset-y-0 start-0 z-50 flex flex-col w-64 bg-sidebar-bg text-sidebar-text border-e border-sidebar-muted/60 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${drawerClass}`}
       >
         {/* Brand header */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-muted/60">
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-muted/60">
           <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-sidebar-active text-sidebar-active-text shadow-md shadow-sidebar-active/30">
             <span className="font-bold text-lg tracking-wider">GE</span>
           </div>
           <div className="min-w-0">
-            <h1 className="font-bold text-base tracking-tight text-sidebar-text truncate">
+            <h1 className="font-bold text-base text-sidebar-text truncate">
               {t.brandGreenEdge}
             </h1>
             <p className="text-xs text-sidebar-muted truncate font-medium">
-              ESG & GRI System
+              ESG &amp; GRI System
             </p>
           </div>
           {/* B15: mobile drawer dismiss control (hidden on desktop where the
@@ -236,7 +236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onClose}
             data-testid="sidebar-close"
             aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close navigation menu'}
-            className="ms-auto lg:hidden p-2 -me-2 rounded-lg text-sidebar-muted hover:text-sidebar-text hover:bg-surface-3/60 transition-colors"
+            className="ms-auto lg:hidden p-2 -me-2 rounded-lg text-sidebar-muted hover:text-sidebar-text hover:bg-sidebar-active/15 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -247,7 +247,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="mx-4 mt-4 p-3 rounded-lg bg-surface-3 border border-sidebar-muted/60 text-xs">
             <div className="flex items-center gap-2 text-sidebar-muted mb-1">
               <Building2 className="w-3.5 h-3.5 text-sidebar-muted shrink-0" />
-              <span className="font-semibold uppercase tracking-wider text-[10px] text-text">
+              <span className="font-medium uppercase text-[10px] text-muted">
                 {t.nav.tenantBadge}
               </span>
             </div>
@@ -278,16 +278,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   setActiveTab(item.id);
                   onClose();
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                   isActive
-                    ? 'bg-sidebar-active text-sidebar-active-text shadow-sm'
-                    : 'text-sidebar-muted hover:text-sidebar-text hover:bg-surface-3/60'
+                    ? 'bg-sidebar-active text-sidebar-active-text font-semibold shadow-sm'
+                    : 'text-sidebar-muted font-medium hover:text-sidebar-text hover:bg-sidebar-active/15'
                 }`}
               >
               <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sidebar-active-text' : 'text-sidebar-muted'}`} />
               <span className="truncate flex-1 text-start">{item.label}</span>
               {item.id === 'notifications' && unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-danger text-brand-ink text-[10px] font-bold">
+                <span className="inline-flex items-center justify-center shrink-0 leading-none tabular-nums px-1.5 py-0.5 rounded-full bg-danger text-brand-ink text-[10px] font-bold">
                   {unreadCount > 50 ? '50+' : unreadCount}
                 </span>
               )}
@@ -301,7 +301,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Language Toggle Button */}
           <button
             onClick={toggleLanguage}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-sidebar-muted hover:bg-surface-3/60 hover:text-sidebar-text transition-colors border border-sidebar-muted/50"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-sidebar-muted hover:bg-sidebar-active/15 hover:text-sidebar-text transition-colors border border-sidebar-muted/50"
             title={lang === 'en' ? 'التبديل إلى العربية' : 'Switch to English'}
           >
             <div className="flex items-center gap-2">
@@ -315,7 +315,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* User info & Logout */}
           {user ? (
-            <div className="pt-2">
+            <div>
               <div className="flex items-center gap-2 px-2 py-1 text-xs">
                 <div className="w-7 h-7 rounded-full bg-surface-3 flex items-center justify-center font-bold text-sidebar-muted text-xs">
                   {user.name.charAt(0).toUpperCase()}

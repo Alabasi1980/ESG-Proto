@@ -142,7 +142,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span className="font-semibold text-xs">{t.dashboard.governance}</span>
               </div>
               <p className="text-xs text-muted">
-                GRI 2 & 200 Series (Governance, Ethics, Anti-corruption)
+                GRI 2 &amp; 200 Series (Governance, Ethics, Anti-corruption)
               </p>
             </div>
           </div>
