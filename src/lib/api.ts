@@ -18,9 +18,10 @@
  */
 import {
   AUTH_TOKEN_KEY,
+  currentTab as workspaceState,
   ensureTab,
   headers as workspaceHeaders,
-  refresh as refreshWorkspace,
+  reconcile as reconcileWorkspace,
   reset as resetWorkspace,
 } from './workspaceClient.ts';
 
@@ -101,18 +102,31 @@ async function errorCode(res: Response): Promise<string | null> {
 }
 
 /**
- * Repair the workspace handle after a 409: reconcile first (refresh keeps the
- * same tab), and only when that fails drop the handle and create a fresh tab.
- * Returns false when nothing could be repaired — the caller then reports the
- * original response instead of retrying.
+ * Repair the workspace handle after a 409 {workspace.stale|workspace.invalid}.
+ *
+ * Order and limits (SHIELD-U3A-01 / QA F3):
+ * 1. reconcile first — that keeps the same tab and its mode;
+ * 2. a reconcile that reports a DIFFERENT mode than we last knew is never
+ *    adopted: the call is surfaced as a 409 instead of being retried under a
+ *    different context;
+ * 3. a fresh tab is minted only on an explicit `workspace.invalid` and only
+ *    when the last known mode is `platform` (or nothing is known yet). A
+ *    consultant session is never silently reset to a platform tab — U3-B owns
+ *    the explicit re-entry path;
+ * 4. any transport / non-409 failure keeps the existing handle (no TAB_LIMIT
+ *    burn) and surfaces the original response.
  */
 async function repair(): Promise<boolean> {
-  if (await refreshWorkspace()) return true;
-  // The 409 proved the server is reachable and rejected this handle, so the
-  // handle is dead (expired/revoked) and cannot be reconciled. A stale-handle
-  // session must still be able to continue.
+  const expected = workspaceState()?.mode ?? null;
+  const outcome = await reconcileWorkspace(expected ?? undefined);
+
+  if (outcome.tab) return true;
+  if (outcome.code !== 'workspace.invalid') return false;
+  if (expected === 'consultant') return false;
+
   resetWorkspace();
-  return (await ensureTab()) !== null;
+  const created = await ensureTab();
+  return created !== null && created.mode === 'platform';
 }
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {

@@ -183,6 +183,58 @@ test('a forced password change (temporary 403) is not treated as "no workspace"'
   assert.equal(calls.length, 2);
 });
 
+// --- QA F1 (epoch) / SHIELD-U3A-03 (conclusive-only memoization) ------------
+test('QA F1: reset() invalidates an in-flight createTab so a late reply cannot re-establish a handle', async () => {
+  const { session } = setup();
+  let release!: (res: Response) => void;
+  const gate = new Promise<Response>((resolve) => { release = resolve; });
+  setGlobal('fetch', async () => gate);
+
+  const inflight = ensureTab(); // POST /api/workspace/tab is now in flight
+  reset(); //             ... logout happens before the reply
+  release(json(201, envelope()));
+
+  assert.equal(await inflight, null, 'the stale adoption is discarded');
+  assert.deepEqual(headers(), {});
+  assert.equal('greenedge_workspace' in session.dump(), false);
+});
+
+test('SHIELD-U3A-03: a transient 500 does not latch "no workspace"', async () => {
+  setup();
+  let step = 0;
+  const calls = stubFetch(() => {
+    step += 1;
+    return step === 1 ? json(500, { code: 'access.unavailable' }) : json(201, envelope());
+  });
+
+  assert.equal(await ensureTab(), null);
+  assert.equal((await ensureTab())?.handle, HANDLE_A, 'a transport/server fault is not conclusive');
+  assert.equal(calls.length, 2);
+});
+
+test('SHIELD-U3A-03: an unexplained 403 does not latch "no workspace"', async () => {
+  setup();
+  let step = 0;
+  const calls = stubFetch(() => {
+    step += 1;
+    return step === 1 ? json(403, {}) : json(201, envelope());
+  });
+
+  assert.equal(await ensureTab(), null);
+  assert.equal((await ensureTab())?.handle, HANDLE_A, 'only workspace.forbidden is conclusive');
+  assert.equal(calls.length, 2);
+});
+
+test('SHIELD-U3A-03: an OK reply with no usable tab is conclusive and is not re-probed', async () => {
+  setup();
+  const calls = stubFetch(() => json(201, { tabHandle: 'too-short', generation: 0, mode: 'platform', client: null }));
+
+  assert.equal(await ensureTab(), null);
+  assert.equal(await ensureTab(), null);
+
+  assert.equal(calls.length, 1, 'a tabless success is conclusive for this session');
+});
+
 test('enter() surfaces the server refusal instead of inventing a state', async () => {
   setup();
   stubFetch((path) => path === '/api/workspace/tab'

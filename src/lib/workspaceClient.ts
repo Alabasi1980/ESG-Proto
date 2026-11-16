@@ -48,12 +48,19 @@ export interface WorkspaceEnvelope {
 
 let tab: WorkspaceTab | null = null;
 let loaded = false;
-/** Set after one conclusive "this session cannot own a tab" answer (403/401/
- * 429): C/E identities have no tab, and probing again on every request would be
- * noise. Cleared by reset() (logout / re-login / a new handle attempt). */
+/** Set after one conclusive "this session cannot own a tab" answer (403
+ * workspace.forbidden / 401 / 429 / an OK reply that carries no usable tab):
+ * C/E identities have no tab, and probing again on every request would be noise.
+ * A transient or unexplained failure must never latch (SHIELD-U3A-03). Cleared
+ * by reset() (logout / re-login). */
 let unavailable = false;
 /** Single-flight for POST /workspace/tab: parallel first calls share one tab. */
 let pending: Promise<WorkspaceTab | null> | null = null;
+/** Adoption epoch (QA F1): bumped by reset(). A request captures it before the
+ * await and a late reply from an older epoch is discarded, so a createTab() /
+ * reconcile() / enter() answer arriving after logout can never re-establish a
+ * handle for the new (signed-out or different) session. */
+let epoch = 0;
 
 /** sessionStorage may be absent (SSR, denied storage, node tests): tolerate it. */
 function tabStorage(): Storage | null {
@@ -101,7 +108,10 @@ function current(): WorkspaceTab | null {
   return tab;
 }
 
-function adopt(envelope: WorkspaceEnvelope): WorkspaceTab | null {
+/** Mirror the server envelope. `startedAt` is the adoption epoch captured before
+ * the request: a reply from an older epoch is discarded (logout raced us). */
+function adopt(envelope: WorkspaceEnvelope, startedAt: number): WorkspaceTab | null {
+  if (startedAt !== epoch) return null;
   const handle = envelope.tabHandle ?? tab?.handle;
   const next = {
     handle,
@@ -125,25 +135,33 @@ function adopt(envelope: WorkspaceEnvelope): WorkspaceTab | null {
 async function createTab(): Promise<WorkspaceTab | null> {
   const token = readToken();
   if (!token) return null; // no session yet: nothing to bind a tab to
+  const startedAt = epoch;
   try {
     const res = await fetch('/api/workspace/tab', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.status === 201) return adopt(await res.json() as WorkspaceEnvelope);
+    if (startedAt !== epoch) return null; // reset() while in flight: discard
+    if (res.ok) {
+      const created = adopt(await res.json() as WorkspaceEnvelope, startedAt);
+      // OK but unusable (e.g. a malformed envelope) is conclusive: no tab exists
+      // for this session and repeating the POST would only add noise.
+      if (!created) unavailable = true;
+      return created;
+    }
     if (res.status === 403) {
       const code = await refusalCode(res);
-      // A GE identity that must still change its password is refused now but
-      // will own a tab once it does; only "not a GE identity" is conclusive.
-      if (code !== 'auth.password_change_required') unavailable = true;
+      // Only "not a GE identity" is conclusive. A GE identity that must still
+      // change its password is refused now but owns a tab once it does.
+      if (code === 'workspace.forbidden') unavailable = true;
       return null;
     }
     // 401: session gone. 429: this session is at TAB_LIMIT. Both are conclusive
     // for this session, so stop probing; reset() re-opens the path.
-    if ([401, 429].includes(res.status)) unavailable = true;
+    if (res.status === 401 || res.status === 429) unavailable = true;
     return null;
   } catch {
-    return null; // network failure: leave the door open for the next call
+    return null; // transport failure is not conclusive: leave the door open
   }
 }
 
@@ -169,31 +187,67 @@ export async function ensureTab(): Promise<WorkspaceTab | null> {
   return pending;
 }
 
+/** The tab this browser tab currently mirrors (null when none is known). Read
+ * only: it is the caller's "expected mode" for any recovery decision. */
+export function currentTab(): WorkspaceTab | null {
+  return current();
+}
+
 /** `X-Workspace-Tab` + `X-Workspace-Version`, or {} when this session has none. */
 export function headers(): Record<string, string> {
-  const currentTab = current();
-  if (!currentTab) return {};
+  const currentTab_ = current();
+  if (!currentTab_) return {};
   return {
-    'X-Workspace-Tab': currentTab.handle,
-    'X-Workspace-Version': String(currentTab.generation),
+    'X-Workspace-Tab': currentTab_.handle,
+    'X-Workspace-Version': String(currentTab_.generation),
   };
 }
 
-/** GET /workspace (reconcile: no version required) — refresh generation/mode/client. */
-export async function refresh(): Promise<WorkspaceTab | null> {
+/** Why a reconcile failed, in the terms the caller must act on:
+ * `status` null = transport failure; `code` = the server error code, if any
+ * (`workspace.mode_changed` is raised locally when the server reports a mode the
+ * caller did not expect — nothing is adopted in that case). */
+export interface ReconcileResult {
+  tab: WorkspaceTab | null;
+  status: number | null;
+  code: string | null;
+}
+
+/**
+ * GET /workspace (reconcile: no version required). Returns the refreshed mirror
+ * plus the failure classification, because a caller must never treat a transport
+ * blip like a dead handle (QA F3).
+ *
+ * When `expected` is given, an envelope whose mode differs is NOT adopted: the
+ * mirror keeps the mode the caller last acted in and the caller decides what to
+ * do (SHIELD-U3A-01 — no silent context switch).
+ */
+export async function reconcile(expected?: WorkspaceMode): Promise<ReconcileResult> {
   const token = readToken();
-  if (!token) return null;
+  if (!token) return { tab: null, status: null, code: null };
+  const startedAt = epoch;
   try {
     const res = await fetch('/api/workspace', { headers: { Authorization: `Bearer ${token}`, ...headers() } });
-    if (!res.ok) return null;
-    return adopt(await res.json() as WorkspaceEnvelope);
+    if (startedAt !== epoch) return { tab: null, status: res.status, code: null };
+    if (!res.ok) return { tab: null, status: res.status, code: await refusalCode(res) };
+    const envelope = await res.json() as WorkspaceEnvelope;
+    if (expected !== undefined && envelope.mode !== expected) {
+      return { tab: null, status: res.status, code: 'workspace.mode_changed' };
+    }
+    return { tab: adopt(envelope, startedAt), status: res.status, code: null };
   } catch {
-    return null;
+    return { tab: null, status: null, code: null };
   }
+}
+
+/** GET /workspace (reconcile) — refresh generation/mode/client; null on failure. */
+export async function refresh(): Promise<WorkspaceTab | null> {
+  return (await reconcile()).tab;
 }
 
 async function transition(path: string, body?: unknown): Promise<WorkspaceTab> {
   const token = readToken();
+  const startedAt = epoch;
   const res = await fetch(path, {
     method: 'POST',
     headers: {
@@ -204,7 +258,7 @@ async function transition(path: string, body?: unknown): Promise<WorkspaceTab> {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({})) as WorkspaceEnvelope & { code?: string; error?: string };
-  const next = res.ok ? adopt(data) : null;
+  const next = res.ok ? adopt(data, startedAt) : null;
   if (!next) throw Object.assign(new Error(data.code ?? data.error ?? 'workspace.transition_failed'),
     { status: res.status, code: data.code ?? data.error ?? null });
   return next;
@@ -220,9 +274,11 @@ export function exit(): Promise<WorkspaceTab> {
   return transition('/api/workspace/exit');
 }
 
-/** Logout / new session: drop this browser tab's handle (server revokes it) and
- * forget the "cannot own a tab" verdict so the next session can get its own. */
+/** Logout / new session: drop this browser tab's handle (server revokes it),
+ * invalidate every in-flight adoption (epoch), and forget the "cannot own a tab"
+ * verdict so the next session can get its own. */
 export function reset(): void {
+  epoch += 1;
   tab = null;
   loaded = true;
   unavailable = false;

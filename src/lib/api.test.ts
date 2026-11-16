@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { apiFetch, setUnauthorizedHandler } from './api.ts';
-import { AUTH_TOKEN_KEY, reset as resetWorkspace } from './workspaceClient.ts';
+import { AUTH_TOKEN_KEY, currentTab, ensureTab, enter, reset as resetWorkspace } from './workspaceClient.ts';
 
 // --- fakes -----------------------------------------------------------------
 interface MemoryStorage extends Storage { dump(): Record<string, string> }
@@ -29,8 +29,10 @@ function json(status: number, body: unknown): Response {
 
 interface Call { path: string; init?: RequestInit; headers: Headers }
 
+type Reply = { path: string; status: number; body: unknown; throws?: boolean };
+
 /** Records every request and answers from a script keyed by (path, nth hit). */
-function stubFetch(responses: Array<{ path: string; status: number; body: unknown }>): Call[] {
+function stubFetch(responses: Reply[]): Call[] {
   const calls: Call[] = [];
   setGlobal('fetch', async (path: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
@@ -38,6 +40,7 @@ function stubFetch(responses: Array<{ path: string; status: number; body: unknow
     const index = responses.findIndex((entry) => entry.path === String(path));
     if (index === -1) throw new Error(`unexpected request: ${path}`);
     const [entry] = responses.splice(index, 1); // each scripted answer is used once
+    if (entry.throws) throw new TypeError('network down');
     return json(entry.status, entry.body);
   });
   return calls;
@@ -47,6 +50,8 @@ const HANDLE_A = 'A'.repeat(43);
 const HANDLE_B = 'B'.repeat(43);
 const TAB_CREATED = { path: '/api/workspace/tab', status: 201,
   body: { tabHandle: HANDLE_A, generation: 1, mode: 'platform', client: null } };
+const ENTERED = { path: '/api/workspace/enter', status: 200,
+  body: { generation: 2, mode: 'consultant', client: { id: 'c-1', name: 'Tenant' } } };
 
 function setup(token: string | null = 'token-a') {
   setGlobal('localStorage', memoryStorage(token === null ? {} : { [AUTH_TOKEN_KEY]: token }));
@@ -134,6 +139,76 @@ test('any other 409 (business refusal) is passed straight through, never refresh
   assert.equal(res.status, 409);
   assert.equal(calls.length, 2);
   assert.equal((await res.json()).error, 'reports.gate_incomplete');
+});
+
+// --- SHIELD-U3A-01 / QA F3: context-preserving recovery ---------------------
+test('SHIELD-U3A-01: a consultant handle is never replaced by a platform tab', async () => {
+  setup();
+  const calls = stubFetch([
+    TAB_CREATED,
+    ENTERED,
+    { path: '/api/clients', status: 409, body: { code: 'workspace.invalid' } },
+    { path: '/api/workspace', status: 409, body: { code: 'workspace.invalid' } },
+  ]);
+  await ensureTab(); //   the browser tab exists (platform) ...
+  await enter('c-1'); // ... and the session is now in consultant (W) context
+
+  const res = await apiFetch('/api/clients');
+
+  assert.equal(res.status, 409, 'the W-context failure is surfaced, not retried under P');
+  assert.equal((await res.json()).code, 'workspace.invalid');
+  assert.equal(calls.filter((call) => call.path === '/api/workspace/tab').length, 1,
+    'no fresh platform tab is minted for a consultant session');
+  assert.equal(calls.length, 4, 'one reconcile attempt, no retry');
+  assert.equal(currentTab()?.mode, 'consultant', 'the mirror never silently becomes platform');
+});
+
+test('SHIELD-U3A-01: a reconcile that reports another mode is not adopted and not retried', async () => {
+  setup();
+  const calls = stubFetch([
+    TAB_CREATED,
+    { path: '/api/clients', status: 409, body: { code: 'workspace.stale' } },
+    { path: '/api/workspace', status: 200,
+      body: { generation: 5, mode: 'consultant', client: { id: 'c-1', name: 'Tenant' } } },
+  ]);
+
+  const res = await apiFetch('/api/clients');
+
+  assert.equal(res.status, 409, 'a mode switch is surfaced as the original 409');
+  assert.equal(calls.length, 3, 'no retry under a different mode');
+  assert.deepEqual(currentTab(), { handle: HANDLE_A, generation: 1, mode: 'platform', client: null },
+    'the unexpected envelope is not adopted');
+});
+
+test('QA F3: a reconcile transport failure keeps the handle and never re-mints a tab', async () => {
+  setup();
+  const calls = stubFetch([
+    TAB_CREATED,
+    { path: '/api/clients', status: 409, body: { code: 'workspace.stale' } },
+    { path: '/api/workspace', status: 0, body: null, throws: true },
+  ]);
+
+  const res = await apiFetch('/api/clients');
+
+  assert.equal(res.status, 409);
+  assert.equal(calls.filter((call) => call.path === '/api/workspace/tab').length, 1, 'no TAB_LIMIT burn');
+  assert.equal(currentTab()?.handle, HANDLE_A, 'the existing handle is kept');
+  assert.equal(currentTab()?.generation, 1);
+});
+
+test('QA F3: a non-409 reconcile error (e.g. 500) also keeps the handle', async () => {
+  setup();
+  const calls = stubFetch([
+    TAB_CREATED,
+    { path: '/api/clients', status: 409, body: { code: 'workspace.invalid' } },
+    { path: '/api/workspace', status: 500, body: { code: 'access.unavailable' } },
+  ]);
+
+  const res = await apiFetch('/api/clients');
+
+  assert.equal(res.status, 409);
+  assert.equal(calls.filter((call) => call.path === '/api/workspace/tab').length, 1);
+  assert.equal(currentTab()?.handle, HANDLE_A);
 });
 
 test('401 goes through the single auth path once and is not retried', async () => {
