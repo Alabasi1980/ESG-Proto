@@ -163,3 +163,5 @@
 | 2026-11-16 | TeraAgent | TASK-PROTO-U3-A closed | عميل مساحة عمل: اعتماد تبويب تلقائي + ترويسات على 88 موضعاً + استرجاع stale مرة واحدة · إثبات حيّ: قائمة الخدمات ظهرت (GRI) و workspace.invalid اختفى و tables=32 · QA PASS + Shield 0H/2M (W→P الصامت أُلغي، epoch guard، عدم إسقاط المقابض) · 271/271 |
 
 | 2026-11-16 | TeraAgent | TASK-PROTO-U3-B1 closed | نموذج تنقل واحد: هبوطات سياقية + قوائم §3 حرفياً + هوية صادقة + حُرّاس deny-by-default + E عنصر واحد بلا استقصاء · إثبات حيّ P/C/E بلقطات · QA PASS (10/10) + Shield 0H/0M/3L (قرارات: reconcile قبل عرض W وRLS pill إلى B2) · ISS-004 مغلق · 282/282 |
+
+| 2026-11-16 | TeraAgent | TASK-PROTO-U3-B2 closed | صفحة العملاء §5 حرفياً + دخول/خروج بهبوطات حتمية + ClientDetail بهدف صريح وبلا محدد + W للقراءة فقط بالوضع + استرجاع مساحة مفقودة · QA FAIL→PASS · Shield 0H/1M مغلق · إثبات حيّ (خروج→العملاء، تحميل→P، صفر محررات في W) · 316/316 · متبقٍ U4 (محددات ClientReview/GeFinal) |

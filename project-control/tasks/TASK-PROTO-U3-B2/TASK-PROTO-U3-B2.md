@@ -28,3 +28,10 @@ Unit tests (search/clear, progress math incl. zero/missing/mixed-freeze, badge t
 فهمي: المنصة تدير العملاء وتدخل مساحة أحدهم صراحةً وتخرج بزر دائم؛ الصفحة تعرض حقائق الخادم لا تقديرات.
 الافتراضات: خادم §4 جاهز؛ لا تصميم جديد؛ إعادة التحميل تُلغي وضع المستشار.
 ما سيكشفه القبول: أن الدخول/الخروج حدّان صادقان، وأن الجدول مطابق للمعتمد §5 بلا بيانات مزخرفة.
+
+## 7. COMPLETE — accepted for local integration (2026-11-16)
+- Rounds 1–3: Clients page (§5 verbatim: search/clear/refresh + stale epoch, columns, every progress fallback, badge truth, wrapping actions, confirmations, no optimistic success); enter/exit lifecycle with deterministic landings (§7), wrong-tenant guard, lost-workspace recovery; explicit-target ClientDetail with selector+tenant-list lookups removed for all contexts; **W read-only by MODE** (zero editor subtrees/fetches; suspend panel removed); B1 carries (reconcile-before-render, P-only polling/pill); forbidden CTAs removed (Dashboard/GapAnalysis/Standards); ge-overview totals-only.
+- **QA: FAIL → PASS** (round-1 landing defect reproduced and fixed; recheck 28/28 model, 316/316) · **Shield: 0H/1M → all closed** (W read-only by mode, client.id binding, lost-workspace handler once-only, logout reset; 0 new findings).
+- **Live proof (Tera):** Exit → Clients; reload-while-W → P Clients (no W resume); W ClientDetail = 0 buttons/0 forms/0 selects, read-only data present; screenshots clients-page.png, consultant-workspace.png, consultant-detail-readonly.png.
+- **Accepted residuals:** notice shows if the follow-up refetch errors (N1); M3 Retry adopts server-confirmed mode without re-asserting the requested tenant (LOW, fail-closed); pins are behavioural + regex (improve at U4). **Still open → U4:** W-visible tenant selectors + /api/clients enumeration in ClientReviewView/GeFinalView (§3), Profile/Reports conditionals (no per-tenant entitlement yet), broader per-view CTA audit.
+- Round cap: 3 used (third justified by recorded acceptance blocker). No push.

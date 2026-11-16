@@ -146,3 +146,75 @@ New/edited pins:
 
 QA Agent — Execution Mode · independent oracle (`u3b2-qa-oracle.mts` 19/19) + landing model (`u3b2-qa-landing.mts`) · lint 0 / tests 309/309 / build 0.
 Decision is Tera's. **Verdict: FAIL** — solely on §7 Exit/boot landing to Clients (F1); all §5 table fidelity, B1 carries, ClientDetail target rules, CTA removals, pins, style, lint/tests/build PASS. Findings + severity above; no source/config/control writes beyond this report and `%TEMP%\opencode\u3b2-qa-*`.
+
+---
+
+# RECHECK (round 3) - TASK-PROTO-U3-B2
+
+- **Trigger:** round-3 fix commit `ce78105` (+ docs `95b59d6`) after the round-2 QA FAIL (F1).
+- **Scope:** verify ONLY M1-M5 + round-3 pins + lint/test/build. Live DB off-limits.
+- **Environment:** same (Windows, Node v22.22.2, tsx 4.21.0).
+
+## Verdict: PASS (M1-M5 satisfied; no new regression)
+
+## Commands (executed)
+| # | Command | Result |
+|---|---|---|
+| 1 | `npm run lint` (tsc --noEmit) | EXIT 0 |
+| 2 | `npm test` | EXIT 0 - `# tests 316 / pass 316 / fail 0 / skipped 0` (5 suites) |
+| 3 | `npm run build` | EXIT 0 - 1695 modules |
+| 4 | QA M1 landing model (`%TEMP%\opencode\u3b2-qa-recheck.mts`, real `resolveShellPage`) | 28/28 PASS |
+| 5 | QA core oracle re-run (`u3b2-qa-oracle.mts`) | 19/19 PASS (no regression) |
+
+## M1 - shell-resolution determinism (`resolveShellPage`) - PASS
+Independent model of App's single resolver + `setActiveTab` effect, run against the real exported `resolveShellPage`:
+- fresh login -> `ge-overview` (first idle page and final). PASS
+- Exit W -> `clients` (pendingLanding wins over the old W tab; first idle page is `clients`, no `ge-overview` flash). PASS
+- reload-while-W -> `clients` (F1 fixed; before it landed `ge-overview`). PASS
+- invalid/expired handle -> `clients`. PASS
+- recovery token (lost handle) -> `clients`, consumed exactly once. PASS
+- logout resets: `!user` -> activeTab/pending/clientConfig null; next login -> `ge-overview`. PASS
+- no P flash: every non-idle phase resolves `null` (checking/opening/closing/failed) - nothing mounted. PASS
+- precedence pendingLanding > activeTab > bootLanding; P `client-detail` without config -> `clients`, with config -> resolves request. PASS
+- C/E landings unchanged (`client-dashboard` / `gap-analysis`). PASS
+
+## M2 - W ClientDetail read-only by MODE - PASS
+- `clientDetailMode`: platform (ge_admin + mode!=consultant) -> canEdit/showUsers/fetchCatalogs TRUE; consultant -> all FALSE; client_admin -> read-only + roster, no catalogs; employee/unknown -> all FALSE.
+- W: 11 editor subtrees gated on `{canEdit && ...}` (unlink, flags, link-service, assign, unassign, N/A, head designation/select); `{!canEdit &&` read-only note; `{mode.showUsers &&` roster suppressed; `if (mode.fetchCatalogs) fetchCatalogs()` -> zero `/api/services` + `/api/items` fetches in W. Only read-only `GET /api/clients/:id` + `/api/assignments?clientId=` are fetched. No `isGe`, `handleSuspend`, `suspendTitle`, `suspendedNote` remain. PASS
+- P keeps editors (platform mode); suspend panel removed from ClientDetail (suspend/unsuspend lives on the Clients list only).
+
+## M3 - wrong-tenant confirm -> failure panel - PASS
+`enterVerified` requires `confirm.tab.client?.id === clientId`; mismatch -> `{ok:false,reason:'failed'}` -> AuthContext `failWorkspaceTransition` -> App renders the safe failure panel + Retry. Code read + `workspaceClient.test` M3 case.
+Residual (NOT a round-3 regression; round 3 is strictly better than before): Retry uses `recoverWorkspace('adopt')`, which adopts the server-confirmed mode without re-checking the originally requested tenant; if the server truly holds a different tenant, Retry can land W on it (GE cross-client inspection is authorized). LOW; outside M1-M5.
+
+## M4 - lost-workspace handler - PASS
+- `api.repair()`: consultant + `workspace.invalid` -> `workspaceLostHandler?.()` then `return false` BEFORE any `reset()`/`ensureTab()` -> original 409 surfaced, never a silent platform mint.
+- Fires once per request (apiFetch calls repair at most once); concurrent recovery suppressed by `claimWorkspaceTransition('boot')`.
+- Not fired for a repairable/stale platform handle (handler count 0).
+- Recovery path exists: AuthContext registers `setWorkspaceLostHandler(recoverLostWorkspace)`; recovery reconciles first, exits a confirmed consultant to P (or establishes verified P on invalid), sets `bootLanding=clients` and increments `recoveryLandingToken`.
+- Corroborated by `api.test` M4 cases + code read.
+
+## M5 - copy/ordering - PASS
+- Notice AFTER refetch: `await load(...); setNotice(outcome)` - no optimistic success.
+- AR empty title now exactly the binding phrase ``لا يوجد عملاء`` ; the `... بعد` variant is gone (0 matches).
+- Pill wording: Header uses `t.common.connected`/`t.common.disconnected` -> EN "Connected"/"Disconnected", AR "متصل"/"غير متصل" (matches B17 section 4).
+
+## Round-3 pins (enumerated) + weakening judgment - NO substantive weakening
+- `api.test.ts` (+2 M4 tests): additive, behavioural (once + no mint; platform/stale not fired). Fine.
+- `navModel.test.ts`: +M1 `resolveShellPage` test (phase!=idle -> null, precedence, detour, boot/reload). Shell-wiring pins re-pointed from removed mechanisms (`resolvePage(context,activeTab)`, `setActiveTab(bootLanding)`, App-level `client-detail && !clientConfig`) to the new ones (`resolveShellPage({`, `pendingLanding`, `setPendingLanding(...)`, `if(!user) setActiveTab(null)`, navModel `requested==='client-detail' && !request.hasConfigTarget`). Each removed pin has a delivered equivalent; the raw-tab regex still forbids every view id. Fine.
+- `clients.test.ts`: +M2 mode matrix/source pins; `handleSuspend` removed from the preserved-handler loop and replaced by `doesNotMatch const handleSuspend =` (handler removed by section 5); +M5 copy/order pins; R1a detour pins re-pointed to the resolver. Fine.
+- `workspaceClient.test.ts`: +M3 wrong-tenant case. Additive.
+- `b17TransactionInventory.test.ts`: +2 reviewer-owned exact paths (this QA report + Shield fix-review). Exact paths only, no globs. Fine.
+
+## Residual findings
+- N1 (carried, LOW): suspend notice now follows the refetch; if the refetch itself fails, the success notice still shows alongside the list error (server PATCH did succeed). Cosmetic.
+- N2 (RESOLVED): AR empty title now exact.
+- N3 (carried, LOW): navModel raw-tab pin remains a justified narrow relaxation (next to a positive pin).
+- N4 (RESOLVED): pill wording now matches section 4.
+- NEW-residual (LOW, not a regression): M3 Retry does not re-assert the requested tenant (see M3).
+
+## NOT VERIFIED
+- Live DB/server truth and the `consultant-detail-readonly.png` (102 KB) depiction (live DB off-limits). Landing proven by a deterministic model over the real resolver; recommend one live confirm of Exit/reload -> Clients.
+
+## Signature
+QA Agent - Execution Mode (recheck) - 316/316 tests, lint 0, build 0; M1 model 28/28, core oracle 19/19. Verdict: PASS (round-3 fixes F1; no new regression introduced).

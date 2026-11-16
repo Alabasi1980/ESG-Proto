@@ -38,7 +38,7 @@ server backstop verified statically: `src/server/accessRegistry.ts:155,161,163,1
 B2 makes P Client Detail newly reachable (`src/App.tsx:489` explicit-T mount).
 **Fix:** gate editors on the resolved nav **context** (platform) instead of `user.role`; delete the suspend
 panel from Client Detail per §5; skip the catalog fetch outside P.
-**Status:** OPEN (Tera disposition + Engineering fix).
+**Status:** CLOSED (round 3) — M2 mode gating verified statically; see §7.1.
 
 ### SHIELD-U3B2-02 — Low — Enter confirmation binds mode only, not the client
 **Evidence:** `src/lib/workspaceClient.ts:374-385` (`enterVerified` → `reconcile('consultant')`) and
@@ -47,7 +47,7 @@ panel from Client Detail per §5; skip the catalog fetch outside P.
 /bug), W chrome is adopted with the **server's** client name — display stays truthful and nothing foreign is
 shown, but the user silently lands in client B after asking for A. §7 "Enter → W(A)".
 **Fix:** reject unless `confirm.tab.client?.id === clientId` (treat mismatch as `invalid`).
-**Status:** OPEN (Low).
+**Status:** CLOSED (round 3) — M3 client-id binding; see §7.2.
 
 ### SHIELD-U3B2-03 — Low — Mid-session invalid/expired consultant handle keeps W chrome visible
 **Evidence:** `src/lib/api.ts:124-125` (never re-mints a consultant handle — correct, no silent mode change)
@@ -56,20 +56,20 @@ with no consumer that triggers the B2 exit path; grep shows no `workspace.invali
 **Impact:** §7 expects invalid/expired → verified P → Clients; instead every request fails and the W badge /
 client name stay on screen. All reads fail closed (no data), and the always-visible Exit recovers
 (`exitBusy` → failure panel → Retry → `recoverWorkspace('adopt')`, `workspaceClient.ts:414-434`).
-**Status:** OPEN (Low) — acceptable only if Tera accepts manual recovery.
+**Status:** CLOSED (round 3) — M4 lost-workspace recovery; see §7.3.
 
 ### SHIELD-U3B2-04 — Low — Fresh-login landing can be skipped after logout in the same page
 **Evidence:** `src/App.tsx:181-184` applies `bootLanding` only when `activeTab === null`; `activeTab` is
 never reset on logout (all `setActiveTab` sites, `App.tsx:170,182,202,212,221`).
 **Impact:** GE → GE re-login without a page reload lands on the previous page instead of §2 `ge-overview`.
 Role change is still deny-by-default (`resolvePage` redirects). No data/authority impact.
-**Status:** OPEN (Low, cosmetic/§2).
+**Status:** CLOSED (round 3) — M1 deterministic landings; see §7.4.
 
 ### SHIELD-U3B2-05 — Low (informational) — Suspend success notice precedes the authoritative refetch
 **Evidence:** `src/views/ClientsView.tsx:182` (success notice) vs `:188` (`await load(...)`).
 **Impact:** the status column never flips optimistically (good); but if the refetch fails, a success notice
 sits above a load error. Not an authorization issue.
-**Status:** OPEN (Low).
+**Status:** CLOSED (round 3) — M5 refetch-then-notice; see §7.6.
 
 ### Open item (pre-existing, outside B2 targets → U4)
 `src/views/ClientReviewView.tsx:72,179` and `src/views/GeFinalView.tsx:75,204` still call `GET /api/clients`
@@ -127,3 +127,103 @@ flash, C/E unchanged) remains **Tera's** to run.
 **No Security Disposition (LOW/MEDIUM/HIGH/CRITICAL) is issued here** — that is Tera's call; this report is
 input for the Auditor. Highest-priority item for Tera: **U3B2-01** (§6 read-only W Client Detail, §5
 suspend-only-on-Clients).
+
+## 7. RECHECK — round 3 (2026-11-16) — all five items closed (static)
+
+Reviewed delta: `9772a0f..95b59d6`. Changed: `App.tsx`, `AuthContext.tsx`, `Header.tsx`,
+`ClientDetailView.tsx`, `ClientsView.tsx`, `navModel.ts`, `workspaceClient.ts`, `api.ts`, translations,
+5 tests, reviewer docs. **No** `src/server`, `src/db`, `src/styles`, `.env`, `package.json`, `bun.lock`
+delta (verified).
+
+### 7.1 SHIELD-U3B2-01 — CLOSED
+
+- Gating is the platform **mode**, not the role: `ClientDetailView.tsx:69-77` (`clientDetailMode`).
+  Consultant ⇒ `{canEdit:false, showUsers:false, fetchCatalogs:false}`; `ge_admin` + `platform` (or a mirror
+  not yet settled) ⇒ all true; C ⇒ read-only + roster; E/unknown ⇒ nothing.
+- Every editor subtree is `canEdit`-gated (`:348,354,380,409,438,446,508`), roster `:546`, catalogs
+  `:174-176`. W issues only the read projections `GET /api/clients/:id` + `GET /api/assignments`
+  (`:148-149`, W:L matrix) — no editor fetches.
+- Suspend removed entirely: no `handleSuspend` / `suspendTitle` / `suspendedNote` and no
+  `PATCH /api/clients/:id` remains in the file; `:399` records §5.
+- Server backstop unchanged (P@T-only rows; `ownTenant` compare) — no new authority surface.
+- **Pin judged meaningful:** behavioral `clients.test.ts` M2 (all four context combinations, incl.
+  `ge_admin`+`consultant` ⇒ all false) + source pin `doesNotMatch /isGe|handleSuspend|suspendTitle|suspendedNote/`
+  + `showUsers` / `fetchCatalogs` gates + `>= 8` `{canEdit &&`. **Challenge:** the `>= 8` count is loose (a 9th
+  editor gated on another variable would still pass) and a future differently-named role gate would evade the
+  identifier pin — the effective guarantee is the behavioral function pin, which is adequate.
+
+### 7.2 SHIELD-U3B2-02 — CLOSED
+
+`workspaceClient.ts:381-387`: a confirmed envelope is adopted only when
+`confirm.tab.client?.id === clientId`; a missing client object is a mismatch ⇒ `failed` (fail-closed).
+Behavioral test `workspaceClient.test.ts` (enter `c-1`, reconcile `c-2` ⇒ `{ok:false,reason:'failed'}`).
+
+### 7.3 SHIELD-U3B2-03 — CLOSED
+
+- `api.ts:137-142`: consultant + conclusive `workspace.invalid` ⇒ notify the shell, `return false`; **no
+  `reset()`, no `ensureTab()`, no retry** in that branch (never mints behind W chrome) and the original 409
+  still reaches the caller.
+- Consultant-only: requires `expected === 'consultant'` (`:132`); C/E hold no mirror ⇒ unreachable.
+- Fires once: module claim `AuthContext.tsx:301` + `beginWorkspaceTransition` no-op outside `idle/failed`
+  (`:302`); after success the mirror is platform so the branch cannot re-arm; a transport failure never
+  notifies (`api.ts:136`).
+- Verified P: `recoverWorkspace('boot')` (`AuthContext.tsx:306`) reconciles first, then exits a confirmed
+  consultant tab or `reset()`+`ensureTab()` on a conclusive invalid handle — both are server envelopes;
+  failure ⇒ `failed` panel (`:311-313`), 401 ⇒ `clearSession` (`:307-309`). No guessed P.
+- Lands Clients without a P flash: `recoveryLandingToken` (`:317`) is consumed inside the SAME resolution
+  (`App.tsx:167-190`) and filtered through the current context.
+- Tests: `api.test.ts` M4 (lost = 1, exactly one `/api/workspace/tab` call, caller keeps 409, mirror stays
+  consultant) + negative case (platform repair ⇒ lost = 0).
+- **Observation (not a finding):** `bootWorkspace` itself holds no claim, but a `checking` shell renders no
+  api-issuing view, so no api 409 can reach the hook in that window — static reasoning only, unobserved.
+
+### 7.4 SHIELD-U3B2-04 — CLOSED
+
+`App.tsx:198-204`: `user === null` ⇒ `setActiveTab(null)`, `setPendingLanding(null)`,
+`setClientConfig(null)`; precedence `pendingLanding > activeTab > bootLanding` (`navModel.ts:248-255`).
+Behavioral pin `navModel.test.ts` M1 (fresh vs reload vs exit vs the four non-idle phases vs the P detour) +
+source pin `if (!user) { … setActiveTab(null)`. `recoveryLandingToken` is not cleared on logout, but the
+consumed-token guard (`App.tsx:167-168`) makes it inert.
+
+### 7.5 No new authority / leak introduced by round 3
+
+- `pendingLanding` is never mounted raw: it is filtered by `resolvePage` for the CURRENT context — W +
+  `pendingLanding:'clients'` resolves to `dashboard` (pinned), so a P page cannot paint under W.
+- Every non-idle phase resolves `null` (pinned for all four phases).
+- P `client-detail` without an explicit T still routes to Clients (behavioral pin + the existing
+  `case 'client-detail': … null : <ClientDetailView` mount pin).
+- Raw-tab mount prohibition pin retained; `resolvePage(context, activeTab)` pin retargeted to
+  `resolveShellPage(` (not weakened — App no longer calls the old helper).
+- `?? shellPending` in `App.tsx:188` is unreachable while that effect's guard holds and `activeTab` is never
+  mounted directly — no exposure.
+- `api.ts` gained one notification hook only: no new fetch, header, bypass path or token handling.
+- Style scan on the round-3 delta: 0 hits (only `appThemeDark` identifiers). `t.common.checking/connected/
+  disconnected` exist in both languages (`translations.ts:1120-1122`, `1966-1968`).
+
+### 7.6 SHIELD-U3B2-05 — CLOSED (observed beyond the requested five)
+
+`ClientsView.tsx:171-189`: the outcome is captured, `await load(...)` runs first, `setNotice(outcome)` only
+afterwards — no optimistic success. Pin: `clients.test.ts` M5 enforces the await-then-notice order.
+
+### 7.7 Still open (unchanged)
+
+- Pre-existing W tenant selectors + `/api/clients` enumeration in `ClientReviewView.tsx:72,179` and
+  `GeFinalView.tsx:75,204` (no round-3 delta) → U4; server backstop verified (`ownTenant`, matrix).
+- `b17TransactionInventory.test.ts` allow-list gained 2 reviewer-owned control-doc paths only — no
+  `src/server` path.
+
+### 7.8 Status
+
+| Finding | Round 2 | Round 3 |
+|---|---|---|
+| U3B2-01 | Medium / open | **CLOSED** |
+| U3B2-02 | Low / open | **CLOSED** |
+| U3B2-03 | Low / open | **CLOSED** |
+| U3B2-04 | Low / open | **CLOSED** |
+| U3B2-05 | Low / open | **CLOSED** |
+| ClientReview/GeFinal selectors | open (U4) | open (U4) |
+
+**Static bounds unchanged:** this recheck ran no test/lint/build/browser/server/DB step; closures are
+source-level reads of the delta plus the intended assertions of the tests (not executed here). The W
+Client-Detail read-only screenshot in the repo is Tera's evidence, not mine. Final disposition stays
+Tera's / the Auditor's.
