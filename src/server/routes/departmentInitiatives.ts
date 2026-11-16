@@ -24,7 +24,9 @@ const router = express.Router();
 router.get('/initiatives/department', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tenant = domainTenant(req, req.query.clientId);
-    const department = ownDepartment(req.access!);
+    // ROUND 3 (G-03/M-02): the department is resolved INSIDE the transaction and
+    // only for a work mode — a platform caller has no department, so
+    // ownDepartment() must never run on that branch.
     const rows = await domainTransaction(req, async (client) => (await client.query(
       `SELECT ci.id AS client_initiative_id, l.id AS initiative_id, l.title, l.sector,
               l.esg_class, l.standards_ref, l.notes, l.sort_order,
@@ -44,7 +46,8 @@ router.get('/initiatives/department', authMiddleware, requireDomainAccess, async
                 AND ($2::uuid IS NULL OR st.department_id = $2)), '[]'::json) AS statuses
          FROM client_initiatives ci JOIN initiatives_library l ON l.id = ci.initiative_id
         WHERE ci.client_id = $1
-        ORDER BY l.sort_order ASC NULLS LAST, l.title ASC, ci.id ASC`, [tenant, department])).rows, (live) =>
+        ORDER BY l.sort_order ASC NULLS LAST, l.title ASC, ci.id ASC`,
+      [tenant, req.access!.mode === 'platform' ? null : ownDepartment(req.access!)])).rows, (live) =>
       live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.json(rows);
   } catch (err: any) {

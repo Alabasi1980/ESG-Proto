@@ -146,8 +146,10 @@ test('U4-1c round-2 pins: FK RESTRICT on submissions, no RLS-blind count guard',
   // The misleading targetless count pre-check is REMOVED, not kept as a fast path.
   assert.ok(!/SELECT count\(\*\)::int AS n FROM document_submissions/.test(en),
     'no RLS-blind count pre-check remains');
-  assert.ok(en.includes("fkErr?.code === '23503'") && en.includes("code: 'documents.dependency'"),
-    'the FK refusal maps to the own 409 documents.dependency body');
+  // ROUND 3 (G-02): a RESTRICT refusal surfaces as 23001 OR 23503.
+  assert.ok(en.includes("fkErr?.code === '23001' || fkErr?.code === '23503'"),
+    'both RESTRICT/FK SQLSTATEs map to the own 409 body');
+  assert.ok(en.includes("code: 'documents.dependency'"));
   assert.ok(!/error:.*fkErr/.test(en), 'the FK diagnostic is never echoed');
   // F-05/L-03: requirements are client-scoped end to end.
   assert.match(schema, /ADD COLUMN client_id UUID NOT NULL REFERENCES clients\(id\) ON DELETE CASCADE/);
@@ -156,9 +158,16 @@ test('U4-1c round-2 pins: FK RESTRICT on submissions, no RLS-blind count guard',
     content.includes("client_id::text=b17_setting('current_tenant_id')"),
     'the requirement read policy is client-scoped');
   assert.ok(en.includes('WHERE r.client_id = $1'), 'the department list is client-scoped');
-  // R3: both P@T lists really run the platform configuration context for P.
+  // R1 (G-01): the requirement audits are written with client_id = T, so the
+  // audit policy needs the target-bound branch (shape guard only — behaviour is
+  // proved end-to-end in scripts/u41c-e2e.ts).
+  assert.ok(content.includes("action IN ('DOCUMENT_REQUIREMENT_CREATED','DOCUMENT_REQUIREMENT_UPDATED',"));
+  assert.ok(en.includes('clientId: tenant'));
+  // R3: the mode is decided BEFORE ownDepartment (platform has no department).
   for (const file of ['src/server/routes/documents.ts', 'src/server/routes/departmentInitiatives.ts']) {
     const src = readFileSync(file, 'utf8');
+    assert.ok(src.includes("req.access!.mode === 'platform' ? null : ownDepartment(req.access!)"),
+      `${file}: the platform branch never calls ownDepartment`);
     assert.ok(src.includes("live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live)"),
       `${file}: the P path uses platformConfigContext(T)`);
   }

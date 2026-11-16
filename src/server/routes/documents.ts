@@ -176,12 +176,14 @@ router.delete('/services/:id/documents/:reqId', authMiddleware, requireFreshPass
       // ROUND 2 (H-01): NO count pre-check. The guarantee is the FK itself —
       // document_submissions.requirement_id is ON DELETE RESTRICT — so a
       // department's submission can never be cascade-deleted, and a delete is
-      // atomic whether or not the caller can see the child rows. The FK
-      // refusal (23503) is mapped to the unit's own 409 body with no raw PG text.
+      // atomic whether or not the caller can see the child rows. ROUND 3 (G-02):
+      // a RESTRICT refusal can surface as either SQLSTATE — 23001
+      // (restrict_violation) or 23503 (foreign_key_violation) depending on the
+      // plan — so BOTH map to the unit's own 409 body with no raw PG text.
       try {
         await client.query('DELETE FROM document_requirements WHERE id = $1', [requirementId]);
       } catch (fkErr: any) {
-        if (fkErr?.code === '23503') {
+        if (fkErr?.code === '23001' || fkErr?.code === '23503') {
           throw new DeferredRefusal(409, {
             error: 'A department submission references this document requirement. Remove the reference first.',
             code: 'documents.dependency',
@@ -208,7 +210,9 @@ router.delete('/services/:id/documents/:reqId', authMiddleware, requireFreshPass
 router.get('/requirements', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tenant = domainTenant(req, req.query.clientId);
-    const department = ownDepartment(req.access!);
+    // ROUND 3 (G-03/M-02): the department is resolved INSIDE the transaction and
+    // only for a work mode — a platform caller has no department, and
+    // ownDepartment() (which asserts a work scope) must never run for P.
     const rows = await domainTransaction(req, async (client) => (await client.query(
       `SELECT r.id, r.service_id, r.department_id, r.title, r.description, r.required,
               r.sort_order, r.tags, r.created_at,
@@ -231,7 +235,8 @@ router.get('/requirements', authMiddleware, requireDomainAccess, async (req: Aut
         WHERE r.client_id = $1
           AND b17_content_fact('service', $1, r.service_id)
           AND ($2::uuid IS NULL OR r.department_id IS NULL OR r.department_id = $2)
-        ORDER BY r.sort_order ASC, r.title ASC, r.id ASC`, [tenant, department])).rows, (live) =>
+        ORDER BY r.sort_order ASC, r.title ASC, r.id ASC`,
+      [tenant, req.access!.mode === 'platform' ? null : ownDepartment(req.access!)])).rows, (live) =>
       live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.json(rows);
   } catch (err: any) {

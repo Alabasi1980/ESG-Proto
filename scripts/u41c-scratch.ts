@@ -223,25 +223,31 @@ try {
   // the client-matching submissions set). Reverting those seven to their round-1
   // text must reproduce C1 (the new schema with the round-1 policy file); putting
   // them back must reproduce the final content shape.
-  const CHANGED = ['b17_document_requirements_read', 'b17_document_requirements_insert',
-    'b17_document_requirements_update', 'b17_document_requirements_delete',
-    'b17_document_submissions_read', 'b17_document_submissions_insert',
-    'b17_document_submissions_update'];
+  const CHANGED: [string, string][] = [
+    ['b17_document_requirements_read', 'document_requirements'],
+    ['b17_document_requirements_insert', 'document_requirements'],
+    ['b17_document_requirements_update', 'document_requirements'],
+    ['b17_document_requirements_delete', 'document_requirements'],
+    ['b17_document_submissions_read', 'document_submissions'],
+    ['b17_document_submissions_insert', 'document_submissions'],
+    ['b17_document_submissions_update', 'document_submissions'],
+    // ROUND 3 (G-01): the audit policy gained the target-bound requirement branch.
+    ['b17_audit_insert', 'audit_log'],
+  ];
   const policyStatement = (sql: string, name: string) => statementAt(sql, `CREATE POLICY ${name} `);
   const swap = async (to: string) => {
     await db.query('BEGIN');
-    for (const name of CHANGED) {
-      const table = name.includes('submissions') ? 'document_submissions' : 'document_requirements';
+    for (const [name, table] of CHANGED) {
       await db.query(`DROP POLICY IF EXISTS ${name} ON ${table}`);
       await db.query(policyStatement(to, name));
     }
     await db.query('COMMIT');
   };
   await swap(headContent);
-  assert.equal(await shape(db), c1.post, 'restoring the seven round-1 policies restores the schema-only content md5');
+  assert.equal(await shape(db), c1.post, 'restoring the predecessor policies restores the schema-only content md5');
   await swap(newContent);
-  assert.equal(await shape(db), contentNew, 're-applying the round-2 policies restores the final content md5');
-  pass('content constant falsifiable: round-2 policy delta removed -> schema-only md5, re-added -> new md5');
+  assert.equal(await shape(db), contentNew, 're-applying the changed policies restores the final content md5');
+  pass('content constant falsifiable: policy delta removed -> schema-only md5, re-added -> new md5');
 
   log('STEP seed (two clients sharing one service)');
   const user = (id: string, clientId: string | null, departmentId: string | null,

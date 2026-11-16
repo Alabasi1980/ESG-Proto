@@ -525,7 +525,18 @@ CREATE POLICY b17_audit_insert ON audit_log FOR INSERT WITH CHECK (
           'DEPARTMENT_HEAD_ASSIGNED','DEPARTMENT_HEAD_CLEARED','LINK_CLIENT_SERVICE',
           'UPDATE_CLIENT_SERVICE_FLAGS','UNLINK_CLIENT_SERVICE','ASSIGN_ITEM',
           'UNASSIGN_ITEM','STAFF_LIST_REJECTED','USER_CREATED','USER_DEACTIVATED',
-          'USER_REACTIVATED','STAFF_LIST_APPROVED'))))
+          'USER_REACTIVATED','STAFF_LIST_APPROVED'))
+      -- TASK-PROTO-U4-1c round 3 (G-01): the P-managed document-requirement audits
+      -- are written with client_id = the EXPLICIT TARGET T (the requirement is
+      -- client-scoped since round 2). The NULL-tenant branch above therefore
+      -- refused them (42501, rolling the whole requirement write back). This is
+      -- the target-bound twin for EXACTLY those three actions: same platform
+      -- configuration context, client = T, target not null. No other action,
+      -- table or policy is touched.
+      OR (b17_setting('target_id') IS NOT NULL
+        AND client_id::text=b17_setting('target_id')
+        AND action IN ('DOCUMENT_REQUIREMENT_CREATED','DOCUMENT_REQUIREMENT_UPDATED',
+          'DOCUMENT_REQUIREMENT_DELETED'))))
     OR b17_work_tenant(client_id)));
 -- U2-B0 adds row scope only. Handlers remain UNACTIVATED.
 -- U2-B round 3 adds only the server-side notify fan-out/trim policies and the

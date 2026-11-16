@@ -42,3 +42,8 @@ QA execution + Shield (file access + department scoping is security-relevant). R
 فهمي: للقسم ثلاثة عوالم: بنود الخدمة (إجابات)، مستندات مستقلة (تقديم + ملفات)، ومبادرات (نُفِّذت + إثبات) — وكلها تُرسل للاستشاري ويقرأها العميل.
 الافتراضات: النموذج العام يكفي؛ الحاوية العامة عام واحد لكل خدمة؛ الدليل لا يُحذف بعد التقديم.
 ما سيكشفه القبول: أن المحضر اليدوي (3 أوراق) صار يعمل داخل التطبيق بدور كل جهة.
+
+## 6. ROUND 3 APPLIED (2026-11-16) — recheck pending, NOT accepted yet
+- G-01 HIGH fixed (audit target-bound branch; live proof: P create 201, audit client_id = A) · G-02 (23001+23503 mapped to 409) · G-03 (P@T lists branch before ownDepartment; live list 200) · G-04 (behavioural HTTP E2E script replaces text pins: 201/200/200 on scratch).
+- Live applied: round-3 delta committed; ledger U1 f28b8352 unchanged, U2D 4ff0f31c / c9271835; boot green.
+- Open: round-3 recheck by QA+Shield; a manually created test requirement (شهادة تجريبية U4-1c) needs cleanup; manual live DELETE call shape returned 400 (scratch E2E delete = 200 — request-shape issue to confirm).

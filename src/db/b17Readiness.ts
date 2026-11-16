@@ -87,10 +87,12 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // policy (b17_consultant_service_visibility), so BOTH its checksum (sha256,
 // ledger `checksum`) and its catalog shape moved; measured content sha256 was
 // 2e07a7c1… with structure 6f67b44d… (the U4-1c block below supersedes both).
-// U4-1c round 2: recomputed after the seven changed requirement/submission
-// policies (client scoping + no targetless submissions branch). New content
-// sha256: 07e9c994… (measured in the same scratch run as the shape).
-export const B17_CONTENT_SHAPE = '79ad1927e72f861081450df86eb35b7f';
+// U4-1c round 3 (G-01): recomputed after b17_audit_insert gained the
+// target-bound DOCUMENT_REQUIREMENT_* branch (the requirement audits are written
+// with client_id = T). New content sha256: 4ff0f31c… (measured in the same
+// scratch run as the shape; the schema is untouched, so PREDECESSOR_SHAPE and
+// B17_SHAPE above do not move).
+export const B17_CONTENT_SHAPE = 'c927183564e59ce9777b92e854dfc40a';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

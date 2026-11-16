@@ -138,12 +138,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const h13AuthSha256='5848271d5e7f8fefb56424d10993fb5d56b38bf583a6ccf590b1ea857c978dde';
   // U4-1a: routes.ts + accessRegistry.ts gained the one W visibility declaration;
   // b17-content.sql gained the one narrow W policy (approved Option A).
-  // U4-1c round 2 (H-01/M-01/F-03/F-05): routes.ts is untouched this round;
-  // accessRegistry.ts moves four rows to P@T and b17-content.sql gains the
-  // client-scoped requirement/submission policies (seven policy texts).
+  // U4-1c round 3 (G-01): only b17-content.sql moves (the audit policy gains the
+  // target-bound requirement branch); its sha256 pin and the readiness pin
+  // (constant + note) move with it.
   const h13RoutesSha256='a810933dcab117669a42036ec3d6affe944f5cd1f4e73a68096b4561bbce9820';
   const h13AccessRegistrySha256='10931e42fd5f86e491b5e52836a486a1be72a48964c56e477731feeb6377711b';
-  const h13ContentSha256='07e9c994acd48323b4f9430bf19fc45de99cc34cd73c601d7cad6089a76b892d';
+  const h13ContentSha256='4ff0f31c455c37ca8d60b9cd8f4b1d67b8a05d3810ffa2ac03c300540d8ea055';
   const postH12Pins: Record<string,string> = {
     'src/server/auth.ts': h13AuthSha256,
     'src/server/routes.ts': h13RoutesSha256,
@@ -170,9 +170,8 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // columns/tables and the new content policy block were re-measured on an own
   // fresh PG18 scratch (scripts/u41c-scratch.ts), with the drop/re-add
   // falsifiability chain in the same run.
-  // U4-1c round 2: the three constants moved again after the FK/client-scope
-  // deltas were re-measured on the own scratch, with their undo/redo proof.
-  const h13ReadinessSha256='59322ac3ba674460066318414cd6be3b5457bd8c31a077a131033defd58c68d1';
+  // U4-1c round 3: only the content constant moved (the audit-policy branch).
+  const h13ReadinessSha256='480ff0a6475dbfaffe5cbf28db9896d097754a7085437d9c55413294118c5e6d';
   assert.equal(createHash('sha256')
     .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
     .digest('hex'),h13ReadinessSha256,
@@ -199,7 +198,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/lib/documents.ts','src/lib/documents.test.ts',
     'src/lib/departmentInitiatives.ts','src/lib/departmentInitiatives.test.ts',
     'src/server/routes/documents.ts','src/server/routes/departmentInitiatives.ts',
-    'scripts/u41c-scratch.ts'];
+    'scripts/u41c-scratch.ts',
+    // TASK-PROTO-U4-1c round 3 (G-04): the behavioural E2E that boots the real
+    // server against the scratch and drives P/C/E through the real handlers.
+    'scripts/u41c-e2e.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -345,7 +347,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,91); // 82 through U4-1b + the nine U4-1c paths (named in newFiles above)
+  assert.equal(allowed.size,92); // 91 through U4-1c round 2 + the round-3 E2E script
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });
