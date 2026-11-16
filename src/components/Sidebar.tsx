@@ -15,43 +15,64 @@ import {
   Bell,
   ScrollText,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiFetch } from '../lib/api.ts';
+import {
+  menuPages,
+  shellIdentity,
+  type NavContext,
+  type PageId,
+} from '../lib/navModel.ts';
 
-export type ActiveTab =
-  | 'dashboard'
-  | 'standards'
-  | 'gap-analysis'
-  | 'actions'
-  | 'initiatives'
-  | 'esg-profile'
-  | 'reports'
-  | 'import-gri'
-  | 'settings'
-  | 'ge-overview'
-  | 'client-detail'
-  | 'staff-lists'
-  | 'client-dashboard'
-  | 'audit-log'
-  | 'notifications';
+// The shell's page identifier is the nav model's id set (kept exported under the
+// historical name `ActiveTab` so views that type their `setActiveTab` prop keep
+// compiling without touching view content).
+export type ActiveTab = PageId;
 
 interface SidebarProps {
-  activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
+  /** Derived by App from role + workspace tab mode; absent/null = no pages
+   * (fail-closed: a caller that omits it renders an empty navigation). */
+  context?: NavContext | null;
+  /** The GUARD-RESOLVED page (never a forbidden/pending request). */
+  activeTab: PageId | null;
+  setActiveTab: (tab: PageId) => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
+// Existing Lucide icons only — the nearest icon already used for each page
+// (B17 §4 asks for reuse, not a new icon decision).
+const PAGE_ICONS: Record<PageId, LucideIcon> = {
+  'ge-overview': Building2,
+  'clients': Building2,
+  'dashboard': LayoutDashboard,
+  'client-dashboard': LayoutDashboard,
+  'client-detail': Wrench,
+  'standards': BookOpen,
+  'gap-analysis': Scale,
+  'actions': Wrench,
+  'initiatives': Lightbulb,
+  'esg-profile': Sprout,
+  'reports': FileText,
+  'import-gri': UploadCloud,
+  'settings': Settings,
+  'staff-lists': Lightbulb,
+  'audit-log': ScrollText,
+  'notifications': Bell,
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({
+  context = null,
   activeTab,
   setActiveTab,
   isOpen,
   onClose,
 }) => {
   const { t, lang, setLang } = useLanguage();
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, workspace } = useAuth();
   // B12 (S-23): unread badge next to the notifications tab (own inbox only).
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -77,104 +98,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [token]);
 
+  // TASK-PROTO-U3-B1 §3/§4: the unread badge/inbox belongs to P/W/C only. The
+  // employee context has no notifications node and never polls (no interval).
+  const canPoll = Boolean(token) && context !== null && context !== 'employee';
+
   useEffect(() => {
+    if (!canPoll) {
+      setUnreadCount(0);
+      return;
+    }
     fetchUnread();
     const id = setInterval(fetchUnread, 30000);
     return () => clearInterval(id);
-  }, [fetchUnread, activeTab]);
+  }, [canPoll, fetchUnread, activeTab]);
 
-  const navItems = [
-    {
-      id: 'dashboard' as ActiveTab,
-      label: t.nav.dashboard,
-      icon: LayoutDashboard,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'standards' as ActiveTab,
-      label: t.nav.standards,
-      icon: BookOpen,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'gap-analysis' as ActiveTab,
-      label: t.nav.gapAnalysis,
-      icon: Scale,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'reports' as ActiveTab,
-      label: t.nav.reports,
-      icon: FileText,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'import-gri' as ActiveTab,
-      label: t.nav.importGRI,
-      icon: UploadCloud,
-      roles: ['ge_admin'],
-    },
-    {
-      id: 'actions' as ActiveTab,
-      label: t.nav.correctiveActions,
-      icon: Wrench,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'initiatives' as ActiveTab,
-      label: t.nav.initiatives,
-      icon: Lightbulb,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'esg-profile' as ActiveTab,
-      label: t.nav.esgProfile,
-      icon: Sprout,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'settings' as ActiveTab,
-      label: t.nav.settings,
-      icon: Settings,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-    {
-      id: 'ge-overview' as ActiveTab,
-      label: t.nav.geOverview,
-      icon: Building2,
-      roles: ['ge_admin'],
-    },
-    {
-      id: 'client-detail' as ActiveTab,
-      label: t.nav.clientDetail,
-      icon: Wrench,
-      roles: ['ge_admin', 'client_admin'],
-    },
-    {
-      id: 'staff-lists' as ActiveTab,
-      label: t.nav.staffLists,
-      icon: Lightbulb,
-      roles: ['ge_admin', 'client_admin'],
-    },
-    {
-      id: 'client-dashboard' as ActiveTab,
-      label: t.nav.clientDashboard,
-      icon: LayoutDashboard,
-      roles: ['ge_admin', 'client_admin'],
-    },
-    {
-      id: 'audit-log' as ActiveTab,
-      label: t.nav.auditLog,
-      icon: ScrollText,
-      roles: ['ge_admin'],
-    },
-    {
-      id: 'notifications' as ActiveTab,
-      label: t.nav.notifications,
-      icon: Bell,
-      roles: ['ge_admin', 'client_admin', 'employee'],
-    },
-  ];
+  // §1 single source: the sidebar rows ARE the nav model's menu rows for the
+  // current context (order, labels and conditional omissions all come from it).
+  const navItems = context ? menuPages(context) : [];
+
+  // §2 truthful identity: P platform administration (no tenant, no unrestricted
+  // claim), W consultant workspace + the workspace's authoritative client name,
+  // C company + own company, E department + own department/company.
+  const identity = context
+    ? shellIdentity(context, {
+      clientName: workspace?.client?.name ?? null,
+      companyName: user?.clientName ?? null,
+      departmentName: user?.departmentName ?? null,
+    })
+    : null;
 
   // B15 (RTL docking): off-canvas transforms are scoped to mobile with
   // `max-lg:` so the desktop (lg:static) sidebar can never be translated
@@ -243,34 +194,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Tenant context banner */}
+        {/* Context identity block (truthful per §2 — no invented tenant) */}
         {user && (
-          <div className="mx-4 mt-4 p-3 rounded-lg bg-surface-3 border border-sidebar-muted/60 text-xs">
+          <div
+            data-testid="shell-identity"
+            className="mx-4 mt-4 p-3 rounded-lg bg-surface-3 border border-sidebar-muted/60 text-xs"
+          >
             <div className="flex items-center gap-2 text-sidebar-muted mb-1">
               <Building2 className="w-3.5 h-3.5 text-sidebar-muted shrink-0" />
               <span className="font-medium uppercase text-[10px] text-muted">
-                {t.nav.tenantBadge}
+                {identity ? t.contextIdentity[identity.labelKey] : t.auth.roles[user.role]}
               </span>
             </div>
-            <div className="font-medium text-text truncate">
-              {user.clientName || (user.role === 'ge_admin' ? t.auth.notAssigned : user.clientId || 'Client Tenant')}
-            </div>
-            {user.departmentName && (
-              <div className="text-muted mt-1 text-[11px] truncate">
-                {t.auth.department}: {user.departmentName}
-              </div>
+            {identity?.value && (
+              <div className="font-medium text-text truncate">{identity.value}</div>
+            )}
+            {identity?.secondary && (
+              <div className="text-muted mt-1 text-[11px] truncate">{identity.secondary}</div>
             )}
           </div>
         )}
 
-        {/* Navigation list */}
+        {/* Navigation list — the nav model, nothing else */}
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
-            const isAuthorized = !user || item.roles.includes(user.role);
-            if (!isAuthorized) return null;
-
             const isActive = activeTab === item.id;
-            const Icon = item.icon;
+            const Icon = PAGE_ICONS[item.id];
 
             return (
               <button
@@ -279,6 +228,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   setActiveTab(item.id);
                   onClose();
                 }}
+                aria-current={isActive ? 'page' : undefined}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                   isActive
                     ? 'bg-sidebar-active text-sidebar-active-text font-semibold shadow-sm'
@@ -286,8 +236,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
               >
               <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sidebar-active-text' : 'text-sidebar-muted'}`} />
-              <span className="truncate flex-1 text-start">{item.label}</span>
-              {item.id === 'notifications' && unreadCount > 0 && (
+              <span className="truncate flex-1 text-start">{item.label[lang]}</span>
+              {item.id === 'notifications' && canPoll && unreadCount > 0 && (
                 <span className="inline-flex items-center justify-center shrink-0 leading-none tabular-nums px-1.5 py-0.5 rounded-full bg-danger text-brand-ink text-[10px] font-bold">
                   {unreadCount > 50 ? '50+' : unreadCount}
                 </span>

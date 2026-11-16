@@ -60,9 +60,16 @@ export interface Translations {
     };
     tenant: string;
     department: string;
-    notAssigned: string;
     dbUnconfiguredNotice: string;
     dbUnconfiguredHelp: string;
+  };
+
+  // TASK-PROTO-U3-B1 §2 — truthful shell identity per context (P/W/C/E).
+  contextIdentity: {
+    platformAdmin: string;
+    consultantWorkspace: string;
+    company: string;
+    department: string;
   };
 
   setup: {
@@ -729,9 +736,15 @@ export const translations: Record<Language, Translations> = {
       },
       tenant: 'Client Tenant',
       department: 'Department',
-      notAssigned: 'Enterprise Level (Unrestricted)',
       dbUnconfiguredNotice: 'Live PostgreSQL connection (DATABASE_URL) is not yet set.',
       dbUnconfiguredHelp: 'Set DATABASE_URL in your environment or .env file to persist records with Row-Level Security.',
+    },
+
+    contextIdentity: {
+      platformAdmin: 'Platform administration',
+      consultantWorkspace: 'Consultant workspace',
+      company: 'Company',
+      department: 'Department',
     },
 
     setup: {
@@ -1513,9 +1526,15 @@ export const translations: Record<Language, Translations> = {
       },
       tenant: 'العميل المستأجر',
       department: 'القسم',
-      notAssigned: 'مستوى المنشأة العام (شامل)',
       dbUnconfiguredNotice: 'اتصال PostgreSQL المباشر (DATABASE_URL) غير معين حتى الآن.',
       dbUnconfiguredHelp: 'قم بتعيين DATABASE_URL في البيئة أو ملف .env لحفظ السجلات مع عزل RLS.',
+    },
+
+    contextIdentity: {
+      platformAdmin: 'إدارة المنصة',
+      consultantWorkspace: 'مساحة الاستشاري',
+      company: 'الشركة',
+      department: 'القسم',
     },
 
     setup: {

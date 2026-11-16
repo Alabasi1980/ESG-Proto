@@ -3,6 +3,7 @@ import { LanguageProvider, useLanguage } from './i18n/LanguageContext.tsx';
 import { useAuth } from './context/AuthContext.tsx';
 import { Sidebar, ActiveTab } from './components/Sidebar.tsx';
 import { Header } from './components/Header.tsx';
+import { deriveNavContext, resolvePage, type PageId } from './lib/navModel.ts';
 import { idleState, idleSecondsRemaining } from './lib/idleTimeout.ts';
 import { validateSelfChosenPassword } from './lib/password.ts';
 import { DashboardView } from './views/DashboardView.tsx';
@@ -25,9 +26,11 @@ import { NotificationsView } from './views/NotificationsView.tsx';
 import { RefreshCw, TimerOff } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { user, token, loading, refreshUser, logout } = useAuth();
+  const { user, token, loading, refreshUser, logout, workspace } = useAuth();
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  // TASK-PROTO-U3-B1 §3: the REQUESTED tab (may be a stale/forbidden value from
+  // a previous context). It is never rendered directly — see `currentPage`.
+  const [activeTab, setActiveTab] = useState<ActiveTab | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inSetupMode, setInSetupMode] = useState(false);
   const [dbConnected, setDbConnected] = useState(false);
@@ -108,6 +111,80 @@ const MainApp: React.FC = () => {
     const interval = setInterval(checkDb, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // TASK-PROTO-U3-B1 §2: the context derives ONLY from the session role plus the
+  // workspace tab mirror (platform/consultant + bound client). No URL, no
+  // localStorage, no guessed tenant; an unknown role yields no context (no pages).
+  const context = user
+    ? deriveNavContext(user.role, workspace?.mode ?? null, Boolean(workspace?.client))
+    : null;
+
+  // §3 guard: the requested tab is resolved through the model BEFORE any mount.
+  // An absent or not-yet-implemented page becomes the context landing, so a
+  // forbidden view is never instantiated, fetched or polled (and nothing of the
+  // old view flashes, because rendering only ever uses `currentPage`).
+  const resolvedPage = context ? resolvePage(context, activeTab) : null;
+  const currentPage = resolvedPage?.page ?? null;
+
+  useEffect(() => {
+    if (currentPage && currentPage !== activeTab) setActiveTab(currentPage);
+  }, [currentPage, activeTab]);
+
+  // §3 mount switch: exactly ONE view per resolved page. Views are statically
+  // imported (as before) but only the resolved one is ever instantiated/rendered
+  // — a forbidden page therefore mounts nothing and fires no fetch/poll.
+  // `clients` is declared in the model but belongs to B2, so it has no branch
+  // and the guard never resolves to it.
+  const renderView = (page: PageId) => {
+    switch (page) {
+      case 'dashboard':
+        return <DashboardView setActiveTab={setActiveTab} dbConnected={dbConnected} />;
+      case 'standards':
+        return <StandardsView setActiveTab={setActiveTab} />;
+      case 'gap-analysis':
+        return <GapAnalysisView setActiveTab={setActiveTab} />;
+      case 'actions':
+        return <ActionsView />;
+      case 'initiatives':
+        return <InitiativesView />;
+      case 'esg-profile':
+        return <EsgProfileView />;
+      case 'reports':
+        return <ReportsView />;
+      case 'import-gri':
+        return (
+          <ImportGRIView
+            setActiveTab={setActiveTab}
+            onDataImported={() => {
+              checkDb();
+            }}
+          />
+        );
+      case 'settings':
+        return (
+          <SettingsView
+            onDbStatusChanged={() => {
+              checkDb();
+            }}
+          />
+        );
+      case 'ge-overview':
+        return <GeOverviewView />;
+      case 'client-detail':
+        return <ClientDetailView />;
+      case 'staff-lists':
+        return <StaffListsView />;
+      case 'client-dashboard':
+        return <ClientDashboardView />;
+      case 'audit-log':
+        return <AuditLogView />;
+      case 'notifications':
+        return <NotificationsView />;
+      case 'clients':
+      default:
+        return null;
+    }
+  };
 
   if (loading) {
     return (
@@ -203,7 +280,8 @@ const MainApp: React.FC = () => {
     <div className="flex h-screen bg-surface text-text overflow-hidden font-sans">
       {/* Sidebar with RTL and Tenant Context */}
       <Sidebar
-        activeTab={activeTab}
+        context={context}
+        activeTab={currentPage}
         setActiveTab={setActiveTab}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -212,7 +290,8 @@ const MainApp: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header
-          activeTab={activeTab}
+          context={context}
+          activeTab={currentPage}
           onOpenMobileMenu={() => setSidebarOpen(true)}
           dbConnected={dbConnected}
         />
@@ -247,40 +326,7 @@ const MainApp: React.FC = () => {
 
         <main data-testid="main-content" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
-            {activeTab === 'dashboard' && (
-              <DashboardView setActiveTab={setActiveTab} dbConnected={dbConnected} />
-            )}
-            {activeTab === 'standards' && (
-              <StandardsView setActiveTab={setActiveTab} />
-            )}
-            {activeTab === 'gap-analysis' && (
-              <GapAnalysisView setActiveTab={setActiveTab} />
-            )}
-            {activeTab === 'actions' && <ActionsView />}
-            {activeTab === 'initiatives' && <InitiativesView />}
-            {activeTab === 'esg-profile' && <EsgProfileView />}
-            {activeTab === 'reports' && <ReportsView />}
-            {activeTab === 'import-gri' && (
-              <ImportGRIView
-                setActiveTab={setActiveTab}
-                onDataImported={() => {
-                  checkDb();
-                }}
-              />
-            )}
-            {activeTab === 'settings' && (
-              <SettingsView
-                onDbStatusChanged={() => {
-                  checkDb();
-                }}
-              />
-            )}
-            {activeTab === 'ge-overview' && <GeOverviewView />}
-            {activeTab === 'client-detail' && <ClientDetailView />}
-            {activeTab === 'staff-lists' && <StaffListsView />}
-            {activeTab === 'client-dashboard' && <ClientDashboardView />}
-            {activeTab === 'audit-log' && <AuditLogView />}
-            {activeTab === 'notifications' && <NotificationsView />}
+            {context && currentPage ? renderView(currentPage) : null}
           </div>
         </main>
       </div>

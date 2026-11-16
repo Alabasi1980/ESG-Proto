@@ -219,7 +219,11 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U3-A: the missing client workspace layer — 4 exact paths only
     // (the two new modules and their two no-DB tests). No server/db/style path.
     'src/lib/workspaceClient.ts','src/lib/api.ts',
-    'src/lib/workspaceClient.test.ts','src/lib/api.test.ts']);
+    'src/lib/workspaceClient.test.ts','src/lib/api.test.ts',
+    // TASK-PROTO-U3-B1: the single navigation model and its table-driven test —
+    // 2 exact new paths only. App/Sidebar/Header/AuthContext/translations are
+    // already named above; no server/db/style/view-content path.
+    'src/lib/navModel.ts','src/lib/navModel.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -244,11 +248,13 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
     'project-control/tasks/TASK-PROTO-H13/TASK-PROTO-H13.md',
     // TASK-PROTO-U3 arrives the same way (Tera-owned contract, untracked input).
-    'project-control/tasks/TASK-PROTO-U3/TASK-PROTO-U3.md']);
+    'project-control/tasks/TASK-PROTO-U3/TASK-PROTO-U3.md',
+    // TASK-PROTO-U3-B1 root contract (Tera-owned, untracked input).
+    'project-control/tasks/TASK-PROTO-U3-B1/TASK-PROTO-U3-B1.md']);
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file));
-  assert.equal(allowed.size,68); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations) + 1 ISS-006 (routes/system.ts db/status tableCount) + 4 U3-A (workspaceClient/api modules + their two no-DB tests)
+  assert.equal(allowed.size,70); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations) + 1 ISS-006 (routes/system.ts db/status tableCount) + 4 U3-A (workspaceClient/api modules + their two no-DB tests) + 2 U3-B1 (navModel module + its table-driven test)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });
