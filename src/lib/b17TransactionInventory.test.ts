@@ -212,7 +212,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/db/b17-content.sql',
     ...newFiles,
     // Owner-authorized persistent shared-DB infra (showcase script + container/DB) — exact path only.
-    'scripts/b17-showcase.ts']);
+    'scripts/b17-showcase.ts',
+    // ISS-006 (Tera-approved micro-task): the public /api/db/status diagnostics
+    // reply gains a tableCount — one hunk in routes/system.ts, no other path.
+    'src/server/routes/system.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -235,7 +238,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file));
-  assert.equal(allowed.size,63); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations)
+  assert.equal(allowed.size,64); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations) + 1 ISS-006 (routes/system.ts db/status tableCount)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });

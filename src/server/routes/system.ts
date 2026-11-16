@@ -11,7 +11,21 @@ router.get('/db/status', async (_req, res) => {
   const configured = isDatabaseConfigured();
   let connected = false;
   if (configured) { try { await getPool().query('SELECT 1'); connected = true; } catch { /* Minimal public diagnostics only. */ } }
-  res.json({ configured, connected });
+  // ISS-006: the Settings view prints this number, so it must be a real count.
+  // information_schema.tables only lists relations the app role holds a privilege
+  // on, so the value is the app-visible census — a count only, never a name or
+  // path. Kept off the connect probe so `connected` keeps its original meaning;
+  // a failed count (or no connection) reports 0 instead of failing the endpoint.
+  let tableCount = 0;
+  if (connected) {
+    try {
+      const rows = (await getPool().query(
+        `SELECT count(*)::int AS count FROM information_schema.tables
+         WHERE table_schema='public' AND table_type='BASE TABLE'`)).rows;
+      tableCount = rows[0].count;
+    } catch { /* count unavailable → 0; endpoint stays a 200 diagnostics reply. */ }
+  }
+  res.json({ configured, connected, tableCount });
 });
 router.post('/db/migrate', (_req, res) => {
   res.status(409).json({ error: 'migrations.offline_only', code: 'migrations.offline_only' });
