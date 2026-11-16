@@ -1,8 +1,8 @@
 import express from 'express';
 import { withTenantContext, setTenantContext, recordAuditLog } from '../../db/index.ts';
 import { comparePassword, hashPassword, issueSession, withSession, revokePresentedSession,
-  identityContext, sendAuthError, authError, normalizeTenantTheme,
-  type AuthUser, type AuthenticatedRequest } from '../auth.ts';
+  identityContext, sendAuthError, authError, normalizeTenantTheme, resolveAppTheme, loadAppTheme,
+  type AuthUser, type AuthenticatedRequest, type TenantTheme } from '../auth.ts';
 import { suspendedLoginBody } from '../../lib/b11b.ts';
 import { validateSelfChosenPassword } from '../../lib/password.ts';
 
@@ -26,12 +26,13 @@ router.post('/auth/login', async (req, res) => {
         clientId: row.client_id, departmentId: row.department_id, theme: 'ge' };
       await setTenantContext(client, { purpose: 'auth.login', userId: user.id, role: user.role,
         tenantId: user.clientId, departmentId: user.departmentId });
+      let tenantTheme: TenantTheme = 'ge';
       if (user.clientId) {
         const tenant = (await client.query('SELECT name,suspended,theme FROM clients WHERE id=$1 FOR SHARE', [user.clientId])).rows[0];
         if (!tenant) throw authError(401, 'auth.binding_invalid');
         if (tenant.suspended && user.role !== 'ge_admin') return { suspended: true as const };
         user.clientName = tenant.name;
-        user.theme = normalizeTenantTheme(tenant.theme);
+        tenantTheme = normalizeTenantTheme(tenant.theme);
       }
       if (user.departmentId) {
         const department = (await client.query('SELECT name FROM departments WHERE id=$1 AND client_id=$2 FOR SHARE',
@@ -39,6 +40,9 @@ router.post('/auth/login', async (req, res) => {
         if (!department) throw authError(401, 'auth.binding_invalid');
         user.departmentName = department.name;
       }
+      // TASK-PROTO-H13: global app theme outranks the tenant theme, and covers
+      // platform accounts, which have no tenant row to inherit from.
+      user.theme = resolveAppTheme(await loadAppTheme(client), tenantTheme);
       const { token } = await issueSession(client, user);
       await recordAuditLog(client, { clientId: user.clientId, userId: user.id,
         action: 'USER_LOGIN', entityType: 'users', entityId: user.id });

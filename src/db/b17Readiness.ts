@@ -9,8 +9,8 @@ export const B17_VERSION = 'B17_U1';
 // PG18 scratch after `clients.theme` was appended to schema.sql. STRUCTURE_SQL
 // fingerprints EVERY public column, so the schema-only, post-U1 and post-content
 // constants move together — never edit one without re-measuring all three.
-export const PREDECESSOR_SHAPE = '6df697af6c8f04a95c799f1bd9640aff';
-export const B17_SHAPE = 'a8dbb2d504cc945bea31e29e858e5437';
+export const PREDECESSOR_SHAPE = '62e7586e86f7b2fe7035e7992279a613';
+export const B17_SHAPE = 'bbcb018ee1d1655b36c3a0745e3536ae';
 export const B17_CONTENT_VERSION = 'B17_U2D';
 // G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
 // the CANONICAL content label. Tera ruling: renaming it would strand every
@@ -54,7 +54,7 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // schema.sql appended `clients.theme TEXT NOT NULL DEFAULT 'ge'`. STRUCTURE_SQL
 // enumerates EVERY public column, so this pin MUST equal the value measured after
 // the column exists — it is not cosmetic and may change only with a re-measure.
-export const B17_CONTENT_SHAPE = 'cf79a6a3827ab6037a28f629e4cbdb17';
+export const B17_CONTENT_SHAPE = '5def29de961f3ee64a783e65f9c1501b';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */
@@ -123,6 +123,21 @@ async function assertRuntimeRole(client: pg.PoolClient): Promise<void> {
   if (!row || row.rolsuper || row.rolbypassrls || row.session_bypass || row.row_security !== 'on')
     throw new Error('b17.runtime_role_unsafe');
 }
+/** SHIELD-H13-02 (TASK-PROTO-H13 round 2): the platform settings table must be
+ * owned by the SAME runtime principal that owns the rest of the substrate.
+ * WHY it is a correctness check and not a preference: STRUCTURE_SQL fingerprints
+ * every public column through information_schema.columns, and that view only
+ * exposes tables the querying role holds a privilege on — so a table created by
+ * another role (e.g. a superuser running the H13 live DDL) is INVISIBLE to the
+ * runtime role, readiness then reports a misleading b17.schema_drift, and the
+ * feature itself would fail on "permission denied". Deliberately narrow: one
+ * table, no other table is inspected, STRUCTURE_SQL and every constant are
+ * untouched, and a pre-H13 install (no such table) is a no-op. */
+async function assertAppSettingsOwnership(client: pg.PoolClient): Promise<void> {
+  const row = (await client.query(`SELECT pg_get_userbyid(c.relowner)=current_user AS owned
+    FROM pg_class c WHERE c.oid = to_regclass('public.app_settings')`)).rows[0];
+  if (row && row.owned !== true) throw new Error('b17.ownership_drift');
+}
 export async function assertB17ContentAuthority(client: pg.PoolClient): Promise<void> {
   const a = (await client.query(CONTENT_AUTHORITY_SQL)).rows[0]?.authority;
   const sanctioned = [...SANCTIONED_DEFINER_FUNCTIONS].sort();
@@ -145,6 +160,9 @@ export async function assertB17ContentAuthority(client: pg.PoolClient): Promise<
 }
 export async function verifyB17(client: pg.PoolClient): Promise<void> {
   await assertRuntimeRole(client);
+  // SHIELD-H13-02: names the real defect (a table owned by another role) instead
+  // of letting it surface as a misleading column-visibility schema_drift.
+  await assertAppSettingsOwnership(client);
   const exists = (await client.query("SELECT to_regclass('public.app_schema_versions') IS NOT NULL AS present")).rows[0].present;
   if (!exists) throw new Error('b17.activation_required');
   const versions = (await client.query('SELECT version,checksum,structure_checksum FROM app_schema_versions ORDER BY version')).rows;

@@ -14,6 +14,7 @@ import storageRouter from './routes/storage.ts';
 import adminRouter from './routes/admin.ts';
 import auditRouter from './routes/audit.ts';
 import notificationsRouter from './routes/notifications.ts';
+import settingsRouter from './routes/settings.ts';
 import { apiNotFoundHandler, globalJsonErrorHandler } from './errorHandler.ts';
 import workspaceRouter from './workspace.ts';
 import { accessDispatcher } from './access.ts';
@@ -23,7 +24,7 @@ const router = express.Router();
 
 assertRegistryCoverage([taxonomyRouter, systemRouter, sessionRouter, griRouter, evaluationsRouter,
   actionsRouter, initiativesRouter, reportsRouter, storageRouter, adminRouter, auditRouter,
-  notificationsRouter, workspaceRouter]);
+  notificationsRouter, settingsRouter, workspaceRouter]);
 router.use(accessDispatcher);
 router.use(workspaceRouter);
 
@@ -42,6 +43,8 @@ router.use(storageRouter);
 router.use(adminRouter);
 router.use(auditRouter);
 router.use(notificationsRouter);
+// TASK-PROTO-H13: platform-wide app settings (P only, two declarations).
+router.use(settingsRouter);
 
 // Micro-fix: no Express-default HTML page may ever escape the API.
 // 404 (unknown /api route) stays JSON, and the global 4-argument error

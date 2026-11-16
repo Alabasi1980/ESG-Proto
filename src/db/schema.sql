@@ -1269,6 +1269,48 @@ DO $$ BEGIN
 END $$;
 
 --------------------------------------------------------------------------------
+-- TASK-PROTO-H13 — app_settings: the ONE platform-wide app theme row.
+-- Resolution order is global -> tenant -> 'ge', so this row is the only place a
+-- platform administrator can make one theme rule the whole application. Exactly
+-- one row (id pinned to 1); an absent row means 'auto' (follow clients.theme),
+-- which is why nothing is seeded here.
+-- No CHECK constraint on theme on purpose: the allowed set (ge|lime|dark, NULL =
+-- auto) is enforced at the single trusted write boundary (PUT /settings), and any
+-- legacy or unknown stored value is read as 'auto' by the session layer instead
+-- of failing a row — the same rule clients.theme follows.
+-- This table is display-only and carries no tenant data, so SELECT is open: the
+-- session resolver reads it while the request identity is still being built
+-- (login / auth session), i.e. before any tenant context exists. Every write is
+-- restricted to the server-selected platform configuration purpose.
+--------------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  theme TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS app_settings_read ON app_settings;
+CREATE POLICY app_settings_read ON app_settings
+  FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS app_settings_insert ON app_settings;
+CREATE POLICY app_settings_insert ON app_settings
+  FOR INSERT
+  WITH CHECK (nullif(current_setting('app.current_purpose', true), '') = 'platform.config');
+
+DROP POLICY IF EXISTS app_settings_update ON app_settings;
+CREATE POLICY app_settings_update ON app_settings
+  FOR UPDATE
+  USING (nullif(current_setting('app.current_purpose', true), '') = 'platform.config')
+  WITH CHECK (nullif(current_setting('app.current_purpose', true), '') = 'platform.config');
+
+
+--------------------------------------------------------------------------------
 -- D-H01-01 (TASK-PROTO-H12) — clients.theme: the tenant's display theme is a
 -- server-owned property, broadcast in the session payload and mirrored by the
 -- client. Default 'ge' keeps every existing tenant unchanged.

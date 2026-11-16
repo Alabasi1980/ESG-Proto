@@ -510,8 +510,11 @@ CREATE POLICY b17_audit_insert ON audit_log FOR INSERT WITH CHECK (
     -- USER_REACTIVATED/STAFF_LIST_APPROVED provisioning rows). Append-only and
     -- actor-bound above; OTPs/hashes are never in any payload.
     OR (b17_platform_config() AND (
+      -- TASK-PROTO-H13: the platform-wide app theme is a NULL-target platform
+      -- configuration write; without this action its append-only audit row is
+      -- refused by row security, which would roll the theme save back with it.
       (b17_setting('target_id') IS NULL
-        AND action IN ('CREATE_CLIENT','LINK_SERVICE_ALL_TENANTS'))
+        AND action IN ('CREATE_CLIENT','LINK_SERVICE_ALL_TENANTS','APP_THEME_UPDATED'))
       OR (b17_setting('target_id') IS NOT NULL
         AND client_id::text=b17_setting('target_id')
         AND action IN ('CLIENT_SUSPENDED','CLIENT_UNSUSPENDED','CLIENT_UPDATED',
@@ -1064,3 +1067,29 @@ CREATE POLICY b17_admin_users_update ON users FOR UPDATE
     AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'))
   WITH CHECK (b17_platform_config() AND b17_setting('current_mode')='platform'
     AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
+
+-- ===========================================================================
+-- TASK-PROTO-H13 — app_settings (platform-wide app theme) row scope.
+-- b17.sql's activation block replaces EVERY predecessor policy, so the three
+-- policies schema.sql defines for app_settings are gone by the time this
+-- substrate runs. They are re-asserted here verbatim, otherwise a fresh install
+-- would end policy-less (deny-all writes, silently empty reads) while the live
+-- database keeps them — and STRUCTURE_SQL fingerprints policies, so the two
+-- states could not share one constant. No other table or policy is touched;
+-- RLS stays enabled AND forced; SELECT stays open only because this table is
+-- display-only and the session resolver reads it before any tenant context
+-- exists.
+-- ===========================================================================
+DROP POLICY IF EXISTS app_settings_read ON app_settings;
+CREATE POLICY app_settings_read ON app_settings
+  FOR SELECT
+  USING (true);
+DROP POLICY IF EXISTS app_settings_insert ON app_settings;
+CREATE POLICY app_settings_insert ON app_settings
+  FOR INSERT
+  WITH CHECK (nullif(current_setting('app.current_purpose', true), '') = 'platform.config');
+DROP POLICY IF EXISTS app_settings_update ON app_settings;
+CREATE POLICY app_settings_update ON app_settings
+  FOR UPDATE
+  USING (nullif(current_setting('app.current_purpose', true), '') = 'platform.config')
+  WITH CHECK (nullif(current_setting('app.current_purpose', true), '') = 'platform.config');

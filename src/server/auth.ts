@@ -19,6 +19,30 @@ export type TenantTheme = (typeof TENANT_THEMES)[number];
 // the default theme instead of surfacing a half-themed or broken UI.
 export const normalizeTenantTheme = (value: unknown): TenantTheme =>
   (TENANT_THEMES as readonly unknown[]).includes(value) ? value as TenantTheme : 'ge';
+// TASK-PROTO-H13: the optional GLOBAL app theme (app_settings.theme) sits above
+// the tenant theme. 'auto' is the UI option that stores NULL and means "follow
+// the tenant"; the stored set is therefore the tenant enum plus NULL.
+export const APP_THEME_OPTIONS = ['auto', 'ge', 'lime', 'dark'] as const;
+export type AppThemeOption = (typeof APP_THEME_OPTIONS)[number];
+// Unknown option/legacy value reads as 'auto' so one bad byte can never pin the
+// whole application to an unintended theme.
+export const normalizeAppThemeOption = (value: unknown): AppThemeOption =>
+  (APP_THEME_OPTIONS as readonly unknown[]).includes(value) ? value as AppThemeOption : 'auto';
+export const appThemeStorageValue = (option: AppThemeOption): TenantTheme | null =>
+  option === 'auto' ? null : option;
+/** Effective theme: global app theme ?? tenant theme ?? 'ge'. */
+export const resolveAppTheme = (appTheme: unknown, tenantTheme: unknown): TenantTheme =>
+  (TENANT_THEMES as readonly unknown[]).includes(appTheme)
+    ? appTheme as TenantTheme : normalizeTenantTheme(tenantTheme);
+/** The single global row; absent row, NULL theme or a legacy value all mean
+ * 'auto' (null), which is why no row is ever seeded. RLS keeps SELECT open on
+ * this display-only table so the session resolver can read it before any
+ * tenant context exists. */
+export async function loadAppTheme(client: pg.PoolClient): Promise<TenantTheme | null> {
+  const row = (await client.query('SELECT theme FROM app_settings WHERE id = 1')).rows[0];
+  return row && (TENANT_THEMES as readonly unknown[]).includes(row.theme)
+    ? row.theme as TenantTheme : null;
+}
 export interface AuthUser {
   id: string;
   clientId?: string | null;
@@ -117,12 +141,17 @@ export async function withSession<T>(req: AuthenticatedRequest, purpose: string,
     if (row.role !== 'ge_admin' && !row.client_id) throw authError(401, 'auth.binding_invalid');
     if (row.role === 'employee' && !row.department_id) throw authError(401, 'auth.binding_invalid');
     await setTenantContext(client, identityContext(identity, 'auth.session'));
+    // TASK-PROTO-H13: read once per session — the global app theme outranks the
+    // tenant theme and also applies to platform accounts, which own no tenant.
+    const appTheme = await loadAppTheme(client);
     if (row.client_id) {
       const tenant = (await client.query('SELECT name,suspended,theme FROM clients WHERE id=$1 FOR SHARE', [row.client_id])).rows[0];
       if (!tenant) throw authError(401, 'auth.binding_invalid');
       identity.user.clientName = tenant.name;
-      identity.user.theme = normalizeTenantTheme(tenant.theme);
+      identity.user.theme = resolveAppTheme(appTheme, normalizeTenantTheme(tenant.theme));
       identity.suspended = tenant.suspended === true;
+    } else {
+      identity.user.theme = resolveAppTheme(appTheme, identity.user.theme);
     }
     if (row.department_id) {
       const department = (await client.query('SELECT name FROM departments WHERE id=$1 AND client_id=$2 FOR SHARE',

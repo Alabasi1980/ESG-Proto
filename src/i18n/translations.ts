@@ -259,6 +259,19 @@ export interface Translations {
     securitySettings: string;
     updatePasswordButton: string;
     userProfile: string;
+    // TASK-PROTO-H13 — platform-wide app theme (app_settings).
+    appThemeSection: string;
+    appThemeDescription: string;
+    appThemePlatformOnly: string;
+    appThemeAuto: string;
+    appThemeAutoHint: string;
+    appThemeGe: string;
+    appThemeLime: string;
+    appThemeDark: string;
+    appThemeSave: string;
+    appThemeSaving: string;
+    appThemeSaved: string;
+    appThemeFailed: string;
   };
 
   users: {
@@ -920,6 +933,18 @@ export const translations: Record<Language, Translations> = {
       securitySettings: 'Account Security',
       updatePasswordButton: 'Update Password',
       userProfile: 'Current User Identity',
+      appThemeSection: 'Application Theme',
+      appThemeDescription: 'One theme for the whole application. It takes precedence over every tenant theme and applies immediately to all users after saving.',
+      appThemePlatformOnly: 'Platform administrators only. Tenants keep their own theme when this is set to auto.',
+      appThemeAuto: 'Automatic (follow each tenant)',
+      appThemeAutoHint: 'Every user sees their own tenant theme',
+      appThemeGe: 'GE (default)',
+      appThemeLime: 'Lime',
+      appThemeDark: 'Dark',
+      appThemeSave: 'Save application theme',
+      appThemeSaving: 'Saving...',
+      appThemeSaved: 'Application theme saved. It now applies to all users.',
+      appThemeFailed: 'Could not save the application theme.',
     },
 
     users: {
@@ -1692,6 +1717,18 @@ export const translations: Record<Language, Translations> = {
       securitySettings: 'أمان الحساب',
       updatePasswordButton: 'تحديث كلمة المرور',
       userProfile: 'بيانات المستخدم الحالي',
+      appThemeSection: 'ثيم التطبيق',
+      appThemeDescription: 'ثيم واحد للتطبيق بالكامل. يسري على جميع المستأجرين والمستخدمين ويُطبَّق فوراً على كل المستخدمين بعد الحفظ.',
+      appThemePlatformOnly: 'لمدير المنصة فقط. يحتفظ كل مستأجر بثيمه الخاص عندما يكون الخيار «تلقائي».',
+      appThemeAuto: 'تلقائي (يتبع ثيم كل مستأجر)',
+      appThemeAutoHint: 'كل مستخدم يرى ثيم مستأجره',
+      appThemeGe: 'GE (الافتراضي)',
+      appThemeLime: 'ليموني',
+      appThemeDark: 'داكن',
+      appThemeSave: 'حفظ ثيم التطبيق',
+      appThemeSaving: 'جارٍ الحفظ...',
+      appThemeSaved: 'تم حفظ ثيم التطبيق، وأصبح سارياً على جميع المستخدمين.',
+      appThemeFailed: 'لم يتم حفظ ثيم التطبيق.',
     },
 
     users: {

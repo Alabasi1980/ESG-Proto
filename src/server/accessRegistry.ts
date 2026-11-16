@@ -226,6 +226,14 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /notifications/:id/read|P;W;C#same-scope-plus-notification-ownership-else-404',
     'POST /notifications/read-all|P;W;C#own-unread-rows-in-current-permitted-scope-only',
   ], true),
+  // TASK-PROTO-H13: the platform-wide app theme (app_settings). P only — the
+  // owner-decided behaviour is a platform administrator choosing one theme for
+  // the whole application; tenants never read or write this row (their own
+  // theme stays clients.theme via PATCH /clients/:id, D-H01-01).
+  ...group('settings', [
+    'GET /settings|P#platform-app-theme-read-absent-row-is-auto-no-tenant-payload',
+    'PUT /settings|P#platform-app-theme-writer-enum-validated-audited-auto-stores-null',
+  ], true),
 ];
 export const WORKSPACE_ROUTES = group('workspace', [
   'POST /workspace/tab|GE#fresh-GE-session-no-client-input-creates-P-row-generation-1',

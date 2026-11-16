@@ -14,6 +14,7 @@ import {
   UserX,
   UserCheck,
   HardDrive,
+  Palette,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -24,9 +25,14 @@ interface SettingsViewProps {
   onDbStatusChanged?: () => void;
 }
 
+// TASK-PROTO-H13: the closed option set of the platform-wide app theme. 'auto'
+// is the UI spelling of "no global override" (the server stores NULL).
+type AppThemeOption = 'auto' | 'ge' | 'lime' | 'dark';
+const APP_THEME_CHOICES: readonly AppThemeOption[] = ['auto', 'ge', 'lime', 'dark'];
+
 export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged }) => {
   const { t, lang, setLang } = useLanguage();
-  const { user, token } = useAuth();
+  const { user, token, refreshUser } = useAuth();
 
   // Database status state
   const [dbStatus, setDbStatus] = useState<{
@@ -81,6 +87,65 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     'Content-Type': 'application/json',
     Authorization: token ? `Bearer ${token}` : '',
   });
+
+  // TASK-PROTO-H13: platform-wide application theme (app_settings). Platform
+  // only — client_admin/employee never see this section and keep their tenant
+  // theme. The value is server-owned, so after a successful save we re-read the
+  // session (refreshUser) and ThemeContext applies it immediately.
+  const [appTheme, setAppTheme] = useState<AppThemeOption>('auto');
+  const [loadingAppTheme, setLoadingAppTheme] = useState(false);
+  const [savingAppTheme, setSavingAppTheme] = useState(false);
+  const [appThemeMessage, setAppThemeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const appThemeLabel = (option: AppThemeOption): string =>
+    option === 'auto' ? t.settings.appThemeAuto
+      : option === 'ge' ? t.settings.appThemeGe
+        : option === 'lime' ? t.settings.appThemeLime : t.settings.appThemeDark;
+
+  const fetchAppTheme = async () => {
+    if (!isGeAdmin) return;
+    setLoadingAppTheme(true);
+    try {
+      const res = await fetch('/api/settings', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
+      if (res.ok) {
+        const data = await res.json();
+        const stored = data?.theme;
+        setAppTheme(stored === 'ge' || stored === 'lime' || stored === 'dark' ? stored : 'auto');
+      }
+    } catch (err) {
+      console.error('Error querying application theme:', err);
+    } finally {
+      setLoadingAppTheme(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAppTheme();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user?.role]);
+
+  const handleSaveAppTheme = async () => {
+    setAppThemeMessage(null);
+    setSavingAppTheme(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ theme: appTheme }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAppThemeMessage({ type: 'success', text: t.settings.appThemeSaved });
+        await refreshUser();
+      } else {
+        setAppThemeMessage({ type: 'error', text: data.error || t.settings.appThemeFailed });
+      }
+    } catch (err: any) {
+      setAppThemeMessage({ type: 'error', text: err.message || t.settings.appThemeFailed });
+    } finally {
+      setSavingAppTheme(false);
+    }
+  };
 
   const fetchUsers = async () => {
     if (!isAdmin) return;
@@ -303,7 +368,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-brand-soft text-brand">
+            <div className="p-2.5 rounded-xl bg-brand-soft text-brand-text">
               <Database className="w-5 h-5" />
             </div>
             <div>
@@ -520,6 +585,79 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
         </div>
       </div>
 
+      {/* TASK-PROTO-H13: platform-only «ثيم التطبيق» — one theme for the whole
+          application; auto (NULL) hands control back to each tenant theme. */}
+      {isGeAdmin && (
+        <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 rounded-xl bg-brand-soft text-brand-text">
+              <Palette className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-text">
+                {t.settings.appThemeSection}
+              </h3>
+              <p className="text-xs text-muted">
+                {t.settings.appThemeDescription}
+              </p>
+            </div>
+          </div>
+
+          {appThemeMessage && (
+            <div
+              className={`mb-4 p-3 rounded-xl text-xs flex items-center gap-2 ${
+                appThemeMessage.type === 'success'
+                  ? 'bg-success-soft text-success-text border border-success'
+                  : 'bg-danger-soft text-danger border border-danger'
+              }`}
+            >
+              {appThemeMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{appThemeMessage.text}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+            {APP_THEME_CHOICES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setAppTheme(option)}
+                className={`p-4 rounded-xl border text-start flex items-center justify-between transition-colors ${
+                  appTheme === option
+                    ? 'border-brand bg-brand-soft text-text ring-2 ring-focus-ring/20'
+                    : 'border-border text-muted hover:bg-surface-3'
+                }`}
+              >
+                <div>
+                  <div className="font-bold text-xs">{appThemeLabel(option)}</div>
+                  {option === 'auto' && (
+                    <div className="text-[11px] text-muted mt-0.5">{t.settings.appThemeAutoHint}</div>
+                  )}
+                </div>
+                {appTheme === option && <CheckCircle2 className="w-4 h-4 text-success-text" />}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSaveAppTheme}
+              disabled={savingAppTheme || loadingAppTheme}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-strong text-brand-ink text-xs font-bold shadow-xs disabled:opacity-50 transition-colors"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>{savingAppTheme ? t.settings.appThemeSaving : t.settings.appThemeSave}</span>
+            </button>
+            <p className="text-[11px] text-muted">{t.settings.appThemePlatformOnly}</p>
+          </div>
+        </div>
+      )}
+
       {/* Account Security & Change Password Card */}
       {user && (
         <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
@@ -609,7 +747,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       {isAdmin && (
         <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
           <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-xl bg-brand-soft text-brand">
+            <div className="p-2.5 rounded-xl bg-brand-soft text-brand-text">
               <Users className="w-5 h-5" />
             </div>
             <div>
@@ -710,7 +848,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
           {isGeAdmin ? (
           <form onSubmit={handleCreateUser} className="mt-5 pt-5 border-t border-border space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-text">
-              <UserPlus className="w-4 h-4 text-brand" />
+              <UserPlus className="w-4 h-4 text-brand-text" />
               <span>{t.users.createButton}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

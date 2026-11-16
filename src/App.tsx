@@ -113,7 +113,7 @@ const MainApp: React.FC = () => {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <RefreshCw className="w-8 h-8 text-brand animate-spin" />
+          <RefreshCw className="w-8 h-8 text-brand-text animate-spin" />
           <span className="text-xs text-muted">Loading ESG GRI Platform...</span>
         </div>
       </div>

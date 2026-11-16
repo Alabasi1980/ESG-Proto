@@ -173,7 +173,7 @@ export const SetupView: React.FC<SetupViewProps> = ({ onBackToLogin }) => {
                   type="checkbox"
                   checked={isClientTenant}
                   onChange={(e) => setIsClientTenant(e.target.checked)}
-                  className="rounded border-border-strong text-brand focus:ring-focus-ring bg-surface-3"
+                  className="rounded border-border-strong text-brand-text focus:ring-focus-ring bg-surface-3"
                 />
                 <span>{t.setup.clientSectionTitle}</span>
               </label>

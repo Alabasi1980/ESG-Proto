@@ -157,6 +157,9 @@ const EXPECTED: Record<string, string> = {
   'GET /notifications/unread-count': 'P;W;C#same-exact-scope-as-inbox',
   'POST /notifications/:id/read': 'P;W;C#same-scope-plus-notification-ownership-else-404',
   'POST /notifications/read-all': 'P;W;C#own-unread-rows-in-current-permitted-scope-only',
+  // §3.7 platform-wide app settings (TASK-PROTO-H13): P only, no tenant row.
+  'GET /settings': 'P#platform-app-theme-read-absent-row-is-auto-no-tenant-payload',
+  'PUT /settings': 'P#platform-app-theme-writer-enum-validated-audited-auto-stores-null',
   // §4 workspace lifecycle (4)
   'POST /workspace/tab': 'GE#fresh-GE-session-no-client-input-creates-P-row-generation-1',
   'GET /workspace': 'GE#tab-handle-reconcile-authoritative-envelope-no-broad-data',
@@ -178,10 +181,10 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-F final activation split: 0 UNACTIVATED; exact 87 business flips + 8 system/session + 4 workspace', () => {
-  assert.equal(LEGACY_ROUTES.length, 95);
+test('U2-F final activation split: 0 UNACTIVATED; exact 89 business flips + 8 system/session + 4 workspace', () => {
+  assert.equal(LEGACY_ROUTES.length, 97);
   assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 0);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 95);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 97);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
   // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F round-1 + 3
@@ -230,8 +233,10 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 87 business flips + 8 sy
     // (platformConfigContext + users INSERT/UPDATE + provisioning audit) and
     // the §3(2) lock-order proof (parent §15).
     'POST /users', 'PATCH /users/:id', 'POST /staff-lists/:id/approve',
+    // TASK-PROTO-H13: the P-only platform settings pair (app_settings).
+    'GET /settings', 'PUT /settings',
   ];
-  assert.equal(FLIPPED.length, 87);
+  assert.equal(FLIPPED.length, 89);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -283,7 +288,7 @@ test('U2-A mounted declarations are covered (routes.ts runs assertRegistryCovera
   await import('../server/routes.ts');
   // Reaching this line means assertRegistryCoverage passed against every real
   // Express router: mounted method/path set === ACCESS_REGISTRY, no duplicates.
-  assert.equal(ACCESS_REGISTRY.length, 99);
+  assert.equal(ACCESS_REGISTRY.length, 101);
 });
 
 // ---------------------------------------------------------------------------

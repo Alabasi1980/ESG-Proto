@@ -17,6 +17,10 @@ const inventory: Record<string,[number,number]> = {
   'routes/adminStaff.ts':[5,3], 'routes/adminPlatformOps.ts':[2,0],
   'routes/initiatives.ts':[5,0], 'routes/profileRoutes.ts':[2,0],
   'routes/reportSettings.ts':[2,0], 'routes/reports.ts':[1,0],
+  // TASK-PROTO-H13: the two P-only settings declarations (GET + PUT), both on
+  // the standard wrapper with an explicit platform-configuration selector and no
+  // readContext work fallback.
+  'routes/settings.ts':[2,0],
 };
 const mask=(s:string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g,
   text => text.replace(/[^\r\n]/g,' '));
@@ -60,10 +64,10 @@ test('G1 every business call site is classified, explicit P-work exceptions reta
     }
     total+=sites.length;work+=explicitWork.length;
   }
-  assert.equal(total,81);assert.equal(work,37);
+  assert.equal(total,83);assert.equal(work,37);
   const provisioning=readFileSync(path.join(root,'routes/adminProvisioning.ts'),'utf8');
   assert.equal((provisioning.match(/await configurationTransaction\(req, target,/g) ?? []).length,3);
-  assert.equal(total+3,84,'85 baseline sites minus merged GET clients branch');
+  assert.equal(total+3,86,'85 baseline sites minus merged GET clients branch, plus the two H13 settings rows');
   const clients=readFileSync(path.join(root,'routes/adminClients.ts'),'utf8');
   assert.match(boundaries(clients)[0].text,/live\.access!\.mode === 'platform' \? platformGlobalContext\(live\) : readContext\(live\)/);
   const directory=readFileSync(path.join(root,'routes/adminDirectory.ts'),'utf8');
@@ -97,39 +101,59 @@ test('G1 pair refusals and every early response stay outside unsettled callbacks
 
 test('G1 protected policies, route keys, auth/lifecycle and capabilities are byte-unchanged', () => {
   const base='048a6f254a75bbe86b8ad7fd48e46348a1c60e10'; // G2 base = G1 evidence checkpoint
-  // H12 (TASK-PROTO-H12, D-H01-01): auth.ts stays inside this frozen inventory — it
-  // simply cannot stay byte-identical to the G2 base any more, because it now carries
-  // the tenant theme SELECT + identity.user.theme. It is re-frozen below as an exact
-  // POST-H12 sha256 pin: a future auth.ts edit MUST update that constant deliberately
-  // (under an approved task), so it can never slip through as unnoticed drift.
-  for (const file of ['src/db/index.ts','src/db/b17.sql','src/db/b17-content.sql',
-    'src/server/access.ts','src/server/workspace.ts','src/server/routes.ts',
-    'src/server/accessRegistry.ts','src/lib/capabilities.ts','src/server/routes/admin.ts','src/server/routes/_shared.ts']) {
+  // H13 (TASK-PROTO-H13): routes.ts and accessRegistry.ts leave the byte-compare
+  // inventory for the same reason auth.ts did in H12 — they now carry the two
+  // approved settings declarations — and join it as exact POST-H13 sha256 pins.
+  // Every other listed file must still be byte-identical to the G2 base.
+  for (const file of ['src/db/index.ts','src/db/b17.sql',
+    'src/server/access.ts','src/server/workspace.ts','src/lib/capabilities.ts',
+    'src/server/routes/admin.ts','src/server/routes/_shared.ts']) {
     assert.equal(readFileSync(file,'utf8').replace(/\r\n/g,'\n'),
       execFileSync('git',['show',`${base}:${file}`],{encoding:'utf8'}).replace(/\r\n/g,'\n'),file);
   }
-  // SHIELD-H12-01: auth.ts POST-H12 barrier — sha256 measured by the executor on the
-  // landed file, over LF-normalized bytes (same normalization as the byte-compare
-  // above, so a CRLF checkout cannot move the pin). Any auth.ts change must move this
-  // constant in the same approved edit; an unexplained mismatch is a real drift alarm.
-  const h12AuthSha256='2b349cd4d33e46d2a27f905c17c364f6615492ca1b74320e7b560e4ac53164f2';
+  // SHIELD-H12-01 (re-measured by H13): auth.ts POST-H12 barrier — sha256 measured
+  // over LF-normalized bytes (same normalization as the byte-compare above, so a
+  // CRLF checkout cannot move the pin). Any auth.ts change must move this constant
+  // in the same approved edit; an unexplained mismatch is a real drift alarm.
+  // H13 adds the global app theme resolution (app_settings read + precedence),
+  // and moves routes.ts / accessRegistry.ts out of the byte-freeze inventory for
+  // the same reason (settings mount + the two P-only declarations).
+  // TASK-PROTO-H13 round 2 (QAF-02): b17-content.sql is re-frozen as a WHOLE-FILE
+  // sha256 over LF-normalized bytes (CRLF→LF — the exact normalization the
+  // *Source() helpers apply before executing the file, so a CRLF checkout cannot
+  // move the pin). It leaves the G2 byte-compare above because H13 legitimately
+  // appends two reviewed hunks (the APP_THEME_UPDATED audit action and the
+  // app_settings policy re-assert); their semantics are asserted in
+  // src/lib/appTheme.test.ts, and ANY future change to this file — including a
+  // third hunk — must move this constant deliberately under an approved task.
+  const h13AuthSha256='5848271d5e7f8fefb56424d10993fb5d56b38bf583a6ccf590b1ea857c978dde';
+  const h13RoutesSha256='07449bdde26497b457d268702a564b4222be429d3a51f4f713a4dfa929324129';
+  const h13AccessRegistrySha256='8f829377f4c42120f5201b3ff94f687e867034f755dbe4ba7f9be182488d0f86';
+  const h13ContentSha256='dd9d580d428f8c4a476ef66518c469683c2279222e291a6256c6516100501ccc';
+  const postH12Pins: Record<string,string> = {
+    'src/server/auth.ts': h13AuthSha256,
+    'src/server/routes.ts': h13RoutesSha256,
+    'src/server/accessRegistry.ts': h13AccessRegistrySha256,
+    'src/db/b17-content.sql': h13ContentSha256,
+  };
+  for (const [file,pin] of Object.entries(postH12Pins)) {
+    assert.equal(createHash('sha256')
+      .update(readFileSync(file,'utf8').replace(/\r\n/g,'\n'),'utf8')
+      .digest('hex'),pin,
+    `${file} drifted from its deliberate, task-approved POST-H12/H13 bytes (SHIELD-H12-01 pin)`);
+  }
+  // G2 §12(2): b17Readiness.ts was COMMENT-ONLY in G2; H12 moved the three
+  // STRUCTURE_SQL constants (clients.theme) and H13 round 2 adds the narrow
+  // ownership defense (SHIELD-H13-02) — a deliberate, reviewed code change. It is
+  // therefore re-frozen as a WHOLE-FILE sha256 over LF-normalized bytes (CRLF→LF,
+  // the same normalization as the pins above, so a CRLF checkout cannot move it).
+  // Lossless replacement for the old "code lines must equal the G2 base" diff:
+  // any further change — code OR constant — must update this pin deliberately.
+  const h13ReadinessSha256='01b3ab8c70545201cc492a3e6577a3946492812a721f07fe38f995750ff407e9';
   assert.equal(createHash('sha256')
-    .update(readFileSync('src/server/auth.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
-    .digest('hex'),h12AuthSha256,
-  'auth.ts drifted from its deliberate, task-approved POST-H12 bytes (SHIELD-H12-01 pin)');
-  // G2 §12(2): b17Readiness.ts was COMMENT-ONLY in G2. H12 (TASK-PROTO-H12)
-  // deliberately moves the three STRUCTURE_SQL constants because clients.theme
-  // is a public column the fingerprint enumerates. They are normalized away
-  // below so every OTHER code line must still equal the G2 base byte-for-byte;
-  // a logic edit still fails, and the pins must be re-measured on a fresh scratch.
-  const codeOnly=(text:string) => text.split('\n').map(line => line.replace(/\r$/,''))
-    .filter(line => line.trim()!=='' && !line.trim().startsWith('//'));
-  const normalizedConstants=(text:string) => codeOnly(text).map(line => line.replace(
-    /^(export const (?:PREDECESSOR_SHAPE|B17_SHAPE|B17_CONTENT_SHAPE) = )'[^']*';$/,
-    (_match, prefix: string) => `${prefix}'<H12-pin>';`));
-  assert.deepEqual(normalizedConstants(readFileSync('src/db/b17Readiness.ts','utf8')),
-    normalizedConstants(execFileSync('git',['show',`${base}:src/db/b17Readiness.ts`],{encoding:'utf8'})),
-    'b17Readiness.ts may change comments + the three structure constants only (TASK-PROTO-H12)');
+    .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
+    .digest('hex'),h13ReadinessSha256,
+  'b17Readiness.ts drifted from its deliberate, task-approved POST-H13-r2 bytes (constants + SHIELD-H13-02)');
   assert.ok(readFileSync('src/server/routes/adminClients.ts','utf8').split('\n').length<=500);
   const newFiles=['scripts/b17-domain-g2-run.ts','scripts/b17-domain-g2-od10.ts',
     'scripts/b17-domain-g2-census.ts','scripts/b17-domain-g2-mask.ts'];
@@ -170,6 +194,22 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // were already named above.
     'src/db/schema.sql','src/server/auth.ts','src/server/routes/session.ts',
     'src/server/routes/adminClients.ts','src/context/AuthContext.tsx','src/lib/themeSession.test.ts',
+    // H13 (TASK-PROTO-H13): 5 exact paths only — the new P-only settings router,
+    // its no-DB test, the two census-pin test files the flip updates, and the
+    // own-scratch measurement/proof script. schema.sql/auth.ts/session.ts/routes.ts/
+    // accessRegistry.ts/App.tsx/SettingsView.tsx/SetupView.tsx/b17Readiness.ts are
+    // already named above; b17-content.sql is named below (policy substrate).
+    'src/server/routes/settings.ts','src/lib/appTheme.test.ts',
+    'src/lib/capabilities.test.ts','src/lib/domainAccess.test.ts',
+    'scripts/h13-app-theme-scratch.ts',
+    // Tera-authorized by H13 item 1: the AR/EN copy for the new section.
+    'src/i18n/translations.ts',
+    // H13: the settings row in the mounted coverage assertion + the two P-only
+    // declarations (both leave the byte-freeze inventory for the sha256 pins above).
+    'src/server/routes.ts','src/server/accessRegistry.ts',
+    // H13 (Tera-authorized second append): the audit action allowlist + the
+    // app_settings policy re-assert, and only those two hunks.
+    'src/db/b17-content.sql',
     ...newFiles,
     // Owner-authorized persistent shared-DB infra (showcase script + container/DB) — exact path only.
     'scripts/b17-showcase.ts']);
@@ -178,17 +218,24 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // append-rounds stay green without weakening the guard.
   // SHIELD-H12-02 / QA LOW: the TWO TASK-PROTO-H12 reviewer reports join the same
   // exact-string exclusion (no globs, no patterns, no prefix matching).
+  // TASK-PROTO-H13 round 2 (QAF-01 / SHIELD-H13-01): the H13 QA report, the H13
+  // Shield report and the ONE Tera-captured evidence artifact join it — three
+  // exact strings, still no globs, prefixes or directory entries.
   const reviewerReports=new Set(['project-control/qa-reports/B17-U2G-QA.md',
     'security-reports/B17-U2G-fix-review.md',
     'project-control/qa-reports/TASK-PROTO-H12-QA.md',
-    'security-reports/TASK-PROTO-H12-fix-review.md']);
+    'security-reports/TASK-PROTO-H12-fix-review.md',
+    'project-control/qa-reports/TASK-PROTO-H13-QA.md',
+    'security-reports/TASK-PROTO-H13-fix-review.md',
+    'project-control/prototypes/task-proto-h13/settings-app-theme.png']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
-  const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md']);
+  const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
+    'project-control/tasks/TASK-PROTO-H13/TASK-PROTO-H13.md']);
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file));
-  assert.equal(allowed.size,54); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests)
+  assert.equal(allowed.size,63); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });
