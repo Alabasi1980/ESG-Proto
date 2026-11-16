@@ -11,6 +11,14 @@ function getJwtSecret(): string {
   if (!secret?.trim()) throw new Error('JWT_SECRET is required; refusing token operation.');
   return secret;
 }
+// D-H01-01: the tenant theme is server-owned (clients.theme). One enum shared by
+// the read path (session broadcast) and the single write path (PATCH /clients/:id).
+export const TENANT_THEMES = ['ge', 'lime', 'dark'] as const;
+export type TenantTheme = (typeof TENANT_THEMES)[number];
+// Legacy/NULL/unknown stored values must never crash a session: they settle on
+// the default theme instead of surfacing a half-themed or broken UI.
+export const normalizeTenantTheme = (value: unknown): TenantTheme =>
+  (TENANT_THEMES as readonly unknown[]).includes(value) ? value as TenantTheme : 'ge';
 export interface AuthUser {
   id: string;
   clientId?: string | null;
@@ -20,6 +28,7 @@ export interface AuthUser {
   email: string;
   name: string;
   role: 'ge_admin' | 'client_admin' | 'employee';
+  theme?: TenantTheme;
 }
 export interface SessionIdentity {
   user: AuthUser;
@@ -103,15 +112,16 @@ export async function withSession<T>(req: AuthenticatedRequest, purpose: string,
     if (!row?.is_active || !['ge_admin','client_admin','employee'].includes(row.role)) throw authError(401, 'auth.invalid');
     const identity: SessionIdentity = { sid: claims.sid, expiresAt: sessions.rows[0].expires_at,
       user: { id: row.id, email: row.email, name: row.name, role: row.role,
-        clientId: row.client_id, departmentId: row.department_id },
+        clientId: row.client_id, departmentId: row.department_id, theme: 'ge' },
       mustChangePassword: row.must_change_password === true, suspended: false };
     if (row.role !== 'ge_admin' && !row.client_id) throw authError(401, 'auth.binding_invalid');
     if (row.role === 'employee' && !row.department_id) throw authError(401, 'auth.binding_invalid');
     await setTenantContext(client, identityContext(identity, 'auth.session'));
     if (row.client_id) {
-      const tenant = (await client.query('SELECT name,suspended FROM clients WHERE id=$1 FOR SHARE', [row.client_id])).rows[0];
+      const tenant = (await client.query('SELECT name,suspended,theme FROM clients WHERE id=$1 FOR SHARE', [row.client_id])).rows[0];
       if (!tenant) throw authError(401, 'auth.binding_invalid');
       identity.user.clientName = tenant.name;
+      identity.user.theme = normalizeTenantTheme(tenant.theme);
       identity.suspended = tenant.suspended === true;
     }
     if (row.department_id) {

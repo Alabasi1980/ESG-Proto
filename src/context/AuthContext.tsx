@@ -9,6 +9,9 @@ export interface AuthUser {
   clientName?: string | null;
   departmentId?: string | null;
   departmentName?: string | null;
+  // D-H01-01: server-owned tenant theme broadcast by POST /auth/login and
+  // GET /auth/me; absent on legacy payloads (ThemeContext settles on 'ge').
+  theme?: 'ge' | 'lime' | 'dark' | null;
 }
 
 interface AuthContextType {

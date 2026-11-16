@@ -19,7 +19,7 @@
 import type { Response } from 'express';
 import { recordAuditLog } from '../../db/index.ts';
 import { domainTransaction } from './initiativeScope.ts';
-import type { AuthenticatedRequest } from '../auth.ts';
+import { TENANT_THEMES, type AuthenticatedRequest } from '../auth.ts';
 import { stripSecrets } from '../../lib/b11b.ts';
 import { readContext, platformConfigContext, writeFailure, type DbClient } from './_shared.ts';
 import { ownTenant, scopeId } from '../scope.ts';
@@ -269,9 +269,9 @@ export async function getClient(req: AuthenticatedRequest, res: Response): Promi
   }
 }
 
-/** PATCH /clients/:id — P only: suspend/unsuspend + rename/industry (Clients
- * list semantics). The suspend wall itself stays in /auth/login (200
- * {suspended:true}, no data) — untouched by this row. */
+/** PATCH /clients/:id — P only: suspend/unsuspend + rename/industry + the tenant
+ * theme (D-H01-01, the ONLY writer of clients.theme). The suspend wall itself
+ * stays in /auth/login (200 {suspended:true}, no data) — untouched by this row. */
 export async function updateClient(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const target = platformTarget(req.params.id);
@@ -295,12 +295,21 @@ export async function updateClient(req: AuthenticatedRequest, res: Response): Pr
       params.push(typeof body.industry === 'string' && body.industry.trim() ? body.industry.trim() : null);
       sets.push(`industry = $${params.length}`);
     }
-    if (sets.length === 0) { res.status(400).json({ error: 'Provide name and/or suspended to update.' }); return; }
+    if (body.theme !== undefined) {
+      // Only the platform may write the theme (matrix P); the allowed set is
+      // validated here, not in the schema, so one bad value is a clean 400.
+      if (typeof body.theme !== 'string' || !(TENANT_THEMES as readonly string[]).includes(body.theme)) {
+        res.status(400).json({ error: 'theme must be one of ge, lime, dark.', code: 'theme.invalid' }); return;
+      }
+      params.push(body.theme);
+      sets.push(`theme = $${params.length}`);
+    }
+    if (sets.length === 0) { res.status(400).json({ error: 'Provide name, industry, suspended and/or theme to update.' }); return; }
     const updated = await domainTransaction(req, async (client) => {
       params.push(target);
       const upd = await client.query(
         `UPDATE clients SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}
-         RETURNING id, code, name, industry, contact_email, suspended, created_at`,
+         RETURNING id, code, name, industry, contact_email, suspended, theme, created_at`,
         params
       );
       const row = upd.rows[0];
@@ -312,7 +321,7 @@ export async function updateClient(req: AuthenticatedRequest, res: Response): Pr
           : body.suspended === false ? 'CLIENT_UNSUSPENDED' : 'CLIENT_UPDATED',
         entityType: 'clients',
         entityId: row.id,
-        payload: { suspended: row.suspended },
+        payload: { suspended: row.suspended, ...(body.theme !== undefined ? { theme: row.theme } : {}) },
       });
       return { ...row, suspended: row.suspended === true };
     }, live => platformConfigContext(live, target));

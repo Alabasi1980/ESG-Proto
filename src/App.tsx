@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext.tsx';
-import { AuthProvider, useAuth } from './context/AuthContext.tsx';
+import { useAuth } from './context/AuthContext.tsx';
 import { Sidebar, ActiveTab } from './components/Sidebar.tsx';
 import { Header } from './components/Header.tsx';
 import { idleState, idleSecondsRemaining } from './lib/idleTimeout.ts';
@@ -289,11 +289,11 @@ const MainApp: React.FC = () => {
 };
 
 export default function App() {
+  // AuthProvider/ThemeProvider live in main.tsx (Auth outer, Theme inner): the
+  // theme provider reads the authenticated session, so it must sit below it.
   return (
     <LanguageProvider>
-      <AuthProvider>
-        <MainApp />
-      </AuthProvider>
+      <MainApp />
     </LanguageProvider>
   );
 }

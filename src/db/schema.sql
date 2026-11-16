@@ -1267,3 +1267,18 @@ DO $$ BEGIN
     ALTER TABLE departments ADD COLUMN head_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
   END IF;
 END $$;
+
+--------------------------------------------------------------------------------
+-- D-H01-01 (TASK-PROTO-H12) — clients.theme: the tenant's display theme is a
+-- server-owned property, broadcast in the session payload and mirrored by the
+-- client. Default 'ge' keeps every existing tenant unchanged.
+-- No CHECK constraint on purpose: the allowed set (ge|lime|dark) is enforced at
+-- the single trusted write boundary (PATCH /clients/:id), and any legacy/unknown
+-- stored value is read as 'ge' by the session layer instead of failing a row.
+--------------------------------------------------------------------------------
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'clients' AND column_name = 'theme') THEN
+    ALTER TABLE clients ADD COLUMN theme TEXT NOT NULL DEFAULT 'ge';
+  END IF;
+END $$;

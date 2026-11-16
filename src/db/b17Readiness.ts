@@ -5,8 +5,12 @@ import { getPool } from './index.ts';
 
 export const B17_VERSION = 'B17_U1';
 // Canonical PostgreSQL 18 catalog fingerprints, independently compared, not trusted from ledger alone.
-export const PREDECESSOR_SHAPE = '18851d69e9808bf86a41314173406ef9';
-export const B17_SHAPE = '4b4e39e3a13eae0d336d30fa94bbf52f';
+// H12 (TASK-PROTO-H12, D-H01-01): PREDECESSOR_SHAPE recomputed on an own fresh
+// PG18 scratch after `clients.theme` was appended to schema.sql. STRUCTURE_SQL
+// fingerprints EVERY public column, so the schema-only, post-U1 and post-content
+// constants move together — never edit one without re-measuring all three.
+export const PREDECESSOR_SHAPE = '6df697af6c8f04a95c799f1bd9640aff';
+export const B17_SHAPE = 'a8dbb2d504cc945bea31e29e858e5437';
 export const B17_CONTENT_VERSION = 'B17_U2D';
 // G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
 // the CANONICAL content label. Tera ruling: renaming it would strand every
@@ -46,7 +50,11 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // b17_admin_users_update (target-bound
 // deactivation) and the USER_CREATED/USER_DEACTIVATED/USER_REACTIVATED/
 // STAFF_LIST_APPROVED audit rows. Still no new definer; owner ACLs untouched.
-export const B17_CONTENT_SHAPE = '5d5ddb9344225a53059da3f7d92bdd94';
+// H12 (TASK-PROTO-H12, D-H01-01): recomputed on an own fresh PG18 scratch after
+// schema.sql appended `clients.theme TEXT NOT NULL DEFAULT 'ge'`. STRUCTURE_SQL
+// enumerates EVERY public column, so this pin MUST equal the value measured after
+// the column exists — it is not cosmetic and may change only with a re-measure.
+export const B17_CONTENT_SHAPE = 'cf79a6a3827ab6037a28f629e4cbdb17';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

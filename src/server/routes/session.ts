@@ -1,7 +1,8 @@
 import express from 'express';
 import { withTenantContext, setTenantContext, recordAuditLog } from '../../db/index.ts';
 import { comparePassword, hashPassword, issueSession, withSession, revokePresentedSession,
-  identityContext, sendAuthError, authError, type AuthUser, type AuthenticatedRequest } from '../auth.ts';
+  identityContext, sendAuthError, authError, normalizeTenantTheme,
+  type AuthUser, type AuthenticatedRequest } from '../auth.ts';
 import { suspendedLoginBody } from '../../lib/b11b.ts';
 import { validateSelfChosenPassword } from '../../lib/password.ts';
 
@@ -22,14 +23,15 @@ router.post('/auth/login', async (req, res) => {
       if (row.role !== 'ge_admin' && !row.client_id || row.role === 'employee' && !row.department_id)
         throw authError(401, 'auth.binding_invalid');
       const user: AuthUser = { id: row.id, email: row.email, name: row.name, role: row.role,
-        clientId: row.client_id, departmentId: row.department_id };
+        clientId: row.client_id, departmentId: row.department_id, theme: 'ge' };
       await setTenantContext(client, { purpose: 'auth.login', userId: user.id, role: user.role,
         tenantId: user.clientId, departmentId: user.departmentId });
       if (user.clientId) {
-        const tenant = (await client.query('SELECT name,suspended FROM clients WHERE id=$1 FOR SHARE', [user.clientId])).rows[0];
+        const tenant = (await client.query('SELECT name,suspended,theme FROM clients WHERE id=$1 FOR SHARE', [user.clientId])).rows[0];
         if (!tenant) throw authError(401, 'auth.binding_invalid');
         if (tenant.suspended && user.role !== 'ge_admin') return { suspended: true as const };
         user.clientName = tenant.name;
+        user.theme = normalizeTenantTheme(tenant.theme);
       }
       if (user.departmentId) {
         const department = (await client.query('SELECT name FROM departments WHERE id=$1 AND client_id=$2 FOR SHARE',

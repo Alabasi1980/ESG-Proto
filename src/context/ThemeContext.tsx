@@ -1,13 +1,7 @@
 import React, { createContext, useContext, useLayoutEffect } from 'react';
+import { useAuth } from './AuthContext.tsx';
 
 export type TenantTheme = 'ge' | 'lime' | 'dark';
-
-// WHY a literal session constant: the server-enforced tenant theme column
-// lands in a later batch (THEME_TOKENS.md §5) — H02b wires the mechanism only.
-// TEMPORARY preview override (prototype only — removed at transfer; server session takes over per D-H01-01)
-const PARAM = new URLSearchParams(window.location.search).get('theme');
-const TENANT_THEME: TenantTheme = 'ge';   // unchanged default
-const theme = (PARAM === 'ge' || PARAM === 'lime' || PARAM === 'dark') ? PARAM : TENANT_THEME;
 
 interface ThemeContextType {
   theme: TenantTheme;
@@ -16,14 +10,21 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // WHY a layout effect, not a passive effect: data-theme must land on the
-  // root before first paint so token utilities resolve with no theme flash.
-  // WHY nothing else here: the theme is server-enforced per tenant (H01 §5),
-  // so no localStorage, no picker UI, no fetch — the client applies the
-  // session value only.
+  const { user } = useAuth();
+  // WHY this value: the theme is the tenant's SERVER-side property (D-H01-01),
+  // broadcast in the session payload. The client only mirrors it: default 'ge'
+  // before login, and any legacy/NULL/unknown value also settles on 'ge' — the
+  // provider never invents a theme, persists one, or fetches one itself.
+  const stored = user?.theme;
+  const theme: TenantTheme = stored === 'lime' || stored === 'dark' ? stored : 'ge';
+
+  // WHY a layout effect with a theme dependency: data-theme must land on the
+  // root before first paint so token utilities resolve with no theme flash, and
+  // it must re-apply whenever the session theme changes (login, refresh, or
+  // logout → back to 'ge'). No localStorage, no picker UI, no fetch here.
   useLayoutEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-  }, []);
+  }, [theme]);
 
   return <ThemeContext.Provider value={{ theme }}>{children}</ThemeContext.Provider>;
 };
