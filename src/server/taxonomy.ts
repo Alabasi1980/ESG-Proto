@@ -7,6 +7,10 @@ import { readContext, requireFreshPassword } from './routes/_shared.ts';
 import { maskedItemFields, scopeId, scopeError } from './scope.ts';
 import { EMPTY_CLIENT_FIELD_MASK, stripMaskedFields } from '../lib/clientFieldMask.ts';
 import { parseServiceSettings } from '../lib/serviceSettings.ts';
+// TASK-PROTO-U4-1c (OD-12 §5–§7): item classification + the per-service
+// general bucket (created/ensured in the service create/duplicate transactions).
+import { ensureGeneralBucket, generalStandardCode } from '../lib/generalBucket.ts';
+import { normalizeIndicatorCode, normalizeTags } from '../lib/documents.ts';
 import {
   canonicalLinkPair,
   isEsgClass,
@@ -202,6 +206,7 @@ router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, a
         `SELECT i.id, i.disclosure_id, i.code, i.requirement, i.answer_type, i.hint,
                 i.priority, i.esg_class, i.weight, i.objective, i.topic, i.reference,
                 i.department_id, i.sort_order, i.attachment_required,
+                i.indicator_code, i.tags,
                 d.code AS disclosure_code, s.code AS standard_code
          FROM items i
          JOIN disclosures d ON d.id = i.disclosure_id
@@ -267,6 +272,10 @@ router.post('/services', authMiddleware, requireFreshPassword, requireDomainAcce
         entityId: row.id,
         payload: { code: row.code, name: row.name },
       });
+      // TASK-PROTO-U4-1c (OD-12 §7): every service owns ONE general bucket
+      // (standard GENERAL-<CODE> + disclosure GENERAL + mapping), created in the
+      // same transaction; the helper is idempotent, so a retry is a no-op.
+      await ensureGeneralBucket(client, row.id);
       return row;
     });
     res.status(201).json(created);
@@ -342,6 +351,11 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
         entityId: row.id,
         payload: { code: row.code, fields: sets.map((s) => s.split(' ')[0]) },
       });
+      // TASK-PROTO-U4-1c (OD-12 §7): the idempotent BACKFILL path for services
+      // that existed before this unit — the first platform save of a service
+      // ensures its general bucket (GENERAL-<CODE> + disclosure + mapping).
+      // A no-op on every later save, and it never touches items or answers.
+      await ensureGeneralBucket(client, row.id);
       return row;
     });
     res.json(updated);
@@ -384,11 +398,17 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
         }
         throw dbErr;
       }
+      // Copy every standard link EXCEPT the source's own general bucket: that
+      // container is per-service (GENERAL-<CODE>) and is re-created below for
+      // the copy, so carrying the source's bucket would leave a second, stale
+      // general link on the duplicate.
       const linkRes = await client.query(
         `INSERT INTO service_standards (service_id, standard_id)
-         SELECT $1, standard_id FROM service_standards WHERE service_id = $2
+         SELECT $1, ss.standard_id FROM service_standards ss
+         JOIN standards st ON st.id = ss.standard_id
+         WHERE ss.service_id = $2 AND st.code <> $3
          ON CONFLICT DO NOTHING`,
-        [copy.id, src.id]
+        [copy.id, src.id, generalStandardCode(src.code)]
       );
       await recordAuditLog(client, {
         clientId: null,
@@ -398,6 +418,10 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
         entityId: copy.id,
         payload: { fromServiceId: src.id, fromCode: src.code, code: copy.code, linksCopied: linkRes.rowCount ?? 0 },
       });
+      // TASK-PROTO-U4-1c (OD-12 §7): the copy gets its OWN general bucket
+      // (GENERAL-<NEW CODE>) — the source's bucket is not a copy of content, it
+      // is a per-service container, so only this service's bucket is ensured.
+      await ensureGeneralBucket(client, copy.id);
       return { service: copy, linksCopied: linkRes.rowCount ?? 0 };
     });
     res.status(201).json(result);
@@ -692,6 +716,12 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
     }
     const v = validation.value;
     const disclosureId = String((req.body as any).disclosureId).trim();
+    // TASK-PROTO-U4-1c (OD-12 §5/§6): indicator_code + tags are handler-validated
+    // (no schema CHECK), so the same rules serve every writer and the future UI.
+    const indicator = normalizeIndicatorCode((req.body as any)?.indicatorCode ?? (req.body as any)?.indicator_code);
+    if (!indicator.ok) return res.status(400).json({ error: indicator.error, code: indicator.code });
+    const tags = normalizeTags((req.body as any)?.tags);
+    if (!tags.ok) return res.status(400).json({ error: tags.error, code: tags.code });
 
     const created = await domainTransaction(req, async (client) => {
       const user = req.user!;
@@ -717,10 +747,12 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
         // derives it from priority (high=3, mid=2, low=1).
         const ins = await client.query(
           `INSERT INTO items (disclosure_id, code, requirement, answer_type, hint, priority,
-                              esg_class, objective, topic, reference, department_id, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                              esg_class, objective, topic, reference, department_id, sort_order,
+                              indicator_code, tags)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING id, disclosure_id, code, requirement, answer_type, hint, priority,
-                     esg_class, weight, objective, topic, reference, department_id, sort_order`,
+                     esg_class, weight, objective, topic, reference, department_id, sort_order,
+                     indicator_code, tags`,
           [
             disclosureId,
             v.code,
@@ -734,6 +766,8 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
             v.reference,
             v.departmentId,
             sortOrder,
+            indicator.value,
+            tags.value,
           ]
         );
         row = ins.rows[0];
@@ -843,6 +877,21 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
         error: 'weight is derived from priority by the database trigger and cannot be set directly.',
       });
     }
+    // TASK-PROTO-U4-1c (OD-12 §5/§6): item classification — validated here, no DB CHECK.
+    if (body.indicatorCode !== undefined || body.indicator_code !== undefined) {
+      const parsed = normalizeIndicatorCode(body.indicatorCode ?? body.indicator_code);
+      if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
+      params.push(parsed.value);
+      sets.push(`indicator_code = $${params.length}`);
+      changed.push('indicatorCode');
+    }
+    if (body.tags !== undefined) {
+      const parsed = normalizeTags(body.tags);
+      if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
+      params.push(parsed.value);
+      sets.push(`tags = $${params.length}::text[]`);
+      changed.push('tags');
+    }
     let departmentTouched = false;
     let departmentId: string | null = null;
     if (body.departmentId !== undefined) {
@@ -875,7 +924,8 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
       const upd = await client.query(
         `UPDATE items SET ${sets.join(', ')} WHERE id = $${params.length}
          RETURNING id, disclosure_id, code, requirement, answer_type, hint, priority,
-                   esg_class, weight, objective, topic, reference, department_id, sort_order`,
+                   esg_class, weight, objective, topic, reference, department_id, sort_order,
+                   indicator_code, tags`,
         params
       );
       const row = upd.rows[0];

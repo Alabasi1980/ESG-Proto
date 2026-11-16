@@ -14,8 +14,23 @@ export const B17_VERSION = 'B17_U1';
 // client_services.client_field_mask. Falsifiability proved in the same run:
 // dropping the three columns restores the previous constants EXACTLY
 // (62e7586e… / bbcb018e… / 5def29de…), re-adding the same DDL restores these.
-export const PREDECESSOR_SHAPE = 'd093f4720020a9f496a230e02dc6e573';
-export const B17_SHAPE = '99455c0b7408fe8f5b204e44fc242649';
+// U4-1c (TASK-PROTO-U4-1c, OD-12 §3–§8): recomputed on an own fresh PG18
+// scratch after schema.sql appended items.indicator_code/items.tags, the four
+// document/initiative/evidence tables and their indexes, and after
+// b17-content.sql appended the row-scope policies for those tables (they MUST
+// live there: b17.sql's activation block replaces every predecessor policy, so
+// a policy defined next to the tables in schema.sql would not survive a fresh
+// install — the H13 app_settings precedent), widened the E/P@T branch of
+// b17_scope (client_initiatives) and b17_library, and added the three
+// DOCUMENT_REQUIREMENT_* P actions to b17_audit_insert. Both the content
+// checksum and the content shape therefore move together with the schema
+// constants. Falsifiability proved in scripts/u41c-scratch.ts: dropping the new
+// columns/tables restores d093f472… / 99455c0b… exactly; removing this unit's
+// policy block and restoring the three predecessor policy texts restores the
+// pre-change content md5 (6f67b44d…) on the pre-change structure, and re-adding
+// the block restores these values.
+export const PREDECESSOR_SHAPE = 'c320ef6ff50675206ac4c8edf762db3b';
+export const B17_SHAPE = '3adef0179b7703b6d8e20750fbe67e8a';
 export const B17_CONTENT_VERSION = 'B17_U2D';
 // G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
 // the CANONICAL content label. Tera ruling: renaming it would strand every
@@ -61,12 +76,19 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // the column exists — it is not cosmetic and may change only with a re-measure.
 // U4-1a (round 2, Option A approved): b17-content.sql gained ONE narrow W UPDATE
 // policy (b17_consultant_service_visibility), so BOTH its checksum (sha256,
-// ledger `checksum`) and its catalog shape move. Measured on the same own PG18
-// scratch: content sha256 2e07a7c1…, structure 6f67b44d…. Falsifiability: with the
-// policy applied but the three columns dropped the shape is 811b4674… (the
-// policy-only oracle), and dropping the three columns from the final state
-// restores it exactly; re-adding restores this value.
-export const B17_CONTENT_SHAPE = '6f67b44de1e2620fdb711ef9175fb6f5';
+// ledger `checksum`) and its catalog shape moved; measured content sha256 was
+// 2e07a7c1… with structure 6f67b44d… (the U4-1c block below supersedes both).
+// U4-1c: recomputed after the document/initiative/evidence row-scope policies,
+// the E/P@T branches on client_initiatives + initiatives_library, the three new
+// P audit actions and the ledger UPDATE gate (b17_version_update: purpose
+// 'migration' only, which no request handler ever sets — without it no
+// row-security-subject role could re-pin a structure_checksum at all). New
+// content sha256: d96d6bc2… (measured in the same scratch run as the shape).
+// Falsifiability: with the policy block removed and the three predecessor
+// policy texts restored, the content md5 returns to the pre-change 6f67b44d… on
+// the pre-change structure; re-adding the block restores this value. No new
+// SECURITY DEFINER, no PUBLIC grant.
+export const B17_CONTENT_SHAPE = '9e06e001dabaa6df41c84b572dfcd494';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

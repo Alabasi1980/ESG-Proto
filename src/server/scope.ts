@@ -318,6 +318,34 @@ export async function serviceFieldMask(client: pg.PoolClient, access: AccessCont
   return storedClientFieldMask(row?.client_field_mask);
 }
 
+// ---------------------------------------------------------------------------
+// TASK-PROTO-U4-1c (OD-12 §3–4) — department-owned write scoping for the
+// document list and the department initiative status.
+//
+// The matrix already refuses W/C/P on those writes, and FORCE RLS row-scopes
+// them; these two helpers are the handler-level third gate the task requires
+// ("department scoping on every write"). They are deliberately literal: the
+// caller must be an EMPLOYEE, and the row's department must be the employee's
+// OWN server-derived department — never a request-supplied one.
+// ---------------------------------------------------------------------------
+
+/** The caller's own department for a department-owned write. W/C/P have no
+ * department of their own, so they are refused here with zero writes. */
+export function ownEmployeeDepartment(access: AccessContext): string {
+  assertWorkScope(access);
+  if (access.mode !== 'employee' || !access.departmentId)
+    throw scopeError(403, 'scope.denied');
+  return access.departmentId;
+}
+
+/** Same gate, against a concrete row/field department id. */
+export function assertDepartmentWrite(access: AccessContext, departmentId: unknown): string {
+  const own = ownEmployeeDepartment(access);
+  if (typeof departmentId !== 'string' || departmentId !== own)
+    throw scopeError(403, 'scope.department_mismatch');
+  return own;
+}
+
 /** §3.3 snapshot reads: the FULL payload is served only when the ENTIRE item
  * set inside it is linked to the caller's tenant. A mixed, unlinked,
  * unparseable or item-less payload is INACCESSIBLE — the list route drops the

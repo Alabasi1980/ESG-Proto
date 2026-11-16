@@ -9,7 +9,8 @@ DO $$ BEGIN
       'profile_assessments','report_settings','audit_log','initiatives_library',
       'client_initiatives','esg_profile','review_snapshots','snapshot_notes',
       'evidence_attachments','service_standards','item_links','staff_lists',
-      'staff_list_rows','notifications','app_schema_versions','auth_sessions','workspace_tabs'
+      'staff_list_rows','notifications','app_schema_versions','auth_sessions','workspace_tabs',
+      'document_requirements','document_submissions','initiative_department_status','evidence_files'
     ])
   ) THEN RAISE EXCEPTION 'schema.empty_install_only'; END IF;
 END $$;
@@ -1356,3 +1357,120 @@ DO $$ BEGIN
     ALTER TABLE client_services ADD COLUMN client_field_mask JSONB NULL;
   END IF;
 END $$;
+
+--------------------------------------------------------------------------------
+-- TASK-PROTO-U4-1c (OD-12 §3–§8) — department documents, department initiative
+-- status, and ONE evidence-file surface shared by both.
+--
+-- Same idempotency contract as every FIX BATCH above: this file is re-applied
+-- wholesale by the explicit empty-install initializer, so every statement is a
+-- DO-block guarded by a catalogue check, CREATE ... IF NOT EXISTS or DROP ... IF
+-- EXISTS. Additive only — no existing column, row, policy or grant is changed.
+--
+-- NO business CHECK constraints on purpose (task §1 discipline): the 5 MB cap +
+-- MIME allowlist (mirrored from the existing attachment path), the tags/
+-- indicator lengths, the entity_type domain and the submission lock are all
+-- enforced at the ONE trusted handler boundary, so a legacy or unknown stored
+-- value is read defensively instead of failing a row — the same rule
+-- the tenant theme column follows.
+--
+-- RLS: enabled AND forced here; the row-scope policies themselves live in
+-- b17-content.sql (B17 U2D), because b17.sql's activation block replaces EVERY
+-- predecessor policy — a policy defined only here would not survive a fresh
+-- install (exactly the H13 app_settings precedent).
+--------------------------------------------------------------------------------
+
+-- U4-1c-A. items: workbook indicator code + free tags (OD-12 §5/§6).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'indicator_code') THEN
+    ALTER TABLE items ADD COLUMN indicator_code TEXT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'tags') THEN
+    ALTER TABLE items ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';
+  END IF;
+END $$;
+
+-- U4-1c-B. document_requirements: the department document list (OD-12 §3).
+-- department_id NULL = the requirement applies to every department of the
+-- client. service_id ties the requirement to the ONE service catalog entry.
+CREATE TABLE IF NOT EXISTS document_requirements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  department_id UUID REFERENCES departments(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  required BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  tags TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- U4-1c-C. document_submissions: ONE row per (client, department, requirement).
+-- submitted_at is the submission stamp: once set, the proof files are locked
+-- (append-only), mirroring the U4-1b evidence lock.
+CREATE TABLE IF NOT EXISTS document_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  requirement_id UUID NOT NULL REFERENCES document_requirements(id) ON DELETE CASCADE,
+  provided BOOLEAN NOT NULL DEFAULT false,
+  note TEXT,
+  tag TEXT,
+  submitted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  submitted_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(client_id, department_id, requirement_id)
+);
+
+-- U4-1c-D. initiative_department_status: ONE row per (selected initiative,
+-- department) — performed/note + the independent proof files (OD-12 §8).
+CREATE TABLE IF NOT EXISTS initiative_department_status (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_initiative_id UUID NOT NULL REFERENCES client_initiatives(id) ON DELETE CASCADE,
+  department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  performed BOOLEAN NOT NULL DEFAULT false,
+  note TEXT,
+  submitted_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  submitted_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(client_initiative_id, department_id)
+);
+
+-- U4-1c-E. evidence_files: the unified proof store for document submissions and
+-- department initiative statuses (answer attachments stay in
+-- evidence_attachments untouched). entity_type is validated in the handler
+-- (document_submission | initiative_status); content stays in DB bytea at
+-- demo scale exactly like evidence_attachments (OD-06), with the 5 MB/MIME
+-- rules enforced by the upload handler.
+CREATE TABLE IF NOT EXISTS evidence_files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  department_id UUID REFERENCES departments(id) ON DELETE CASCADE,
+  entity_type TEXT NOT NULL,
+  entity_id UUID NOT NULL,
+  filename TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  content BYTEA NOT NULL,
+  uploaded_by UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_document_requirements_service ON document_requirements(service_id);
+CREATE INDEX IF NOT EXISTS ix_document_submissions_client_dept ON document_submissions(client_id, department_id);
+CREATE INDEX IF NOT EXISTS ix_initiative_department_client_dept ON initiative_department_status(client_initiative_id, department_id);
+CREATE INDEX IF NOT EXISTS ix_evidence_files_parent ON evidence_files(client_id, entity_type, entity_id);
+
+-- U4-1c-F. Row security posture. Policies: b17-content.sql (B17 U2D).
+ALTER TABLE document_requirements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE initiative_department_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE evidence_files ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE document_requirements FORCE ROW LEVEL SECURITY;
+ALTER TABLE document_submissions FORCE ROW LEVEL SECURITY;
+ALTER TABLE initiative_department_status FORCE ROW LEVEL SECURITY;
+ALTER TABLE evidence_files FORCE ROW LEVEL SECURITY;

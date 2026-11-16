@@ -16,6 +16,8 @@ import auditRouter from './routes/audit.ts';
 import notificationsRouter from './routes/notifications.ts';
 import settingsRouter from './routes/settings.ts';
 import serviceVisibilityRouter from './routes/serviceVisibility.ts';
+import documentsRouter from './routes/documents.ts';
+import departmentInitiativesRouter from './routes/departmentInitiatives.ts';
 import { apiNotFoundHandler, globalJsonErrorHandler } from './errorHandler.ts';
 import workspaceRouter from './workspace.ts';
 import { accessDispatcher } from './access.ts';
@@ -25,7 +27,8 @@ const router = express.Router();
 
 assertRegistryCoverage([taxonomyRouter, systemRouter, sessionRouter, griRouter, evaluationsRouter,
   actionsRouter, initiativesRouter, reportsRouter, storageRouter, adminRouter, auditRouter,
-  notificationsRouter, settingsRouter, serviceVisibilityRouter, workspaceRouter]);
+  notificationsRouter, settingsRouter, serviceVisibilityRouter, documentsRouter,
+  departmentInitiativesRouter, workspaceRouter]);
 router.use(accessDispatcher);
 router.use(workspaceRouter);
 
@@ -48,6 +51,12 @@ router.use(notificationsRouter);
 router.use(settingsRouter);
 // TASK-PROTO-U4-1a: W-only client field-mask writer (one declaration).
 router.use(serviceVisibilityRouter);
+// TASK-PROTO-U4-1c (OD-12 §3–§8): department document requirements + the
+// unified evidence-file surface (9 declarations) and the department initiative
+// status pair (2 declarations). All eleven rows are explicit U1 flips in
+// accessRegistry.ts; nothing else is activated here.
+router.use(documentsRouter);
+router.use(departmentInitiativesRouter);
 
 // Micro-fix: no Express-default HTML page may ever escape the API.
 // 404 (unknown /api route) stays JSON, and the global 4-argument error

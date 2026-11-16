@@ -239,6 +239,35 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'GET /settings|P#platform-app-theme-read-absent-row-is-auto-no-tenant-payload',
     'PUT /settings|P#platform-app-theme-writer-enum-validated-audited-auto-stores-null',
   ], true),
+  // TASK-PROTO-U4-1c (OD-12 §3–§8): the department document list, the unified
+  // evidence-file surface and the department initiative status. Eleven rows,
+  // each flipped explicitly below. Reads: P needs an explicit validated target
+  // (T), W/C are pinned to their own tenant, E to its own department; every
+  // write is E-own-department only (W/C read-only, P read-only — contract §2).
+  ...group('documents', [
+    'GET /services/:id/documents|P#service-document-requirements-catalog',
+    'POST /services/:id/documents|P#catalog-document-requirement-create',
+    'PATCH /services/:id/documents/:reqId|P#catalog-document-requirement-update',
+    'DELETE /services/:id/documents/:reqId|P#catalog-requirement-delete-existing-submission-refusals',
+    'GET /requirements|P@T#read-only-target;W:L;C:L;E:L+D#own-department-submission-state-and-proof-metadata',
+    'PATCH /requirements/:id|E:L+D#own-department-provided-note-tag-only-no-W-C-P-write',
+    'POST /evidence/:entityType/:entityId/files|E:L+D#own-department-own-parent-5MB-mime-allowlist',
+    'GET /evidence/:entityType/:entityId/files/:fileId/download|P@T#target-scope;W:L;C:L;E:L+D#parent-bound-no-guessed-file',
+    'DELETE /evidence/:entityType/:entityId/files/:fileId|E:L+D#own-upload-own-department-locked-once-parent-submitted',
+  ], [
+    // Listed explicitly so a typo in a key fails closed (access.activation_unknown)
+    // instead of silently flipping, and so the flip set stays auditable.
+    'GET /services/:id/documents', 'POST /services/:id/documents',
+    'PATCH /services/:id/documents/:reqId', 'DELETE /services/:id/documents/:reqId',
+    'GET /requirements', 'PATCH /requirements/:id',
+    'POST /evidence/:entityType/:entityId/files',
+    'GET /evidence/:entityType/:entityId/files/:fileId/download',
+    'DELETE /evidence/:entityType/:entityId/files/:fileId',
+  ]),
+  ...group('departmentInitiatives', [
+    'GET /initiatives/department|P@T#read-only-target;W:L;C:L;E:L+D#own-department-status-and-proof-metadata',
+    'PATCH /initiatives/department/:id|E:L+D#performed-note-own-department-only',
+  ], ['GET /initiatives/department', 'PATCH /initiatives/department/:id']),
 ];
 export const WORKSPACE_ROUTES = group('workspace', [
   'POST /workspace/tab|GE#fresh-GE-session-no-client-input-creates-P-row-generation-1',

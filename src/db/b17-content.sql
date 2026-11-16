@@ -495,7 +495,11 @@ CREATE POLICY b17_audit_insert ON audit_log FOR INSERT WITH CHECK (
       AND action IN ('CREATE_SERVICE','UPDATE_SERVICE','DUPLICATE_SERVICE','LINK_SERVICE_STANDARD',
         'UNLINK_SERVICE_STANDARD','UPDATE_STANDARD','DELETE_STANDARD','UPDATE_DISCLOSURE',
         'DELETE_DISCLOSURE','CREATE_ITEM','UPDATE_ITEM','DELETE_ITEM','LINK_ITEMS','UNLINK_ITEMS',
-        'INITIATIVE_UPSERTED','INITIATIVE_UPDATED'))
+        'INITIATIVE_UPSERTED','INITIATIVE_UPDATED',
+        -- TASK-PROTO-U4-1c: the P-managed document requirement CRUD rows (the
+        -- requirements are service-catalog objects, so their audit rows are
+        -- NULL-tenant platform configuration rows like the catalog writes above).
+        'DOCUMENT_REQUIREMENT_CREATED','DOCUMENT_REQUIREMENT_UPDATED','DOCUMENT_REQUIREMENT_DELETED'))
     OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
       AND client_id::text=b17_setting('target_id')
       AND ((action='IMPORT_GRI_DISCLOSURES' AND entity_type='standards')
@@ -752,6 +756,172 @@ DO $$ DECLARE t text; BEGIN
       USING (b17_domain_config(client_id,service_id)) WITH CHECK (b17_domain_config(client_id,service_id))',t);
   END LOOP;
 END $$;
+
+-- ===========================================================================
+-- TASK-PROTO-U4-1c (OD-12 sections 3-8) — department documents, department
+-- initiative status, and the ONE unified evidence-file surface.
+--
+-- WHY this block exists here: b17.sql's activation block replaces EVERY
+-- predecessor policy, so policies written next to the tables in schema.sql do
+-- not survive a fresh install (the H13 app_settings precedent directly above).
+-- The tables themselves, RLS enable/force, indexes and the two item columns are
+-- in schema.sql; this block is ROW SCOPE ONLY.
+--
+-- Handler-owned rules stay out of SQL and are neither duplicated nor weakened
+-- here: the 5 MB cap + MIME allowlist and the entity_type domain
+-- (document_submission | initiative_status) on upload, the submitted_at proof
+-- lock on delete (mirror U4-1b), the requirement/department ownership checks,
+-- the provided-after-submission refusal, and every audit payload.
+--
+-- RATIONALE for the two employee branches added to b17_scope (client_initiatives)
+-- and b17_library (initiatives_library): OD-12 sections 4/8 make the DEPARTMENT
+-- the actor that records "performed" for a selected initiative, so an employee
+-- must be able to READ the selected + service-linked initiative rows of its own
+-- tenant. That is the ONLY widening: the row still has to be selected AND linked
+-- for the caller's own server-derived tenant, no library row outside that set is
+-- admitted, and no write policy for an employee is added to either table.
+-- ===========================================================================
+
+-- P@T read branch + E branch on the client's selections.
+DROP POLICY b17_scope ON client_initiatives;
+CREATE POLICY b17_scope ON client_initiatives FOR SELECT USING(
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')<>'employee'
+    AND b17_content_fact('initiative',client_id,initiative_id))
+  OR (b17_work_tenant(client_id) AND b17_setting('current_mode')='employee'
+    AND b17_content_fact('initiative',client_id,initiative_id))
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id')
+    AND b17_content_fact('initiative',client_id,initiative_id)));
+
+-- Library rows: W/C unchanged; E sees only selected+linked rows of its tenant;
+-- P@T sees the rows its target tenant has selected and linked.
+DROP POLICY b17_library ON initiatives_library;
+CREATE POLICY b17_library ON initiatives_library FOR SELECT USING(CASE
+  WHEN b17_work_tenant(nullif(b17_setting('current_tenant_id'),'')::uuid)
+    AND b17_setting('current_mode')<>'employee' THEN
+    b17_content_fact('initiative',nullif(b17_setting('current_tenant_id'),'')::uuid,id)
+    AND (b17_setting('current_mode')='consultant'
+      OR b17_content_fact('selected',nullif(b17_setting('current_tenant_id'),'')::uuid,id))
+  WHEN b17_work_tenant(nullif(b17_setting('current_tenant_id'),'')::uuid)
+    AND b17_setting('current_mode')='employee' THEN
+    b17_content_fact('initiative',nullif(b17_setting('current_tenant_id'),'')::uuid,id)
+    AND b17_content_fact('selected',nullif(b17_setting('current_tenant_id'),'')::uuid,id)
+  WHEN b17_platform_config() AND b17_setting('target_id') IS NOT NULL THEN
+    b17_content_fact('initiative',nullif(b17_setting('target_id'),'')::uuid,id)
+    AND EXISTS(SELECT 1 FROM client_initiatives ci
+      WHERE ci.client_id::text=b17_setting('target_id') AND ci.initiative_id=initiatives_library.id)
+  ELSE false END);
+
+-- document_requirements: a service-catalog object. P manages it under either
+-- platform context; W/C/E read only requirements of a service linked to their
+-- own tenant, and an employee only the department-agnostic ones plus its own
+-- department's.
+CREATE POLICY b17_document_requirements_read ON document_requirements FOR SELECT USING(
+  (b17_setting('current_purpose')='work'
+    AND b17_bound_tenant(nullif(b17_setting('current_tenant_id'),'')::uuid)
+    AND b17_content_fact('service',nullif(b17_setting('current_tenant_id'),'')::uuid,service_id)
+    AND (b17_setting('current_mode')<>'employee' OR department_id IS NULL
+      OR department_id::text=b17_setting('current_user_department_id')))
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND b17_content_fact('service',nullif(b17_setting('target_id'),'')::uuid,service_id))
+  OR b17_platform_config() OR b17_platform_scope());
+CREATE POLICY b17_document_requirements_insert ON document_requirements FOR INSERT
+  WITH CHECK (b17_platform_scope() OR b17_platform_config());
+CREATE POLICY b17_document_requirements_update ON document_requirements FOR UPDATE
+  USING (b17_platform_scope() OR b17_platform_config())
+  WITH CHECK (b17_platform_scope() OR b17_platform_config());
+CREATE POLICY b17_document_requirements_delete ON document_requirements FOR DELETE
+  USING (b17_platform_scope() OR b17_platform_config());
+
+-- document_submissions: ONE row per (client, department, requirement). Written
+-- ONLY by an employee for its own department (actor = submitted_by); read by
+-- W/C for the whole tenant and by E only for its own department; P@T may read.
+CREATE POLICY b17_document_submissions_read ON document_submissions FOR SELECT USING(
+  (b17_work_tenant(client_id) AND b17_content_fact('department',client_id,department_id)
+    AND (b17_setting('current_mode')<>'employee'
+      OR department_id::text=b17_setting('current_user_department_id')))
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id')));
+CREATE POLICY b17_document_submissions_insert ON document_submissions FOR INSERT WITH CHECK(
+  b17_work_tenant(client_id) AND b17_setting('current_mode')='employee'
+  AND department_id::text=b17_setting('current_user_department_id')
+  AND b17_content_fact('department',client_id,department_id)
+  AND EXISTS(SELECT 1 FROM document_requirements r WHERE r.id=requirement_id
+    AND b17_content_fact('service',client_id,r.service_id)
+    AND (r.department_id IS NULL OR r.department_id=document_submissions.department_id)));
+CREATE POLICY b17_document_submissions_update ON document_submissions FOR UPDATE
+  USING (b17_work_tenant(client_id) AND b17_setting('current_mode')='employee'
+    AND department_id::text=b17_setting('current_user_department_id')
+    AND b17_content_fact('department',client_id,department_id))
+  WITH CHECK (b17_work_tenant(client_id) AND b17_setting('current_mode')='employee'
+    AND department_id::text=b17_setting('current_user_department_id')
+    AND b17_content_fact('department',client_id,department_id)
+    AND EXISTS(SELECT 1 FROM document_requirements r WHERE r.id=requirement_id
+      AND b17_content_fact('service',client_id,r.service_id)
+      AND (r.department_id IS NULL OR r.department_id=document_submissions.department_id)));
+
+-- initiative_department_status: tenant is resolved through the row's
+-- department (the only tenant-bearing column this table owns). Written ONLY by
+-- an employee for its own department and only for a selection of the same
+-- tenant; read by W/C for the whole tenant, by E for its own department, and by
+-- P@T for its explicit target.
+CREATE POLICY b17_initiative_department_read ON initiative_department_status FOR SELECT USING(
+  EXISTS(SELECT 1 FROM departments d WHERE d.id=initiative_department_status.department_id AND (
+    (b17_work_tenant(d.client_id) AND (b17_setting('current_mode')<>'employee'
+      OR initiative_department_status.department_id::text=b17_setting('current_user_department_id')))
+    OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+      AND d.client_id::text=b17_setting('target_id')))));
+CREATE POLICY b17_initiative_department_insert ON initiative_department_status FOR INSERT WITH CHECK(
+  b17_setting('current_mode')='employee'
+  AND department_id::text=b17_setting('current_user_department_id')
+  AND EXISTS(SELECT 1 FROM departments d
+    JOIN client_initiatives ci ON ci.id=initiative_department_status.client_initiative_id
+      AND ci.client_id=d.client_id
+    WHERE d.id=initiative_department_status.department_id AND b17_work_tenant(d.client_id)));
+CREATE POLICY b17_initiative_department_update ON initiative_department_status FOR UPDATE
+  USING (b17_setting('current_mode')='employee'
+    AND department_id::text=b17_setting('current_user_department_id')
+    AND EXISTS(SELECT 1 FROM departments d
+      JOIN client_initiatives ci ON ci.id=initiative_department_status.client_initiative_id
+        AND ci.client_id=d.client_id
+      WHERE d.id=initiative_department_status.department_id AND b17_work_tenant(d.client_id)))
+  WITH CHECK (b17_setting('current_mode')='employee'
+    AND department_id::text=b17_setting('current_user_department_id')
+    AND EXISTS(SELECT 1 FROM departments d
+      JOIN client_initiatives ci ON ci.id=initiative_department_status.client_initiative_id
+        AND ci.client_id=d.client_id
+      WHERE d.id=initiative_department_status.department_id AND b17_work_tenant(d.client_id)));
+
+-- evidence_files: the unified proof store. Upload/delete are E-only on the
+-- caller's own department and own upload (the handler additionally proves the
+-- parent row and the submitted_at lock); reads are tenant-scoped exactly like
+-- the submissions they belong to. Answer attachments are untouched.
+CREATE POLICY b17_evidence_files_read ON evidence_files FOR SELECT USING(
+  (b17_work_tenant(client_id)
+    AND (b17_setting('current_mode')<>'employee'
+      OR department_id::text=b17_setting('current_user_department_id')))
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id')));
+CREATE POLICY b17_evidence_files_insert ON evidence_files FOR INSERT WITH CHECK(
+  b17_work_tenant(client_id) AND b17_setting('current_mode')='employee'
+  AND department_id::text=b17_setting('current_user_department_id')
+  AND uploaded_by::text=b17_setting('current_actor_id'));
+CREATE POLICY b17_evidence_files_delete ON evidence_files FOR DELETE USING(
+  b17_work_tenant(client_id) AND b17_setting('current_mode')='employee'
+  AND department_id::text=b17_setting('current_user_department_id')
+  AND uploaded_by::text=b17_setting('current_actor_id'));
+
+-- app_schema_versions: the ledger's own UPDATE gate for an explicit operator
+-- migration. b17.sql grants SELECT (true) + INSERT under purpose 'migration'
+-- only; it never granted UPDATE, so re-pinning a structure_checksum was
+-- impossible for ANY role subject to row security (FORCE RLS, and a superuser
+-- would move object ownership and hit b17.ownership_drift). No business route
+-- ever sets 'migration' (grep: only the offline initializers do), so this adds
+-- no request-reachable write path; the row count, version set and checksum
+-- shape stay checked by every readiness run.
+CREATE POLICY b17_version_update ON app_schema_versions FOR UPDATE
+  USING (b17_setting('current_purpose')='migration')
+  WITH CHECK (b17_setting('current_purpose')='migration');
 
 -- ===========================================================================
 -- B17 U2-E E-2 — E-0 WRITE substrate (task §4.1 pre-authorized; delta name
@@ -1104,3 +1274,4 @@ CREATE POLICY app_settings_update ON app_settings
   FOR UPDATE
   USING (nullif(current_setting('app.current_purpose', true), '') = 'platform.config')
   WITH CHECK (nullif(current_setting('app.current_purpose', true), '') = 'platform.config');
+

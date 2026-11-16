@@ -163,6 +163,20 @@ const EXPECTED: Record<string, string> = {
   // §3.7 platform-wide app settings (TASK-PROTO-H13): P only, no tenant row.
   'GET /settings': 'P#platform-app-theme-read-absent-row-is-auto-no-tenant-payload',
   'PUT /settings': 'P#platform-app-theme-writer-enum-validated-audited-auto-stores-null',
+  // TASK-PROTO-U4-1c (OD-12 §3–§8): document requirements (P), the department
+  // lists (P@T read / W-C linked read / E own-department) and the unified
+  // evidence-file surface (E own-department writes).
+  'GET /services/:id/documents': 'P#service-document-requirements-catalog',
+  'POST /services/:id/documents': 'P#catalog-document-requirement-create',
+  'PATCH /services/:id/documents/:reqId': 'P#catalog-document-requirement-update',
+  'DELETE /services/:id/documents/:reqId': 'P#catalog-requirement-delete-existing-submission-refusals',
+  'GET /requirements': 'P@T#read-only-target;W:L;C:L;E:L+D#own-department-submission-state-and-proof-metadata',
+  'PATCH /requirements/:id': 'E:L+D#own-department-provided-note-tag-only-no-W-C-P-write',
+  'POST /evidence/:entityType/:entityId/files': 'E:L+D#own-department-own-parent-5MB-mime-allowlist',
+  'GET /evidence/:entityType/:entityId/files/:fileId/download': 'P@T#target-scope;W:L;C:L;E:L+D#parent-bound-no-guessed-file',
+  'DELETE /evidence/:entityType/:entityId/files/:fileId': 'E:L+D#own-upload-own-department-locked-once-parent-submitted',
+  'GET /initiatives/department': 'P@T#read-only-target;W:L;C:L;E:L+D#own-department-status-and-proof-metadata',
+  'PATCH /initiatives/department/:id': 'E:L+D#performed-note-own-department-only',
   // §4 workspace lifecycle (4)
   'POST /workspace/tab': 'GE#fresh-GE-session-no-client-input-creates-P-row-generation-1',
   'GET /workspace': 'GE#tab-handle-reconcile-authoritative-envelope-no-broad-data',
@@ -184,10 +198,10 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-F final activation split: 0 UNACTIVATED; exact 90 business flips + 8 system/session + 4 workspace', () => {
-  assert.equal(LEGACY_ROUTES.length, 98);
+test('U2-F final activation split: 0 UNACTIVATED; exact 101 business flips + 8 system/session + 4 workspace', () => {
+  assert.equal(LEGACY_ROUTES.length, 109);
   assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 0);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 98);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 109);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
   // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F round-1 + 3
@@ -240,8 +254,17 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 90 business flips + 8 sy
     'GET /settings', 'PUT /settings',
     // TASK-PROTO-U4-1a: the W-only client-visibility writer.
     'PATCH /workspace/services/:serviceId/visibility',
+    // TASK-PROTO-U4-1c: the department document list, the unified evidence-file
+    // surface and the department initiative status (11 rows, appended last).
+    'GET /services/:id/documents', 'POST /services/:id/documents',
+    'PATCH /services/:id/documents/:reqId', 'DELETE /services/:id/documents/:reqId',
+    'GET /requirements', 'PATCH /requirements/:id',
+    'POST /evidence/:entityType/:entityId/files',
+    'GET /evidence/:entityType/:entityId/files/:fileId/download',
+    'DELETE /evidence/:entityType/:entityId/files/:fileId',
+    'GET /initiatives/department', 'PATCH /initiatives/department/:id',
   ];
-  assert.equal(FLIPPED.length, 90);
+  assert.equal(FLIPPED.length, 101);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -293,7 +316,7 @@ test('U2-A mounted declarations are covered (routes.ts runs assertRegistryCovera
   await import('../server/routes.ts');
   // Reaching this line means assertRegistryCoverage passed against every real
   // Express router: mounted method/path set === ACCESS_REGISTRY, no duplicates.
-  assert.equal(ACCESS_REGISTRY.length, 102);
+  assert.equal(ACCESS_REGISTRY.length, 113);
 });
 
 // ---------------------------------------------------------------------------
