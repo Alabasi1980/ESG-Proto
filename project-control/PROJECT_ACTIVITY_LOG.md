@@ -154,3 +154,4 @@
 | 2026-11-15 | ui-designer | Handback FINAL-2 | صقل الشريط: وزن العنصر النشط + تسلسل + إيقاع مسافات + شارات + hover بأمان الشريط (3 مواضع) + `&amp;` |
 | 2026-11-15 | TeraAgent | Verified FINAL | lint 0 · 227/227 · build 0 · لقطة ge تُظهر شريطاً متسقاً وعنصراً نشطاً واضحاً |
 | 2026-11-15 | TeraAgent | Records created | `PROJECT_STATE.md` + `TASK_REGISTRY.md` — بوابة سياق لأي جلسة |
+| 2026-11-16 | TeraAgent | TASK-PROTO-H12 closed | D-H01-01: عمود clients.theme (كاتب P فقط) + بثّ الجلسة (login/me) + حذف ?theme= · القاعدة المشتركة: ALTER + تحديث بصمتي ledger (نسخة احتياطية أولاً) · QA PASS (53/53) · Shield 0H/0M · لقطات ×3 ثيمات · 234/234 اختباراً |
