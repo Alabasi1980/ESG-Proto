@@ -40,3 +40,7 @@
 STYLE_CONTRACT.md · STYLE_HANDOFF.md · ISSUES_AND_GAPS.md · DECISIONS_LOG.md
 PROJECT_ACTIVITY_LOG.md · TERA_AUDIT_TRAIL.md · TASK_REGISTRY.md · tasks/
 ```
+
+## 6. تحديث H13 (2026-11-16)
+- **ثيم التطبيق الموحّد:** صفحة الإعدادات (منصة فقط) ← Application Theme: تلقائي (يتبع المستأجر) / GE / Lime / Dark — اختيار المنصة يسري على الجميع فوراً ويُسجَّل في audit.
+- ترتيب الحل: عام ← ثيم المستأجر ← ge. جدول app_settings + فحص ملكية (ownership_drift).

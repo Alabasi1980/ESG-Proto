@@ -155,3 +155,5 @@
 | 2026-11-15 | TeraAgent | Verified FINAL | lint 0 · 227/227 · build 0 · لقطة ge تُظهر شريطاً متسقاً وعنصراً نشطاً واضحاً |
 | 2026-11-15 | TeraAgent | Records created | `PROJECT_STATE.md` + `TASK_REGISTRY.md` — بوابة سياق لأي جلسة |
 | 2026-11-16 | TeraAgent | TASK-PROTO-H12 closed | D-H01-01: عمود clients.theme (كاتب P فقط) + بثّ الجلسة (login/me) + حذف ?theme= · القاعدة المشتركة: ALTER + تحديث بصمتي ledger (نسخة احتياطية أولاً) · QA PASS (53/53) · Shield 0H/0M · لقطات ×3 ثيمات · 234/234 اختباراً |
+
+| 2026-11-16 | TeraAgent | TASK-PROTO-H13 closed | ثيم تطبيق موحّد من الإعدادات (منصة): app_settings + GET/PUT /settings + حل عام←مستأجر←ge + قسم UI + ISS-005×5 · واقعة حيّة: schema_drift بسبب ملكية الجدول أُصلح (ALTER OWNER) وأُضيف فحص ownership_drift · QA FAIL←PASS (R1-R3) · Shield 0H/1M/1L مغلقان · 245/245 |

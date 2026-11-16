@@ -29,3 +29,6 @@ ISS-004 (منطق/صلاحيات) · ISS-006 (بيانات/جلسة) · ISS-010 
 
 ## TASK-PROTO-H12 (D-H01-01) — الثيم من الخادم
 - Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · round 2/2 · 234/234 · لا نشر
+
+## TASK-PROTO-H13 — ثيم التطبيق الموحّد (منصة)
+- Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · round 2/2 · 245/245 · لا نشر

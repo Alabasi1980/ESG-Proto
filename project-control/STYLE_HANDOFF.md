@@ -73,3 +73,6 @@ project-control/tasks/TASK-PROTO-H*/   ← عقود المهام وتقارير�
 project-control/prototypes/h10-preview/ ← لقطات المعاينة
 project-control/TERA_AUDIT_TRAIL.md    ← سجل الأحداث
 ```
+
+## 8. H13 — ثيم التطبيق الموحّد (2026-11-16)
+- الثيم يُضبط أيضاً على مستوى التطبيق: إعدادات المنصة ← Application Theme (تلقائي/GE/Lime/Dark)؛ يسري على كل المستخدمين ويسبق ثيم المستأجر. طبقة التوكنز لم تتغير.
