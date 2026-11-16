@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
-import { DemoBanner } from '../components/DemoBanner.tsx';
 
 interface LoginViewProps {
   onSwitchToSetup: () => void;
@@ -79,7 +78,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSwitchToSetup }) => {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-text relative">
-      <DemoBanner />
       {/* Language Switch top corner */}
       <div className="absolute top-6 end-6">
         <button

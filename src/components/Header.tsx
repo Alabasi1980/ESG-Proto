@@ -2,7 +2,6 @@ import React from 'react';
 import { Menu, Globe, Database, Building2, LogOut, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
-import { DemoBanner } from './DemoBanner.tsx';
 import { ActiveTab } from './Sidebar.tsx';
 import { labelOf, shellIdentity, type NavContext } from '../lib/navModel.ts';
 
@@ -77,7 +76,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <div className="sticky top-0 z-30 print:hidden">
-      <DemoBanner />
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 bg-surface-2/95 backdrop-blur-xs border-b border-border transition-colors">
         <div className="flex items-center gap-4 min-w-0">
           {/* Mobile menu button */}

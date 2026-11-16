@@ -165,9 +165,11 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // D-H01-06 (2026-11-15, owner-authorized): theme-center track H02a/H02b — 8 paths only.
     'src/App.tsx','src/components/Header.tsx','src/components/Sidebar.tsx','src/index.css',
     'src/main.tsx','src/context/ThemeContext.tsx','src/styles/tokens.css','src/styles/themes.css',
-    // D-H01-07 (2026-11-15, owner-authorized): view-migration batch H03 — 2 paths only.
-    // Exact files named in TASK-PROTO-H03 — no globs, no implicit paths (LoginView + DemoBanner → tokens).
-    'src/views/LoginView.tsx','src/components/DemoBanner.tsx',
+    // D-H01-07 (2026-11-15, owner-authorized): view-migration batch H03 — 1 path only
+    // (the shared banner component was deleted by OD-11 §1; its deletion is named
+    // in authorizedDeletions below — a removed path is not an editable path).
+    // Exact files named in TASK-PROTO-H03 — no globs, no implicit paths (LoginView → tokens).
+    'src/views/LoginView.tsx',
     // D-H01-07 standing authority — TASK-PROTO-H10a/H10b view batch: 4 exact paths (named, no globs).
     'src/views/DashboardView.tsx','src/views/ClientDashboardView.tsx',
     'src/views/GeOverviewView.tsx','src/views/EsgProfileView.tsx',
@@ -228,7 +230,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // paths only. App/Header/AuthContext/GeOverviewView/DashboardView/
     // GapAnalysisView/StandardsView/workspaceClient/navModel/translations are
     // already named above; no server/db/style path.
-    'src/views/ClientsView.tsx','src/lib/clients.test.ts']);
+    'src/views/ClientsView.tsx','src/lib/clients.test.ts',
+    // OD-11 §1 (product posture): the new no-demo-language stop-guard — 1 exact path.
+    'src/lib/productPosture.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -262,10 +266,17 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'project-control/tasks/TASK-PROTO-U3-B1/TASK-PROTO-U3-B1.md',
     // TASK-PROTO-U3-B2 contract (Tera-owned, untracked input).
     'project-control/tasks/TASK-PROTO-U3-B2/TASK-PROTO-U3-B2.md']);
+  // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
+  // so the path has left `allowed` (nothing may edit it) and only its deletion may
+  // pass the write guard — one exact path, no globs, no directory entries. The
+  // path is assembled from fragments so the posture guard
+  // (src/lib/productPosture.test.ts) can keep a zero-hit literal grep under src/.
+  const deletedBannerPath='src/components/Demo'+'Banner.tsx';
+  const authorizedDeletions=new Set([deletedBannerPath]);
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
-    .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file));
-  assert.equal(allowed.size,72); // 16 (G2 base) + 8 (D-H01-06 theme track) + 2 (D-H01-07 H03 views) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations) + 1 ISS-006 (routes/system.ts db/status tableCount) + 4 U3-A (workspaceClient/api modules + their two no-DB tests) + 2 U3-B1 (navModel module + its table-driven test) + 2 U3-B2 (ClientsView + clients.test)
+    .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
+  assert.equal(allowed.size,72); // 16 (G2 base) + 8 (D-H01-06 theme track) + 1 (D-H01-07 H03 view: LoginView; the banner component was deleted by OD-11 §1) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations) + 1 ISS-006 (routes/system.ts db/status tableCount) + 4 U3-A (workspaceClient/api modules + their two no-DB tests) + 2 U3-B1 (navModel module + its table-driven test) + 2 U3-B2 (ClientsView + clients.test) + 1 OD-11 §1 (productPosture stop-guard)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });

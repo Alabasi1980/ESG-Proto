@@ -296,7 +296,7 @@ router.get('/storage/usage', authMiddleware, requireDomainAccess, async (req: Au
         formatted: formatBytes(bytes),
         warnThresholdBytes: STORAGE_WARN_BYTES,
         warn: bytes >= STORAGE_WARN_BYTES,
-        capNote: 'Demo database capacity is 1 GB. Attachments warn at 800 MB; production object-storage migration is out of scope (OD-06).',
+        capNote: 'Database capacity is 1 GB. Attachments warn at 800 MB; production object-storage migration is out of scope (OD-06).',
       };
     }, readContext);
 

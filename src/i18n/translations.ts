@@ -677,7 +677,6 @@ export interface Translations {
     boolean: string;
     date: string;
     file: string;
-    demoBanner: string;
     checking: string;
     connected: string;
     disconnected: string;
@@ -1116,7 +1115,6 @@ export const translations: Record<Language, Translations> = {
       boolean: 'Yes / No',
         date: 'Date',
         file: 'Document Attachment',
-        demoBanner: "Demo build — content is the client's own GRI workbook",
         checking: 'Checking',
         connected: 'Connected',
         disconnected: 'Disconnected',
@@ -1962,7 +1960,6 @@ export const translations: Record<Language, Translations> = {
       boolean: 'نعم / لا',
         date: 'تاريخ',
         file: 'مرفق مستند',
-        demoBanner: 'نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل',
         checking: 'جارٍ التحقق',
         connected: 'متصل',
         disconnected: 'غير متصل',

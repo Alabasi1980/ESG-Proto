@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ShieldCheck, User, Mail, Lock, Building, AlertTriangle, ArrowLeft, RefreshCw, Globe } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth, AuthUser } from '../context/AuthContext.tsx';
-import { DemoBanner } from '../components/DemoBanner.tsx';
 import { validateSelfChosenPassword } from '../lib/password.ts';
 
 interface SetupViewProps {
@@ -69,7 +68,6 @@ export const SetupView: React.FC<SetupViewProps> = ({ onBackToLogin }) => {
 
   return (
     <div className="min-h-screen bg-surface flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-text relative">
-      <DemoBanner />
       <div className="absolute top-6 end-6">
         <button
           onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
