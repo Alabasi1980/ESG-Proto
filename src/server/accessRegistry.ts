@@ -174,6 +174,9 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /staff-lists/:id/approve|P@T#provisioning-exception-explicit-T-checked-all-or-nothing-OTP-once-W-denied',
     'POST /staff-lists/:id/reject|P@T#explicit-T;W:R#bound-A-reason-submitted-list-gates-no-provisioning',
     'GET /client/dashboard|W:L+V;C:L+V#E-P-denied',
+    // TASK-PROTO-U4-1a (OD-11): W controls which item columns the CLIENT sees
+    // for the service linked to A. Exact body {clientFieldMask} only.
+    'PATCH /workspace/services/:serviceId/visibility|W#consultant-controls-client-visible-fields-own-tenant-only-exact-body-clientFieldMask',
   ], [
     // U2-F (task §2): ALL TWENTY-FIVE §3.4 admin rows are retrofitted —
     // round 1 flipped the 22 non-provisioning rows (25 -> 3), ROUND 2 (final)
@@ -189,6 +192,8 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /services/link-all', 'GET /assignments', 'POST /assignments', 'DELETE /assignments',
     'POST /assignments/na', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
     'POST /staff-lists/:id/approve', 'POST /staff-lists/:id/reject', 'GET /client/dashboard',
+    // U4-1a: the W-only client-visibility writer.
+    'PATCH /workspace/services/:serviceId/visibility',
   ]),
   ...group('actions', [
     'GET /actions|W:L;C:L#own-company-item-or-service-linked-owner-department-in-company-all-departments',

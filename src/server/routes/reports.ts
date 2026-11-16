@@ -1,8 +1,9 @@
 import express, { type Response } from 'express';
 import { authMiddleware, type AuthenticatedRequest } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
-import { resolveLinkedService, scopeError } from '../scope.ts';
+import { resolveLinkedService, scopeError, serviceFieldMask } from '../scope.ts';
 import { isReportLevel, indexToCSV } from '../../lib/reports.ts';
+import { stripMaskedFields } from '../../lib/clientFieldMask.ts';
 import { domainTransaction, domainTenant, domainFailure, textFilter, validateDomainIds } from './initiativeScope.ts';
 import { registerReportSettings } from './reportSettings.ts';
 import { buildReportPayload } from './reportData.ts';
@@ -17,7 +18,16 @@ async function report(req: AuthenticatedRequest) {
   return domainTransaction(req, async client => {
     const tenant = domainTenant(req, req.query.clientId);
     const service = await resolveLinkedService(client, req.access!, req.query.serviceId);
-    return buildReportPayload(client, req.user!, tenant, service, level);
+    const payload = await buildReportPayload(client, req.user!, tenant, service, level);
+    // U4-1a §6: the report index is an item projection for C — strip the masked
+    // item columns from the served rows (aggregates were computed above, so a
+    // hidden weight never changes a returned score). W/P are unaffected.
+    if (req.access!.mode === 'client' && service) {
+      const mask = await serviceFieldMask(client, req.access!, service);
+      if (mask.size) for (const row of payload.index)
+        stripMaskedFields(row as unknown as Record<string, unknown>, mask);
+    }
+    return payload;
   });
 }
 function failure(res: Response, err: any) {

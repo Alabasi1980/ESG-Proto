@@ -21,6 +21,8 @@ const inventory: Record<string,[number,number]> = {
   // the standard wrapper with an explicit platform-configuration selector and no
   // readContext work fallback.
   'routes/settings.ts':[2,0],
+  // TASK-PROTO-U4-1a: the W-only visibility writer, one work-context boundary.
+  'routes/serviceVisibility.ts':[1,1],
 };
 const mask=(s:string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g,
   text => text.replace(/[^\r\n]/g,' '));
@@ -64,10 +66,10 @@ test('G1 every business call site is classified, explicit P-work exceptions reta
     }
     total+=sites.length;work+=explicitWork.length;
   }
-  assert.equal(total,83);assert.equal(work,37);
+  assert.equal(total,84);assert.equal(work,38);
   const provisioning=readFileSync(path.join(root,'routes/adminProvisioning.ts'),'utf8');
   assert.equal((provisioning.match(/await configurationTransaction\(req, target,/g) ?? []).length,3);
-  assert.equal(total+3,86,'85 baseline sites minus merged GET clients branch, plus the two H13 settings rows');
+  assert.equal(total+3,87,'85 baseline sites minus merged GET clients branch, plus H13 settings and the U4-1a visibility row');
   const clients=readFileSync(path.join(root,'routes/adminClients.ts'),'utf8');
   assert.match(boundaries(clients)[0].text,/live\.access!\.mode === 'platform' \? platformGlobalContext\(live\) : readContext\(live\)/);
   const directory=readFileSync(path.join(root,'routes/adminDirectory.ts'),'utf8');
@@ -127,9 +129,11 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // src/lib/appTheme.test.ts, and ANY future change to this file — including a
   // third hunk — must move this constant deliberately under an approved task.
   const h13AuthSha256='5848271d5e7f8fefb56424d10993fb5d56b38bf583a6ccf590b1ea857c978dde';
-  const h13RoutesSha256='07449bdde26497b457d268702a564b4222be429d3a51f4f713a4dfa929324129';
-  const h13AccessRegistrySha256='8f829377f4c42120f5201b3ff94f687e867034f755dbe4ba7f9be182488d0f86';
-  const h13ContentSha256='dd9d580d428f8c4a476ef66518c469683c2279222e291a6256c6516100501ccc';
+  // U4-1a: routes.ts + accessRegistry.ts gained the one W visibility declaration;
+  // b17-content.sql gained the one narrow W policy (approved Option A).
+  const h13RoutesSha256='b72f5b5f8bb3f92d72a057b06ab3b98c0d94702e283cae7556e330fe719935cb';
+  const h13AccessRegistrySha256='d19d4630223634829493f5636784cc80f9792f0c541b0bf3e3ae03632735c0a2';
+  const h13ContentSha256='2e07a7c14934aaebde24a145be6a4912530db9e160d74544d36b2d66912f3f45';
   const postH12Pins: Record<string,string> = {
     'src/server/auth.ts': h13AuthSha256,
     'src/server/routes.ts': h13RoutesSha256,
@@ -149,14 +153,24 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // the same normalization as the pins above, so a CRLF checkout cannot move it).
   // Lossless replacement for the old "code lines must equal the G2 base" diff:
   // any further change — code OR constant — must update this pin deliberately.
-  const h13ReadinessSha256='01b3ab8c70545201cc492a3e6577a3946492812a721f07fe38f995750ff407e9';
+  // U4-1a (TASK-PROTO-U4-1a): the three constants moved after the three additive
+  // columns were re-measured on an own fresh PG18 scratch; no other readiness
+  // logic changed. Re-pinned deliberately over LF-normalized bytes.
+  const h13ReadinessSha256='f712295e7b1755c5c8108fa22d184d3ae5cbc698ab41ea73fcba17eb07cc23d0';
   assert.equal(createHash('sha256')
     .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
     .digest('hex'),h13ReadinessSha256,
   'b17Readiness.ts drifted from its deliberate, task-approved POST-H13-r2 bytes (constants + SHIELD-H13-02)');
   assert.ok(readFileSync('src/server/routes/adminClients.ts','utf8').split('\n').length<=500);
   const newFiles=['scripts/b17-domain-g2-run.ts','scripts/b17-domain-g2-od10.ts',
-    'scripts/b17-domain-g2-census.ts','scripts/b17-domain-g2-mask.ts'];
+    'scripts/b17-domain-g2-census.ts','scripts/b17-domain-g2-mask.ts',
+    // U4-1a: the ONE mask contract + the settings container contract and their
+    // no-DB tests, plus the own-scratch measurement/proof script.
+    'src/lib/clientFieldMask.ts','src/lib/clientFieldMask.test.ts',
+    'src/lib/serviceSettings.ts','src/lib/serviceSettings.test.ts',
+    'scripts/u41-mask-scratch.ts',
+    // U4-1a round 2: the one W-only visibility writer route file.
+    'src/server/routes/serviceVisibility.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     'src/server/routes/actions.ts','src/server/routes/audit.ts','src/server/routes/gri.ts',
     'src/server/routes/notifications.ts','src/server/routes/storage.ts','src/server/routes/evaluations.ts',
@@ -232,7 +246,15 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // already named above; no server/db/style path.
     'src/views/ClientsView.tsx','src/lib/clients.test.ts',
     // OD-11 §1 (product posture): the new no-demo-language stop-guard — 1 exact path.
-    'src/lib/productPosture.test.ts']);
+    'src/lib/productPosture.test.ts',
+    // TASK-PROTO-U4-1a: the C mask lookup lives with the work-scope helpers
+    // (scope.ts); the two pure contracts + their no-DB tests and the
+    // own-scratch proof script are the five new paths. taxonomy.ts,
+    // evaluations.ts, reports.ts, adminClients.ts, schema.sql, b17Readiness.ts
+    // are already named above; no UI/style/view path.
+    'src/server/scope.ts','src/lib/clientFieldMask.ts','src/lib/clientFieldMask.test.ts',
+    'src/lib/serviceSettings.ts','src/lib/serviceSettings.test.ts','scripts/u41-mask-scratch.ts',
+    'src/server/routes/serviceVisibility.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -255,7 +277,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U3-B2 round-3 reviewer evidence (QA FAIL + Shield Medium) —
     // reviewer-owned, exact paths only.
     'project-control/qa-reports/TASK-PROTO-U3B2-QA.md',
-    'security-reports/TASK-PROTO-U3B2-fix-review.md']);
+    'security-reports/TASK-PROTO-U3B2-fix-review.md',
+    // TASK-PROTO-U4-1a reviewer evidence (round 2) — reviewer-owned, exact paths.
+    'project-control/qa-reports/TASK-PROTO-U4-1a-QA.md',
+    'security-reports/TASK-PROTO-U4-1a-fix-review.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -265,7 +290,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U3-B1 root contract (Tera-owned, untracked input).
     'project-control/tasks/TASK-PROTO-U3-B1/TASK-PROTO-U3-B1.md',
     // TASK-PROTO-U3-B2 contract (Tera-owned, untracked input).
-    'project-control/tasks/TASK-PROTO-U3-B2/TASK-PROTO-U3-B2.md']);
+    'project-control/tasks/TASK-PROTO-U3-B2/TASK-PROTO-U3-B2.md',
+    // TASK-PROTO-U4-1a contract (Tera-owned, untracked input).
+    'project-control/tasks/TASK-PROTO-U4-1a/TASK-PROTO-U4-1a.md']);
   // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
   // so the path has left `allowed` (nothing may edit it) and only its deletion may
   // pass the write guard — one exact path, no globs, no directory entries. The
@@ -276,7 +303,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,72); // 16 (G2 base) + 8 (D-H01-06 theme track) + 1 (D-H01-07 H03 view: LoginView; the banner component was deleted by OD-11 §1) + 1 (persistent shared-DB showcase) + 4 (H10a/H10b views) + 3 (H10-3 views: Settings/StaffLists/ServicesManage) + 3 (H11 views: GapAnalysis/Standards/Initiatives) + 4 (P1/P2 views: EvaluationPanel/ClientReviewView/GeFinalView/TaxonomyManage) + 4 P3 (views: Actions/Notifications/Reports/AuditLog) + 3 P4/P5 (views: ClientDetailView/SetupView/ImportGRIView) + 6 H12 (theme: schema/auth/session/adminClients/AuthContext type/theme tests) + 9 H13 (settings router, appTheme test, capabilities/domainAccess census pins, own-scratch proof script, b17-content policy substrate, translations copy, routes mount, accessRegistry declarations) + 1 ISS-006 (routes/system.ts db/status tableCount) + 4 U3-A (workspaceClient/api modules + their two no-DB tests) + 2 U3-B1 (navModel module + its table-driven test) + 2 U3-B2 (ClientsView + clients.test) + 1 OD-11 §1 (productPosture stop-guard)
+  assert.equal(allowed.size,79); // 72 through OD-11 §1 + 6 U4-1a (scope.ts mask lookup, clientFieldMask/serviceSettings modules + their no-DB tests, own-scratch proof script) + 1 U4-1a-R2 (serviceVisibility route)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });

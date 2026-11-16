@@ -38,6 +38,7 @@ import {
   type DbClient,
 } from './_shared.ts';
 import { requireDomainAccess } from '../access.ts';
+import { EMPTY_CLIENT_FIELD_MASK, stripMaskedFields } from '../../lib/clientFieldMask.ts';
 import { domainTransaction, DeferredRefusal, deferredFailure } from './initiativeScope.ts';
 import {
   LINKED_ITEM_SQL,
@@ -46,6 +47,7 @@ import {
   assertOwnDepartmentRows,
   assertVisibleItem,
   linkedItemsOnly,
+  maskedItemFields,
   optionalScopeId,
   ownDepartment,
   ownTenant,
@@ -330,7 +332,7 @@ router.get('/queue', authMiddleware, requireDomainAccess, async (req: Authentica
       const scoped = ownDept ? SCOPED_ITEM_SQL : LINKED_ITEM_SQL;
       const result = await client.query(
         `SELECT i.id AS item_id, i.code, i.requirement, i.priority, i.weight,
-                i.esg_class, i.topic, i.objective,
+                i.esg_class, i.topic, i.objective, i.attachment_required,
                 d.code AS disclosure_code, d.title AS disclosure_title,
                 s.code AS standard_code, s.category AS pillar,
                 dep.id AS department_id, dep.code AS department_code, dep.name AS department_name,
@@ -352,6 +354,12 @@ router.get('/queue', authMiddleware, requireDomainAccess, async (req: Authentica
         ,
         params
       );
+      // U4-1a §6: C redaction on the queue item projection (one helper).
+      if (access.mode === 'client' && result.rows.length) {
+        const mask = await maskedItemFields(client, access, result.rows.map((row: any) => String(row.item_id)));
+        for (const row of result.rows)
+          stripMaskedFields(row, mask.get(String(row.item_id)) ?? EMPTY_CLIENT_FIELD_MASK);
+      }
       const rows = result.rows.map((row) => ({ ...row, status: queueStatusFor(row) }));
       assertOwnDepartmentRows(access, rows);
       return rows;
@@ -1075,13 +1083,18 @@ router.get('/evaluations', authMiddleware, requireDomainAccess, async (req: Auth
       await assertVisibleItem(client, access, id);
       const itemRes = await client.query(
         `SELECT i.id, i.code, i.requirement, i.priority, i.weight, i.esg_class, i.topic,
-                d.code AS disclosure_code, s.code AS standard_code
+                i.attachment_required, d.code AS disclosure_code, s.code AS standard_code
          FROM items i
          JOIN disclosures d ON d.id = i.disclosure_id
          JOIN standards s ON s.id = d.standard_id
          WHERE i.id = $1`,
         [id]
       );
+      // U4-1a §6: C redaction on the per-item history header.
+      if (access.mode === 'client' && itemRes.rows[0]) {
+        const mask = await maskedItemFields(client, access, [id]);
+        stripMaskedFields(itemRes.rows[0], mask.get(id) ?? EMPTY_CLIENT_FIELD_MASK);
+      }
       if (!itemRes.rows[0]) {
         throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       }
@@ -1516,7 +1529,7 @@ async function loadGeScopeRows(
     disclosureFilter = 'AND i.disclosure_id = $2';
   }
   const rowsRes = await client.query(
-    `SELECT i.id AS item_id, i.code AS item_code, i.weight::float AS weight,
+    `SELECT i.id AS item_id, i.code AS item_code, i.weight::float AS weight, i.attachment_required,
             i.disclosure_id, d.code AS disclosure_code, d.title AS disclosure_title,
             ans.id AS answer_id, ans.status AS answer_status,
             e.id AS evaluation_id, e.score, e.not_evaluated, e.not_applicable, e.na_reason,
@@ -1540,6 +1553,7 @@ async function loadGeScopeRows(
         itemId: r.item_id,
         code: r.item_code,
         weight: r.weight,
+        attachment_required: r.attachment_required === true,
         disclosureId: r.disclosure_id,
         disclosureCode: r.disclosure_code,
         disclosureTitle: r.disclosure_title,
@@ -1569,6 +1583,7 @@ async function loadGeScopeRows(
       itemId: entry.itemId,
       code: entry.code,
       weight: entry.weight,
+      attachment_required: entry.attachment_required,
       disclosureCode: entry.disclosureCode,
       answerStatus: allClientApproved ? 'client_approved' : statuses.includes('client_approved') ? 'mixed' : statuses.find((s) => s) ?? null,
       notApplicable,

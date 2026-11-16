@@ -23,6 +23,7 @@ import { TENANT_THEMES, type AuthenticatedRequest } from '../auth.ts';
 import { stripSecrets } from '../../lib/b11b.ts';
 import { readContext, platformConfigContext, writeFailure, type DbClient } from './_shared.ts';
 import { ownTenant, scopeId } from '../scope.ts';
+import { parseClientFieldMask } from '../../lib/clientFieldMask.ts';
 import {
   adminTenantContext, platformGlobalContext, platformTarget,
   searchableFilter,
@@ -413,8 +414,17 @@ export async function updateClientServiceFlags(req: AuthenticatedRequest, res: R
     if (body.showCorrective !== undefined && typeof body.showCorrective !== 'boolean') {
       res.status(400).json({ error: 'showCorrective must be a boolean.' }); return;
     }
-    if (body.showGap === undefined && body.showCorrective === undefined) {
-      res.status(400).json({ error: 'Provide showGap and/or showCorrective.' }); return;
+    // U4-1a §4: client field mask — whitelist array, unknown/duplicates refused.
+    const parsedMask = body.clientFieldMask === undefined ? null : parseClientFieldMask(body.clientFieldMask);
+    if (parsedMask !== null && !parsedMask.ok) {
+      res.status(400).json({
+        error: 'clientFieldMask must be an array of allowed field names.',
+        code: 'service.mask_invalid',
+      });
+      return;
+    }
+    if (body.showGap === undefined && body.showCorrective === undefined && parsedMask === null) {
+      res.status(400).json({ error: 'Provide showGap, showCorrective and/or clientFieldMask.' }); return;
     }
     const updated = await domainTransaction(req, async (client) => {
       const sets: string[] = [];
@@ -427,11 +437,15 @@ export async function updateClientServiceFlags(req: AuthenticatedRequest, res: R
         params.push(body.showCorrective);
         sets.push(`show_corrective = $${params.length}`);
       }
+      if (parsedMask !== null && parsedMask.ok) {
+        params.push(JSON.stringify(parsedMask.mask));
+        sets.push(`client_field_mask = $${params.length}::jsonb`);
+      }
       params.push(target, serviceId);
       const upd = await client.query(
         `UPDATE client_services SET ${sets.join(', ')} WHERE client_id = $${params.length - 1}
          AND service_id = $${params.length}
-         RETURNING client_id, service_id, show_gap, show_corrective`,
+         RETURNING client_id, service_id, show_gap, show_corrective, client_field_mask`,
         params
       );
       const row = upd.rows[0];
@@ -441,9 +455,11 @@ export async function updateClientServiceFlags(req: AuthenticatedRequest, res: R
         userId: req.access!.actorId,
         action: 'UPDATE_CLIENT_SERVICE_FLAGS',
         entityType: 'client_services',
-        payload: { clientId: target, serviceId, ...body },
+        payload: { clientId: target, serviceId, ...body,
+          ...(parsedMask !== null && parsedMask.ok ? { clientFieldMask: parsedMask.mask } : {}) },
       });
-      return { ...row, showGap: row.show_gap !== false, showCorrective: row.show_corrective !== false };
+      return { ...row, showGap: row.show_gap !== false, showCorrective: row.show_corrective !== false,
+        clientFieldMask: row.client_field_mask ?? null };
     }, live => platformConfigContext(live, target));
     res.json(updated);
   } catch (err: any) {

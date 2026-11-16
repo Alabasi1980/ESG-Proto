@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { UUID, validBinding, type AccessContext } from '../lib/capabilities.ts';
+import { EMPTY_CLIENT_FIELD_MASK, storedClientFieldMask } from '../lib/clientFieldMask.ts';
 import { setTenantContext } from '../db/index.ts';
 import { verifyB17Content } from '../db/b17Readiness.ts';
 
@@ -263,6 +264,58 @@ export async function linkedItemsOnly<T extends { itemId: string }>(
     `SELECT i.id FROM items i WHERE i.id = ANY($3::uuid[]) AND ${LINKED_ITEM_SQL}`,
     [access.tenantId, null, ids])).rows.map(row => String(row.id)));
   return items.filter(item => visible.has(item.itemId));
+}
+
+// ---------------------------------------------------------------------------
+// TASK-PROTO-U4-1a (OD-11 §4) — client field-mask lookup for the C-context item
+// projections. The mask is a client-service property, so it is resolved from the
+// caller's OWN server-derived tenant only; there is no request-supplied tenant
+// input here. UNION semantics across the item's linked services: when ANY linked
+// service hides a field it is hidden (fail-closed), never shown because a second
+// service left it visible.
+// ---------------------------------------------------------------------------
+
+/** Masked item fields for the C caller, keyed by item id. E/W/P get an empty
+ * map by construction (their projections are not masked). */
+export async function maskedItemFields(client: pg.PoolClient, access: AccessContext,
+  itemIds: readonly string[]): Promise<Map<string, Set<string>>> {
+  assertWorkScope(access);
+  const result = new Map<string, Set<string>>();
+  if (access.mode !== 'client' || itemIds.length === 0) return result;
+  // Read the RAW stored value per linked service and validate it in ONE place
+  // (storedClientFieldMask, fail-closed). Expanding JSONB in SQL would turn a
+  // malformed/stale value into "no rows" and silently show everything.
+  const rows = (await client.query(
+    `SELECT i.id::text AS item_id, cs.client_field_mask AS mask
+       FROM items i
+       JOIN disclosures d ON d.id = i.disclosure_id
+       JOIN service_standards ss ON ss.standard_id = d.standard_id
+       JOIN client_services cs ON cs.service_id = ss.service_id AND cs.client_id = $1
+      WHERE i.id = ANY($2::uuid[])`,
+    [access.tenantId, itemIds])).rows;
+  for (const row of rows) {
+    const mask = storedClientFieldMask(row.mask);
+    if (mask.size === 0) continue;
+    const id = String(row.item_id);
+    const set = result.get(id) ?? new Set<string>();
+    for (const field of mask) set.add(field);
+    result.set(id, set);
+  }
+  return result;
+}
+
+/** The stored mask of ONE client×service. Report projections are bound to a
+ * single service, so they read that link's mask directly. C only (empty set for
+ * any other mode); a missing/unreadable row means "nothing hidden" — the report
+ * route has already refused an unlinked service before this helper runs. */
+export async function serviceFieldMask(client: pg.PoolClient, access: AccessContext,
+  serviceId: string): Promise<ReadonlySet<string>> {
+  assertWorkScope(access);
+  if (access.mode !== 'client') return EMPTY_CLIENT_FIELD_MASK;
+  const row = (await client.query(
+    'SELECT client_field_mask FROM client_services WHERE client_id = $1 AND service_id = $2',
+    [access.tenantId, serviceId])).rows[0];
+  return storedClientFieldMask(row?.client_field_mask);
 }
 
 /** §3.3 snapshot reads: the FULL payload is served only when the ENTIRE item

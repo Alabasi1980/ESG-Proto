@@ -9,8 +9,13 @@ export const B17_VERSION = 'B17_U1';
 // PG18 scratch after `clients.theme` was appended to schema.sql. STRUCTURE_SQL
 // fingerprints EVERY public column, so the schema-only, post-U1 and post-content
 // constants move together — never edit one without re-measuring all three.
-export const PREDECESSOR_SHAPE = '62e7586e86f7b2fe7035e7992279a613';
-export const B17_SHAPE = 'bbcb018ee1d1655b36c3a0745e3536ae';
+// U4-1a (TASK-PROTO-U4-1a, OD-11 §4): recomputed on an own fresh PG18 scratch
+// after schema.sql appended items.attachment_required, services.settings and
+// client_services.client_field_mask. Falsifiability proved in the same run:
+// dropping the three columns restores the previous constants EXACTLY
+// (62e7586e… / bbcb018e… / 5def29de…), re-adding the same DDL restores these.
+export const PREDECESSOR_SHAPE = 'd093f4720020a9f496a230e02dc6e573';
+export const B17_SHAPE = '99455c0b7408fe8f5b204e44fc242649';
 export const B17_CONTENT_VERSION = 'B17_U2D';
 // G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
 // the CANONICAL content label. Tera ruling: renaming it would strand every
@@ -54,7 +59,14 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // schema.sql appended `clients.theme TEXT NOT NULL DEFAULT 'ge'`. STRUCTURE_SQL
 // enumerates EVERY public column, so this pin MUST equal the value measured after
 // the column exists — it is not cosmetic and may change only with a re-measure.
-export const B17_CONTENT_SHAPE = '5def29de961f3ee64a783e65f9c1501b';
+// U4-1a (round 2, Option A approved): b17-content.sql gained ONE narrow W UPDATE
+// policy (b17_consultant_service_visibility), so BOTH its checksum (sha256,
+// ledger `checksum`) and its catalog shape move. Measured on the same own PG18
+// scratch: content sha256 2e07a7c1…, structure 6f67b44d…. Falsifiability: with the
+// policy applied but the three columns dropped the shape is 811b4674… (the
+// policy-only oracle), and dropping the three columns from the final state
+// restores it exactly; re-adding restores this value.
+export const B17_CONTENT_SHAPE = '6f67b44de1e2620fdb711ef9175fb6f5';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

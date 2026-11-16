@@ -1324,3 +1324,35 @@ DO $$ BEGIN
     ALTER TABLE clients ADD COLUMN theme TEXT NOT NULL DEFAULT 'ge';
   END IF;
 END $$;
+
+--------------------------------------------------------------------------------
+-- TASK-PROTO-U4-1a (OD-11 §4) — service-model extension: THREE additive columns.
+-- No CHECK constraint on purpose: the allowed value set / size cap is enforced at
+-- the single trusted write boundary (PATCH /services/:id, PATCH /clients/:id/
+-- services/:serviceId and PATCH /workspace/services/:serviceId/visibility), so a
+-- legacy/unknown stored value is read defensively instead of failing a row —
+-- the same rule clients.theme follows.
+--   1. items.attachment_required — mandatory attachment for non-'file' answers
+--      (consumed by the U4-1b rules; model only in this unit).
+--   2. services.settings — per-service rules/settings container (handler ≤ 8 KB).
+--   3. client_services.client_field_mask — array of item fields hidden from the
+--      CLIENT (C) reading that client-service; NULL = nothing hidden.
+--------------------------------------------------------------------------------
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'attachment_required') THEN
+    ALTER TABLE items ADD COLUMN attachment_required BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'services' AND column_name = 'settings') THEN
+    ALTER TABLE services ADD COLUMN settings JSONB NOT NULL DEFAULT '{}'::jsonb;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'client_services' AND column_name = 'client_field_mask') THEN
+    ALTER TABLE client_services ADD COLUMN client_field_mask JSONB NULL;
+  END IF;
+END $$;

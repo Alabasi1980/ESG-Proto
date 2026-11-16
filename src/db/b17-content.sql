@@ -976,6 +976,17 @@ CREATE POLICY b17_admin_links_delete ON client_services FOR DELETE USING
   (b17_platform_config() AND b17_setting('current_mode')='platform'
     AND b17_setting('target_id') IS NOT NULL AND client_id::text=b17_setting('target_id'));
 
+-- TASK-PROTO-U4-1A (OD-11: consultant controls client-visible fields)
+-- W-only writer for client_services.client_field_mask. PostgreSQL RLS is not
+-- column-scoped, so this policy admits the consultant's own tenant row and the
+-- HANDLER remains the column guard (PATCH /workspace/services/:serviceId/
+-- visibility accepts ONLY clientFieldMask and writes ONLY that column). P@T
+-- keeps its own policy above; C/E have no row.
+CREATE POLICY b17_consultant_service_visibility ON client_services FOR UPDATE
+  USING (b17_setting('current_purpose')='work' AND b17_setting('current_mode')='consultant'
+    AND client_id::text = b17_setting('current_tenant_id'))
+  WITH CHECK (client_id::text = b17_setting('current_tenant_id'));
+
 -- assignments: INSERT is the C1 target-bound policy; DELETE (§3.4 row 18) is
 -- target-bound only, and the answer/evaluation blockers are read through the
 -- count-only definer (tenant.item.* kinds), never as rows.

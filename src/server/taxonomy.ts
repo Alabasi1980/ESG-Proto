@@ -4,7 +4,9 @@ import { domainTransaction, deferredFailure, DeferredRefusal } from './routes/in
 import { authMiddleware, type AuthenticatedRequest } from './auth.ts';
 import { requireDomainAccess } from './access.ts';
 import { readContext, requireFreshPassword } from './routes/_shared.ts';
-import { scopeId, scopeError } from './scope.ts';
+import { maskedItemFields, scopeId, scopeError } from './scope.ts';
+import { EMPTY_CLIENT_FIELD_MASK, stripMaskedFields } from '../lib/clientFieldMask.ts';
+import { parseServiceSettings } from '../lib/serviceSettings.ts';
 import {
   canonicalLinkPair,
   isEsgClass,
@@ -81,6 +83,37 @@ function readFilter(value: unknown): string | null {
   const trimmed = value.trim();
   if (trimmed === '') throw scopeError(400, 'scope.id_invalid');
   return scopeId(trimmed, true);
+}
+
+/** Item column → its camelCase key in the `/items/:id/links` `otherItem`
+ * projection. Masking deletes the KEY (a masked field must be ABSENT, never
+ * present-as-null); `attachment_required` is not maskable and has no entry. */
+const LINK_FIELD_KEYS: Readonly<Record<string, string>> = {
+  hint: 'hint', priority: 'priority', weight: 'weight', esg_class: 'esgClass',
+  reference: 'reference', topic: 'topic', objective: 'objective', sort_order: 'sortOrder',
+};
+
+/** Build ONE `otherItem` row (pure; U4-1a). Masked fields are deleted AFTER the
+ * object is built, so no null/NaN coercion can re-introduce them. */
+export function linkOtherItem(row: any, mask?: ReadonlySet<string>): Record<string, unknown> {
+  const otherItem: Record<string, unknown> = {
+    id: row.other_id,
+    code: row.other_code,
+    requirement: row.other_requirement,
+    answerType: row.other_answer_type,
+    priority: row.other_priority,
+    weight: row.other_weight === null ? null : Number(row.other_weight),
+    esgClass: row.other_esg_class,
+    objective: row.other_objective,
+    topic: row.other_topic,
+    hint: row.other_hint,
+    attachment_required: row.other_attachment_required === true,
+    disclosureCode: row.disclosure_code,
+    disclosureTitle: row.disclosure_title,
+    standardCode: row.standard_code,
+  };
+  if (mask && mask.size) for (const field of mask) delete otherItem[LINK_FIELD_KEYS[field] ?? field];
+  return otherItem;
 }
 
 // ----------------------------------------------------------------------
@@ -168,7 +201,7 @@ router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, a
       const result = await client.query(
         `SELECT i.id, i.disclosure_id, i.code, i.requirement, i.answer_type, i.hint,
                 i.priority, i.esg_class, i.weight, i.objective, i.topic, i.reference,
-                i.department_id, i.sort_order,
+                i.department_id, i.sort_order, i.attachment_required,
                 d.code AS disclosure_code, s.code AS standard_code
          FROM items i
          JOIN disclosures d ON d.id = i.disclosure_id
@@ -177,6 +210,13 @@ router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, a
          ORDER BY i.sort_order ASC NULLS LAST, i.code ASC`,
         params
       );
+      // U4-1a §6: C redaction through the ONE helper. `attachment_required` is
+      // not in the whitelist, so it is never stripped.
+      if (req.access!.mode === 'client' && result.rows.length) {
+        const mask = await maskedItemFields(client, req.access!, result.rows.map((row: any) => String(row.id)));
+        for (const row of result.rows)
+          stripMaskedFields(row, mask.get(String(row.id)) ?? EMPTY_CLIENT_FIELD_MASK);
+      }
       return result.rows;
     }, readContext);
     res.json(rows);
@@ -267,15 +307,29 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
       params.push(desc);
       sets.push(`description = $${params.length}`);
     }
+    if (body.settings !== undefined) {
+      // U4-1a §3: per-service settings — plain JSON object, ≤ 8 KB serialized.
+      // Shape/size are validated HERE (the column carries no CHECK), so a bad
+      // value is a clean 400 instead of a database error.
+      const parsed = parseServiceSettings(body.settings);
+      if (!parsed.ok) {
+        return res.status(400).json({
+          error: 'settings must be a JSON object of at most 8 KB.',
+          code: 'service.settings_invalid',
+        });
+      }
+      params.push(parsed.serialized);
+      sets.push(`settings = $${params.length}::jsonb`);
+    }
     if (sets.length === 0) {
-      return res.status(400).json({ error: 'Provide name and/or description to update.' });
+      return res.status(400).json({ error: 'Provide name, description and/or settings to update.' });
     }
     const updated = await domainTransaction(req, async (client) => {
       const user = req.user!;
       params.push(req.params.id);
       const upd = await client.query(
         `UPDATE services SET ${sets.join(', ')} WHERE id = $${params.length}
-         RETURNING id, code, name, description, created_at`,
+         RETURNING id, code, name, description, settings, created_at`,
         params
       );
       const row = upd.rows[0];
@@ -1042,7 +1096,7 @@ router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxo
                 o.answer_type AS other_answer_type, o.priority AS other_priority,
                 o.weight AS other_weight, o.esg_class AS other_esg_class,
                 o.objective AS other_objective, o.topic AS other_topic,
-                o.hint AS other_hint,
+                o.hint AS other_hint, o.attachment_required AS other_attachment_required,
                 d.code AS disclosure_code, d.title AS disclosure_title,
                 s.code AS standard_code
          FROM item_links l
@@ -1053,6 +1107,11 @@ router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxo
          ORDER BY o.code ASC`,
         [req.params.id]
       );
+      // U4-1a §6: C mask for the linked items, applied by linkOtherItem when the
+      // response object is built (key deletion after construction).
+      const maskByItem = req.access!.mode === 'client' && links.rows.length
+        ? await maskedItemFields(client, req.access!, links.rows.map((row: any) => String(row.other_id)))
+        : null;
       // Tenant evaluation per linked item (score-level only — no answer text).
       const otherIds = links.rows.map((r) => r.other_id);
       const evalByItem = new Map<string, any>();
@@ -1082,21 +1141,7 @@ router.get('/items/:id/links', authMiddleware, requireDomainAccess, validateTaxo
           id: r.link_id,
           relation: r.relation,
           createdAt: r.created_at,
-          otherItem: {
-            id: r.other_id,
-            code: r.other_code,
-            requirement: r.other_requirement,
-            answerType: r.other_answer_type,
-            priority: r.other_priority,
-            weight: r.other_weight === null ? null : Number(r.other_weight),
-            esgClass: r.other_esg_class,
-            objective: r.other_objective,
-            topic: r.other_topic,
-            hint: r.other_hint,
-            disclosureCode: r.disclosure_code,
-            disclosureTitle: r.disclosure_title,
-            standardCode: r.standard_code,
-          },
+          otherItem: linkOtherItem(r, maskByItem?.get(String(r.other_id))),
           evaluation: ev
             ? {
                 score: ev.score,
