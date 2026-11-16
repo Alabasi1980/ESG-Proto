@@ -1,0 +1,29 @@
+# TASK-PROTO-U3-B1 — context shell: nav model, sidebar/header identity, landings, guards
+
+Status: AUTHORISED — owner «اعتمد وابدأ» 2026-11-16. Base: HEAD at dispatch (expect `c1e8f77`).
+Governing: `B17_UI_BINDINGS.md` §2 (contexts/landings/identity), §3 (**exact nav matrix — authoritative**), §7 (states), §8 (RTL/a11y), `STYLE_CONTRACT.md` (binding), B17 spec §3.
+Split: **B1 = shell only** (no Clients page, no Enter/Exit flow — B2 owns §5 + §7 transitions).
+
+## 1. Behaviour
+1. **Single nav model** (`src/lib/navModel.ts`): contexts `platform | consultant | client | employee`; per §3 exact page IDs, AR/EN labels, order, and per-context presence. Aliases: W `client-dashboard`→`dashboard`; C `dashboard`→`client-dashboard`; E uses `gap-analysis` with label **إفاحات قسمي / My department disclosures**. Conditionals (§3 `*`): `esg-profile`/`reports` only when the workspace/tenant capability set reports them (server truth from the workspace envelope `capabilities`; C/E derive from their session) — never guessed true.
+2. **Context derivation**: `ge_admin` + workspace mode `platform` → P; mode `consultant` + client → W(A); `client_admin` → C; `employee` → E. Mode read from `workspaceClient.currentTab()`; refresh on login and when the tab mirror changes. No URL/localStorage context.
+3. **Landings** (§2): fresh P login → `ge-overview`; W after acknowledged enter → `dashboard`; C → `client-dashboard`; E → `gap-analysis`. Invalid/absent tab for GE → P at `clients` placeholder landing = `ge-overview` until B2 (state this once, no invented page).
+4. **Sidebar** renders ONLY from the nav model: exact order/labels above, existing Lucide icons (reuse nearest existing), active highlight, unread badge only for P/W/C (E: no polling — stop the interval for E). Identity block truthful: P → **إدارة المنصة / Platform administration** (no tenant, no "Unrestricted"); W → **مساحة الاستشاري / Consultant workspace** + full client name; C → **الشركة / Company** + name; E → **القسم / Department** + department/company. Remove the hardcoded "Enterprise Level (Unrestricted)" text.
+5. **Header**: context pill reflecting the same identity (sticky, exists today) — Exit control is **B2**; do not add it now, do not fake it.
+6. **Guards (deny-by-default, before mount/fetch)**: App resolves the requested tab through the nav model; a tab absent from the current context is **not mounted, not fetched, not polled** — redirect to the context landing (no flash of the old view). Unknown/malformed role or missing binding → no pages (existing auth gates preserved). Rendering must not import/instantiate forbidden views at all.
+7. **RTL/a11y**: labels via i18n both languages; logical props only; current page announced (existing patterns); no new palette/colors (style contract).
+
+## 2. Allowed targets
+`src/lib/navModel.ts` (new) + `src/lib/navModel.test.ts` (new) · `src/components/Sidebar.tsx` · `src/components/Header.tsx` (identity pill only) · `src/App.tsx` (context derivation, landing, guard, mount switch) · `src/context/AuthContext.tsx` (expose workspace mode into context state if needed — minimal) · `src/i18n/translations.ts` (new keys only) · `src/lib/b17TransactionInventory.test.ts` (exact-path additions for this task's artefacts only, enumerated).
+**Forbidden:** server/db/styles/tokens/print, Clients page, Enter/Exit controls, deps, `.env`, control docs (Tera writes), any view content change beyond unmount rules.
+
+## 3. Acceptance evidence
+- Table-driven unit tests: nav model matrix (4 contexts × all page IDs: present/absent/label/order/alias), guard resolution (forbidden tab → landing, zero render), landing per context.
+- `git status` = ratified set; lint/tests/build green (report counts); zero literal colours; `?theme=`/localStorage context absent.
+- Tera runs the LIVE proof: P login lands `ge-overview`; C lands `client-dashboard`; E sees exactly ONE menu item (no dashboard/reports/etc., no notification polling); switching roles shows the right menus; forbidden deep tab redirects.
+- Reviews: QA (execution) + Shield light (auth/context plumbing). Rounds: 2.
+
+## 4. فهم القرار
+فهمي: كل دور يرى قائمته المعتمدة فقط، والهبوط يتبع السياق، والمسار الممنوع لا يُركّب أصلاً.
+الافتراضات: قدرات الخادم هي مصدر الشرطية؛ لا صفحة عملاء بعد (B2)؛ الهوية في الشريط تصبح صادقة.
+ما سيكشفه القبول: أن الاختلاف الحقيقي بين المنصة/المستشار/العميل/الموظف أصبح مرئياً ومحكوماً من نموذج واحد.
