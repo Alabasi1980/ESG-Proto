@@ -4,13 +4,6 @@ import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiFetch } from '../lib/api.ts';
 
-interface TenantOption {
-  id: string;
-  code: string;
-  name: string;
-  suspended?: boolean;
-}
-
 interface LinkedService {
   id: string;
   code: string;
@@ -45,12 +38,42 @@ const NA_REASONS = [
   'information-unavailable-incomplete',
 ];
 
-export const ClientDetailView: React.FC = () => {
+/**
+ * TASK-PROTO-U3-B2 R1 (round 2) — §3/§6: exactly ONE tenant per client-detail
+ * view, resolved from the verified context; there is no client selector and no
+ * client-list lookup in this file.
+ *
+ *  - P: the explicit target supplied by the app (Configure from a Clients row).
+ *    No explicit target ⇒ null (the page must not render; App routes P → Clients).
+ *  - W: the verified workspace envelope's client (never a GE `user.clientName`).
+ *  - C: the session's own company.
+ *  - E / unknown: no client-detail page ⇒ null.
+ */
+export interface ClientTargetInput {
+  role: 'ge_admin' | 'client_admin' | 'employee' | null | undefined;
+  explicitClientId: string | null | undefined;
+  workspaceMode: 'platform' | 'consultant' | null | undefined;
+  workspaceClientId: string | null | undefined;
+  sessionClientId: string | null | undefined;
+}
+
+export function resolveTargetClientId(input: ClientTargetInput): string | null {
+  if (input.role === 'client_admin') return input.sessionClientId || null;
+  if (input.role !== 'ge_admin') return null;
+  if (input.workspaceMode === 'consultant') return input.workspaceClientId || null;
+  // P: explicit T only — never a first-client default.
+  return input.explicitClientId || null;
+}
+
+interface ClientDetailViewProps {
+  /** Explicit T (P Configure). W/C ignore it and use their verified context. */
+  clientId?: string | null;
+}
+
+export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = null }) => {
   const { t } = useLanguage();
-  const { user, token } = useAuth();
-  const [tenants, setTenants] = useState<TenantOption[]>([]);
+  const { user, token, workspace } = useAuth();
   const [services, setServices] = useState<{ id: string; code: string; name: string }[]>([]);
-  const [selected, setSelected] = useState<string>(user?.clientId ?? '');
   const [detail, setDetail] = useState<DetailData | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [items, setItems] = useState<{ id: string; code: string; requirement: string }[]>([]);
@@ -72,15 +95,11 @@ export const ClientDetailView: React.FC = () => {
   }, [token]);
   const jsonHeaders = useCallback(() => ({ ...headers(), 'Content-Type': 'application/json' }), [headers]);
 
-  const fetchTenants = useCallback(async () => {
+  // §3/§6: the tenant is never enumerated here. Only the P configuration
+  // catalogs (services/items) are read; the client comes from the verified
+  // context above. No `/api/clients` list request exists in this view.
+  const fetchCatalogs = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/clients', { headers: headers() });
-      if (res.ok) {
-        const data = await res.json();
-        setTenants(data);
-        if (!selected && user?.clientId) setSelected(user.clientId);
-        else if (!selected && data.length > 0 && user?.role === 'ge_admin') setSelected(data[0].id);
-      }
       const sRes = await apiFetch('/api/services', { headers: headers() });
       if (sRes.ok) setServices(await sRes.json());
       const iRes = await apiFetch('/api/items', { headers: headers() });
@@ -88,8 +107,15 @@ export const ClientDetailView: React.FC = () => {
     } catch {
       /* ignore */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headers]);
+
+  const selected = resolveTargetClientId({
+    role: user?.role,
+    explicitClientId: clientId,
+    workspaceMode: workspace?.mode,
+    workspaceClientId: workspace?.client?.id,
+    sessionClientId: user?.clientId,
+  }) ?? '';
 
   const fetchDetail = useCallback(
     async (id: string) => {
@@ -123,8 +149,8 @@ export const ClientDetailView: React.FC = () => {
   );
 
   useEffect(() => {
-    fetchTenants();
-  }, [fetchTenants]);
+    fetchCatalogs();
+  }, [fetchCatalogs]);
   useEffect(() => {
     if (selected) fetchDetail(selected);
   }, [selected, fetchDetail]);
@@ -185,7 +211,6 @@ export const ClientDetailView: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       await fetchDetail(selected);
-      await fetchTenants();
     } catch (err: any) {
       setError(err.message);
     }
@@ -270,25 +295,27 @@ export const ClientDetailView: React.FC = () => {
 
   const isGe = user?.role === 'ge_admin';
 
+  // §3: P Client Detail is explicit-target only. Without one the page must not
+  // render (App routes P → Clients); W/C always resolve their own verified id.
+  if (!selected) return null;
+
   return (
     <div className="space-y-6">
       <div className="p-6 bg-surface-2 rounded-2xl border border-border">
         <h3 className="text-xl font-bold">{t.clientDetail.title}</h3>
         <p className="text-xs text-muted mt-1">{t.clientDetail.subtitle}</p>
-        <div className="mt-3 flex items-center gap-2">
-          <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-            disabled={!isGe}
-            className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text"
-          >
-            <option value="">{t.clientDetail.selectTenant}</option>
-            {tenants.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.code}){c.suspended ? ' — suspended' : ''}
-              </option>
-            ))}
-          </select>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          {/* Read-only target identity (server truth once loaded); no selector. */}
+          <p className="text-xs text-text break-words">
+            {detail ? (
+              <>
+                <span>{detail.client.name}</span>{' '}
+                <span dir="ltr" className="text-muted">{detail.client.code}</span>
+              </>
+            ) : (
+              <span className="text-muted">{t.common.loading}</span>
+            )}
+          </p>
           <button onClick={() => selected && fetchDetail(selected)} className="p-2 rounded-lg border border-border text-muted hover:bg-surface-3" title={t.common.refresh}>
             <RefreshCw className="w-4 h-4" />
           </button>

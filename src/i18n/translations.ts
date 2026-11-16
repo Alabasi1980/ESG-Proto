@@ -244,6 +244,59 @@ export interface Translations {
     applyCorrection: string;
   };
 
+  // TASK-PROTO-U3-B2 §1/§5 — P Clients page (server results only, §5 fallbacks).
+  clients: {
+    subtitle: string;
+    searchLabel: string;
+    searchHint: string;
+    search: string;
+    clearSearch: string;
+    refresh: string;
+    caption: string;
+    colClient: string;
+    colStatus: string;
+    colServices: string;
+    colActions: string;
+    rowCount: string;
+    active: string;
+    suspended: string;
+    statusUnknown: string;
+    emptyTitle: string;
+    emptySearchTitle: string;
+    loadFailed: string;
+    noLinkedServices: string;
+    unmappedService: string;
+    mappedItems: string;
+    collection: string;
+    pendingSubmission: string;
+    frozenPairs: string;
+    noAssignments: string;
+    unavailable: string;
+    enterWorkspace: string;
+    configureClient: string;
+    suspend: string;
+    unsuspend: string;
+    enterConfirm: string;
+    suspendConfirm: string;
+    saveFailed: string;
+    suspendSaved: string;
+  };
+
+  // TASK-PROTO-U3-B2 §2/§7 — workspace lifecycle states and safe recovery.
+  workspace: {
+    checking: string;
+    opening: string;
+    closing: string;
+    confirmFailed: string;
+    confirmFailedDesc: string;
+    retry: string;
+    exitToClients: string;
+    exitConfirm: string;
+    clientSuspended: string;
+    backToClients: string;
+    configureTitle: string;
+  };
+
   settings: {
     title: string;
     subtitle: string;
@@ -625,6 +678,7 @@ export interface Translations {
     date: string;
     file: string;
     demoBanner: string;
+    checking: string;
   };
 
   geOverview: Record<string, string>;
@@ -924,6 +978,57 @@ export const translations: Record<Language, Translations> = {
       applyCorrection: 'Apply correction',
     },
 
+    clients: {
+      subtitle: 'Platform clients — server results only; no local filtering or estimates',
+      searchLabel: 'Search clients',
+      searchHint: 'Name or code',
+      search: 'Search',
+      clearSearch: 'Clear search',
+      refresh: 'Refresh',
+      caption: 'Clients and their linked-service collection progress',
+      colClient: 'Client',
+      colStatus: 'Status',
+      colServices: 'Linked services and progress',
+      colActions: 'Actions',
+      rowCount: '{count} clients returned',
+      active: 'Active',
+      suspended: 'Suspended',
+      statusUnknown: 'Status unavailable',
+      emptyTitle: 'No clients yet',
+      emptySearchTitle: 'No matching clients',
+      loadFailed: 'Clients could not be loaded.',
+      noLinkedServices: 'No linked services',
+      unmappedService: 'Service standards not mapped',
+      mappedItems: 'Mapped items',
+      collection: 'Collection',
+      pendingSubmission: 'Pending submission',
+      frozenPairs: 'Frozen pairs',
+      noAssignments: 'No assignments',
+      unavailable: 'Unavailable',
+      enterWorkspace: 'Enter client workspace',
+      configureClient: 'Configure client',
+      suspend: 'Suspend',
+      unsuspend: 'Unsuspend',
+      enterConfirm: 'Open the client workspace for {name}? Pending edits in this platform tab are discarded.',
+      suspendConfirm: '{action} {name}?',
+      saveFailed: 'The client status could not be updated.',
+      suspendSaved: 'Client status updated from the server.',
+    },
+
+    workspace: {
+      checking: 'Verifying workspace…',
+      opening: 'Opening client workspace',
+      closing: 'Exiting to Clients',
+      confirmFailed: 'Workspace could not be confirmed',
+      confirmFailedDesc: 'The workspace state could not be verified. No cached client content is shown. Reconcile the current tab, then choose the destination again.',
+      retry: 'Retry',
+      exitToClients: 'Exit to Clients',
+      exitConfirm: 'Exit the client workspace and return to Clients? Pending edits are discarded.',
+      clientSuspended: 'Client suspended',
+      backToClients: 'Back to Clients',
+      configureTitle: 'Configure client',
+    },
+
     settings: {
       title: 'Platform Settings & Database Diagnostics',
       subtitle: 'PostgreSQL connection status, migrations, RLS policies, and localization preferences',
@@ -1010,6 +1115,7 @@ export const translations: Record<Language, Translations> = {
         date: 'Date',
         file: 'Document Attachment',
         demoBanner: "Demo build — content is the client's own GRI workbook",
+        checking: 'Checking',
       },
 
     actions: {
@@ -1327,6 +1433,8 @@ export const translations: Record<Language, Translations> = {
       title: 'GE Operations',
       subtitle: 'Clients, services, collection status, review progress, gaps, actions (platform admins only)',
       totalsClients: 'Clients',
+      activeLabel: 'Active clients',
+      pendingStaffListsLabel: 'Pending staff lists',
       totalsSuspended: 'Suspended',
       totalsServices: 'Services',
       suspendBtn: 'Suspend',
@@ -1714,6 +1822,57 @@ export const translations: Record<Language, Translations> = {
       applyCorrection: 'تطبيق التصحيح',
     },
 
+    clients: {
+      subtitle: 'عملاء المنصة — نتائج الخادم فقط؛ بلا فلترة أو تقديرات محلية',
+      searchLabel: 'البحث عن عميل',
+      searchHint: 'الاسم أو الرمز',
+      search: 'بحث',
+      clearSearch: 'مسح البحث',
+      refresh: 'تحديث',
+      caption: 'العملاء وتقدم الجمع للخدمات المرتبطة',
+      colClient: 'العميل',
+      colStatus: 'الحالة',
+      colServices: 'الخدمات المرتبطة والتقدم',
+      colActions: 'الإجراءات',
+      rowCount: 'عدد العملاء الناتج: {count}',
+      active: 'نشط',
+      suspended: 'موقوف',
+      statusUnknown: 'الحالة غير متاحة',
+      emptyTitle: 'لا يوجد عملاء بعد',
+      emptySearchTitle: 'لا توجد نتائج مطابقة',
+      loadFailed: 'تعذّر تحميل العملاء.',
+      noLinkedServices: 'لا توجد خدمات مرتبطة',
+      unmappedService: 'الخدمة غير مربوطة بمعايير',
+      mappedItems: 'البنود المرتبطة',
+      collection: 'الجمع',
+      pendingSubmission: 'بانتظار الإرسال',
+      frozenPairs: 'أزواج مجمّدة',
+      noAssignments: 'لا توجد إسنادات',
+      unavailable: 'غير متاح',
+      enterWorkspace: 'دخول مساحة العميل',
+      configureClient: 'إعداد العميل',
+      suspend: 'إيقاف',
+      unsuspend: 'إعادة تفعيل',
+      enterConfirm: 'فتح مساحة عمل العميل {name}؟ ستُفقد التعديلات المعلّقة في تبويب المنصة.',
+      suspendConfirm: '{action} {name}؟',
+      saveFailed: 'تعذّر تحديث حالة العميل.',
+      suspendSaved: 'حُدِّثت حالة العميل من الخادم.',
+    },
+
+    workspace: {
+      checking: 'جارٍ التحقق من مساحة العمل…',
+      opening: 'جارٍ فتح مساحة العميل',
+      closing: 'جارٍ الخروج إلى العملاء',
+      confirmFailed: 'تعذّر تأكيد مساحة العمل',
+      confirmFailedDesc: 'تعذّر التحقق من حالة مساحة العمل. لا يُعرض أي محتوى عميل مخزّن. أعد مزامنة التبويب الحالي ثم اختر الوجهة مجدداً.',
+      retry: 'إعادة المحاولة',
+      exitToClients: 'الخروج إلى العملاء',
+      exitConfirm: 'الخروج من مساحة العميل والعودة إلى العملاء؟ ستُفقد التعديلات المعلّقة.',
+      clientSuspended: 'العميل موقوف',
+      backToClients: 'العودة إلى العملاء',
+      configureTitle: 'إعداد العميل',
+    },
+
     settings: {
       title: 'إعدادات المنصة وتشخيص قاعدة البيانات',
       subtitle: 'حالة اتصال PostgreSQL، والترحيلات، وسياسات RLS، وتفضيلات اللغة',
@@ -1800,6 +1959,7 @@ export const translations: Record<Language, Translations> = {
         date: 'تاريخ',
         file: 'مرفق مستند',
         demoBanner: 'نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل',
+        checking: 'جارٍ التحقق',
       },
 
     actions: {
@@ -2117,6 +2277,8 @@ export const translations: Record<Language, Translations> = {
       title: 'عمليات GE',
       subtitle: 'العملاء والخدمات وحالة الجمع وتقدم المراجعة والفجوات والإجراءات (لمديري المنصة فقط)',
       totalsClients: 'العملاء',
+      activeLabel: 'العملاء النشطون',
+      pendingStaffListsLabel: 'قوائم الموظفين المعلّقة',
       totalsSuspended: 'الموقوفون',
       totalsServices: 'الخدمات',
       suspendBtn: 'إيقاف',

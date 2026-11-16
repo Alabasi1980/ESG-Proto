@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AUTH_TOKEN_KEY, ensureTab, headers, refresh, enter, exit, reset, readToken,
+  AUTH_TOKEN_KEY, IDLE_TRANSITION,
+  beginWorkspaceTransition, bootWorkspace, claimWorkspaceTransition, currentTab,
+  ensureTab, enter, enterVerified, exit, exitVerified, failWorkspaceTransition,
+  headers, recoverWorkspace, refresh, releaseWorkspaceTransition, reset, readToken,
+  settleWorkspaceTransition, workspaceTransitionClaimed,
   type WorkspaceTab,
 } from './workspaceClient.ts';
 
@@ -252,4 +256,166 @@ test('without a session token no workspace request is attempted', async () => {
   assert.equal(readToken(), null);
   assert.equal(await ensureTab(), null);
   assert.equal(calls.length, 0);
+});
+
+// --- TASK-PROTO-U3-B2 §2/§7 — lifecycle state machine + boot/enter/exit -----
+
+const CONSULTANT_MIRROR = {
+  handle: HANDLE_A,
+  generation: 3,
+  mode: 'consultant',
+  client: { id: 'c-1', name: 'Acme Ltd' },
+};
+
+// `setup()` runs reset() (which clears the mirror), so the seeded consultant
+// entry is restored afterwards; `loaded` is false, so `current()` hydrates it.
+function setupWithConsultantMirror() {
+  const session = memoryStorage();
+  setup({ session });
+  session.setItem('greenedge_workspace', JSON.stringify(CONSULTANT_MIRROR));
+  return session;
+}
+
+test('U3-B2 §2 transition machine: phases, duplicate suppression and retry from failed', () => {
+  const opening = beginWorkspaceTransition(IDLE_TRANSITION, 'enter', 'c-1');
+  assert.deepEqual(opening, { phase: 'opening', kind: 'enter', clientId: 'c-1' });
+  // A second begin while pending is a no-op (duplicate click suppressed).
+  assert.deepEqual(beginWorkspaceTransition(opening, 'exit'), opening);
+  assert.deepEqual(beginWorkspaceTransition(opening, 'boot'), opening);
+  assert.deepEqual(settleWorkspaceTransition(), { phase: 'idle', kind: null, clientId: null });
+  assert.deepEqual(failWorkspaceTransition(opening), { phase: 'failed', kind: 'enter', clientId: 'c-1' });
+  // From failed, a begin is the Retry path and keeps the intended destination.
+  assert.deepEqual(beginWorkspaceTransition(failWorkspaceTransition(opening), 'enter', 'c-1'), opening);
+  const closing = beginWorkspaceTransition(IDLE_TRANSITION, 'exit');
+  assert.equal(closing.phase, 'closing');
+  assert.equal(closing.clientId, null);
+  const checking = beginWorkspaceTransition(IDLE_TRANSITION, 'boot');
+  assert.equal(checking.phase, 'checking');
+});
+
+test('U3-B2 §2 duplicate transitions: one claim at a time, released on settle/logout', () => {
+  setup();
+  assert.equal(claimWorkspaceTransition('enter'), true);
+  assert.equal(claimWorkspaceTransition('exit'), false, 'a pending transition owns the claim');
+  assert.equal(workspaceTransitionClaimed(), 'enter');
+  releaseWorkspaceTransition();
+  assert.equal(claimWorkspaceTransition('exit'), true);
+  // Logout (reset) releases the claim so the next session is not blocked.
+  reset();
+  assert.equal(workspaceTransitionClaimed(), null);
+  assert.equal(claimWorkspaceTransition('enter'), true);
+  releaseWorkspaceTransition();
+});
+
+test('U3-B2 §7 boot/reload never resumes W: reconcile, then exit to P (no W adoption)', async () => {
+  setupWithConsultantMirror();
+  const calls = stubFetch((path) => path === '/api/workspace'
+    ? json(200, { generation: 4, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } })
+    : json(200, { generation: 5, mode: 'platform', client: null }));
+
+  const outcome = await bootWorkspace();
+
+  assert.equal(outcome, 'platform');
+  assert.deepEqual(calls.map((call) => call.path), ['/api/workspace', '/api/workspace/exit']);
+  assert.equal(new Headers(calls[0].init?.headers).get('X-Workspace-Tab'), HANDLE_A);
+  assert.equal(currentTab()?.mode, 'platform');
+  assert.equal(currentTab()?.generation, 5, 'the exit envelope is adopted');
+});
+
+test('U3-B2 §7 boot failure is the safe panel, never a guessed P adoption', async () => {
+  setupWithConsultantMirror();
+  const calls = stubFetch(() => { throw new Error('offline'); });
+
+  assert.equal(await bootWorkspace(), 'failed');
+  assert.equal(calls.length, 1, 'a transport failure does not replay the exit');
+  assert.equal(currentTab()?.mode, 'consultant', 'the consultant mirror is not guessed into P');
+});
+
+test('U3-B2 §7 boot with an invalid handle clears immediately and establishes a verified P tab', async () => {
+  setupWithConsultantMirror();
+  const calls = stubFetch((path) => path === '/api/workspace'
+    ? json(409, { error: 'workspace.invalid', code: 'workspace.invalid' })
+    : json(201, envelope()));
+
+  assert.equal(await bootWorkspace(), 'platform');
+  assert.deepEqual(calls.map((call) => call.path), ['/api/workspace', '/api/workspace/tab']);
+  assert.equal(currentTab()?.mode, 'platform');
+});
+
+test('U3-B2 §7 boot without a mirror establishes P directly (no reconcile)', async () => {
+  setup();
+  const calls = stubFetch(() => json(201, envelope()));
+  assert.equal(await bootWorkspace(), 'platform');
+  assert.deepEqual(calls.map((call) => call.path), ['/api/workspace/tab']);
+});
+
+test('U3-B2 §2 enter: POST enter is confirmed by GET /api/workspace before any W chrome', async () => {
+  setup();
+  const calls = stubFetch((path) => {
+    if (path === '/api/workspace/tab') return json(201, envelope());
+    if (path === '/api/workspace/enter') {
+      return json(200, { generation: 2, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } });
+    }
+    return json(200, { generation: 2, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } });
+  });
+
+  await ensureTab();
+  const result = await enterVerified('c-1');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.tab.mode, 'consultant');
+  assert.deepEqual(calls.map((call) => call.path), ['/api/workspace/tab', '/api/workspace/enter', '/api/workspace']);
+});
+
+test('U3-B2 §2 enter: an unconfirmed mode is a failure (no guessed W)', async () => {
+  setup();
+  stubFetch((path) => {
+    if (path === '/api/workspace/tab') return json(201, envelope());
+    if (path === '/api/workspace/enter') {
+      return json(200, { generation: 2, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } });
+    }
+    return json(200, { generation: 2, mode: 'platform', client: null });
+  });
+
+  await ensureTab();
+  const result = await enterVerified('c-1');
+  assert.deepEqual(result, { ok: false, reason: 'failed' });
+});
+
+test('U3-B2 §2 exit: a transport failure is a failure (no optimistic success)', async () => {
+  setup();
+  stubFetch((path) => {
+    if (path === '/api/workspace/tab') return json(201, envelope());
+    throw new Error('offline');
+  });
+  await ensureTab();
+  assert.deepEqual(await exitVerified(), { ok: false, reason: 'failed' });
+});
+
+test('U3-B2 §7 retry reconciles first: adopt truth on Enter/Exit, always exit on boot', async () => {
+  // adopt: a confirmed consultant tab is adopted as-is (the POST may have succeeded).
+  setup();
+  let calls = stubFetch((path) => path === '/api/workspace/tab'
+    ? json(201, envelope())
+    : json(200, { generation: 4, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } }));
+  await ensureTab();
+  assert.deepEqual(await recoverWorkspace('adopt'), { ok: true, mode: 'consultant', unauthorized: false });
+  assert.deepEqual(calls.slice(1).map((call) => call.path), ['/api/workspace'], 'adopt never exits');
+
+  // boot: the same confirmed consultant tab is exited to P.
+  setupWithConsultantMirror();
+  calls = stubFetch((path) => path === '/api/workspace'
+    ? json(200, { generation: 4, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } })
+    : json(200, { generation: 5, mode: 'platform', client: null }));
+  assert.deepEqual(await recoverWorkspace('boot'), { ok: true, mode: 'platform', unauthorized: false });
+  assert.deepEqual(calls.map((call) => call.path), ['/api/workspace', '/api/workspace/exit']);
+});
+
+test('U3-B2 §7 retry with a conclusive invalid handle establishes verified P', async () => {
+  setupWithConsultantMirror();
+  const calls = stubFetch((path) => path === '/api/workspace'
+    ? json(409, { code: 'workspace.invalid' })
+    : json(201, envelope()));
+  assert.deepEqual(await recoverWorkspace('boot'), { ok: true, mode: 'platform', unauthorized: false });
+  assert.deepEqual(calls.map((call) => call.path), ['/api/workspace', '/api/workspace/tab']);
 });

@@ -276,16 +276,206 @@ export function exit(): Promise<WorkspaceTab> {
 
 /** Logout / new session: drop this browser tab's handle (server revokes it),
  * invalidate every in-flight adoption (epoch), and forget the "cannot own a tab"
- * verdict so the next session can get its own. */
+ * verdict so the next session can get its own. Also releases any transition
+ * claim (a logout while an enter/exit was in flight must not block the next
+ * session), and re-opens hydration so the next `current()` reads whatever the
+ * caller seeded (empty after logout; a seeded mirror in tests). */
 export function reset(): void {
   epoch += 1;
   tab = null;
-  loaded = true;
+  loaded = false;
   unavailable = false;
   pending = null;
+  transitionClaim = null;
   try {
     tabStorage()?.removeItem(TAB_STORAGE_KEY);
   } catch {
     // nothing to clean up
   }
+}
+
+// ---------------------------------------------------------------------------
+// TASK-PROTO-U3-B2 §2/§7 — the workspace lifecycle state machine.
+//
+// The shell must never guess a context during a transition, so the caller
+// renders NOTHING but the named transition state while `phase` is not `idle`:
+//   checking = auth/workspace boot (reconcile before any protected render)
+//   opening  = Enter confirmed, POST /workspace/enter in flight
+//   closing  = Exit confirmed, POST /workspace/exit in flight
+//   failed   = the workspace could not be confirmed (safe panel + Retry)
+// `kind`/`clientId` are kept for the Retry panel: recovery reconciles the SAME
+// handle before anything else, and a boot recovery always exits to P.
+// Pure reducer + module-level single-flight claim (no React here).
+// ---------------------------------------------------------------------------
+export type WorkspacePhase = 'idle' | 'checking' | 'opening' | 'closing' | 'failed';
+export type WorkspaceTransitionKind = 'enter' | 'exit' | 'boot';
+
+export interface WorkspaceTransitionState {
+  phase: WorkspacePhase;
+  kind: WorkspaceTransitionKind | null;
+  clientId: string | null;
+}
+
+export const IDLE_TRANSITION: WorkspaceTransitionState = { phase: 'idle', kind: null, clientId: null };
+
+/** Begin a transition. A second begin while one is already pending is a no-op
+ * (duplicate clicks are suppressed); a begin from `failed` is a retry. */
+export function beginWorkspaceTransition(
+  state: WorkspaceTransitionState,
+  kind: WorkspaceTransitionKind,
+  clientId: string | null = null,
+): WorkspaceTransitionState {
+  if (state.phase !== 'idle' && state.phase !== 'failed') return state;
+  return {
+    phase: kind === 'exit' ? 'closing' : kind === 'boot' ? 'checking' : 'opening',
+    kind,
+    clientId,
+  };
+}
+
+export function settleWorkspaceTransition(): WorkspaceTransitionState {
+  return { ...IDLE_TRANSITION };
+}
+
+export function failWorkspaceTransition(state: WorkspaceTransitionState): WorkspaceTransitionState {
+  return { ...state, phase: 'failed' };
+}
+
+/** Module-level single-flight claim: the reducer is per-render state, but two
+ * async handlers can race before React commits. Returns false for a duplicate. */
+let transitionClaim: WorkspaceTransitionKind | null = null;
+
+export function claimWorkspaceTransition(kind: WorkspaceTransitionKind): boolean {
+  if (transitionClaim !== null) return false;
+  transitionClaim = kind;
+  return true;
+}
+
+export function releaseWorkspaceTransition(): void {
+  transitionClaim = null;
+}
+
+export function workspaceTransitionClaimed(): WorkspaceTransitionKind | null {
+  return transitionClaim;
+}
+
+/** Result of a verified transition (Enter/Exit). `reason` is only meaningful
+ * when `ok` is false: `unauthorized` clears the session, everything else is the
+ * safe recovery panel (Retry reconciles first; nothing is replayed blindly). */
+export type VerifiedTransition =
+  | { ok: true; tab: WorkspaceTab }
+  | { ok: false; reason: 'failed' | 'invalid' | 'unauthorized' };
+
+/**
+ * §2 Enter: POST /workspace/enter, then B1-01's GET /api/workspace confirmation
+ * of mode/tenant/generation before any W chrome may render. A mismatch or a
+ * lost reply is NOT adopted — the caller shows the recovery panel.
+ */
+export async function enterVerified(clientId: string): Promise<VerifiedTransition> {
+  try {
+    await enter(clientId);
+  } catch {
+    return { ok: false, reason: 'failed' };
+  }
+  const confirm = await reconcile('consultant');
+  if (confirm.tab) return { ok: true, tab: confirm.tab };
+  if (confirm.status === 401) return { ok: false, reason: 'unauthorized' };
+  if (confirm.status === 409 || confirm.status === 403) return { ok: false, reason: 'invalid' };
+  return { ok: false, reason: 'failed' };
+}
+
+/** §2 Exit: POST /workspace/exit returns the platform envelope (new generation).
+ * No optimistic success: the mirror only changes on a 2xx envelope. */
+export async function exitVerified(): Promise<VerifiedTransition> {
+  try {
+    const tab = await exit();
+    return { ok: true, tab };
+  } catch (error) {
+    const status = (error as { status?: number } | null)?.status;
+    return { ok: false, reason: status === 401 ? 'unauthorized' : 'failed' };
+  }
+}
+
+export interface WorkspaceRecovery {
+  ok: boolean;
+  mode: WorkspaceMode | null;
+  /** 401: the shell clears to login instead of showing the recovery panel. */
+  unauthorized: boolean;
+}
+
+/**
+ * §7 Retry: reconcile the SAME handle with GET /api/workspace FIRST. Nothing is
+ * guessed and no transition is replayed blindly.
+ *  - `boot`: a reload must never resume W — a confirmed consultant tab is
+ *    exited to P; a conclusive invalid handle establishes a fresh P tab.
+ *  - `adopt` (Enter/Exit recovery): the server's confirmed mode is the truth
+ *    (POST may have succeeded even when its reply was lost).
+ */
+export async function recoverWorkspace(intent: 'boot' | 'adopt'): Promise<WorkspaceRecovery> {
+  const outcome = await reconcile();
+  if (outcome.status === 401) return { ok: false, mode: null, unauthorized: true };
+  if (outcome.tab) {
+    if (intent === 'boot' && outcome.tab.mode === 'consultant') {
+      try {
+        const platformTab = await exit();
+        return { ok: true, mode: platformTab.mode, unauthorized: false };
+      } catch {
+        return { ok: false, mode: null, unauthorized: false };
+      }
+    }
+    return { ok: true, mode: outcome.tab.mode, unauthorized: false };
+  }
+  if (outcome.status === 409 || outcome.status === 403) {
+    reset();
+    const created = await ensureTab();
+    return { ok: created !== null, mode: created?.mode ?? null, unauthorized: false };
+  }
+  return { ok: false, mode: null, unauthorized: false };
+}
+
+/** §7 boot/reload: the mirror remembers a consultant tab across a reload, but a
+ * reload establishes P → Clients, never W resume. Reconcile, then exit. A
+ * transport/5xx failure returns `failed` (safe panel) — never a guessed P. */
+export type WorkspaceBootResult = 'platform' | 'failed' | 'unauthorized';
+
+export async function bootWorkspace(): Promise<WorkspaceBootResult> {
+  const mirror = current();
+  if (mirror?.mode !== 'consultant') {
+    // Plain platform boot: the tab is created lazily/eagerly as before; a
+    // transport failure here is NOT a workspace-confirmation failure (P pages
+    // surface their own scoped errors), so the shell may still render P.
+    await ensureTab();
+    return 'platform';
+  }
+  const outcome = await reconcile('consultant');
+  if (outcome.tab) {
+    try {
+      await exit();
+      return 'platform';
+    } catch {
+      return 'failed';
+    }
+  }
+  if (outcome.status === 401) return 'unauthorized';
+  if (outcome.code === 'workspace.mode_changed') {
+    // The same handle is confirmed but no longer consultant: adopt the verified
+    // platform envelope (the P side of the exit-to-P path).
+    const plain = await reconcile();
+    if (plain.tab) return plain.tab.mode === 'consultant' ? 'failed' : 'platform';
+    if (plain.status === 401) return 'unauthorized';
+    if (plain.status === 409 || plain.status === 403) {
+      reset();
+      await ensureTab();
+      return 'platform';
+    }
+    return 'failed';
+  }
+  // Conclusive invalid/expired/forbidden: clear immediately and establish a
+  // verified fresh P tab (§7 invalid/stale/expired row).
+  if (outcome.status === 409 || outcome.status === 403) {
+    reset();
+    await ensureTab();
+    return 'platform';
+  }
+  return 'failed';
 }

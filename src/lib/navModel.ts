@@ -52,11 +52,11 @@ export const PAGE_IDS: readonly PageId[] = [
 ];
 
 /**
- * §3: `clients` is declared for P (sidebar position 2) but its page is B2 scope.
- * It stays in the model (truthful matrix) and is never mountable here: the
- * guard redirects it to the P landing (`ge-overview`) until B2 supplies the page.
+ * §3 pages declared in the model but with no implementation yet. TASK-PROTO-U3-B2
+ * supplies the last one (`clients`), so the list is now empty; the guard keeps
+ * using it so any future placeholder stays non-mountable by construction.
  */
-export const PENDING_PAGE_IDS: readonly PageId[] = ['clients'];
+export const PENDING_PAGE_IDS: readonly PageId[] = [];
 
 export function isPendingPage(id: PageId): boolean {
   return PENDING_PAGE_IDS.includes(id);
@@ -155,8 +155,9 @@ const ALIASES: Partial<Record<NavContext, Partial<Record<PageId, PageId>>>> = {
   client: { 'dashboard': 'client-dashboard' },
 };
 
-/** §2 landings. P's §2 landing is `clients`; B1 lands on `ge-overview` until B2
- * supplies the Clients page (the one documented placeholder — no invented page). */
+/** §2 landings. P's fresh-login landing is `ge-overview`; an explicit
+ * workspace Exit (and every reload/new-tab boot-exit) lands on `clients`
+ * (see `workspaceExitLanding`). */
 const LANDINGS: Record<NavContext, PageId> = {
   platform: 'ge-overview',
   consultant: 'dashboard',
@@ -208,6 +209,12 @@ export function menuPages(context: NavContext, capabilities: readonly string[] =
 
 export function landingFor(context: NavContext): PageId {
   return LANDINGS[context];
+}
+
+/** §7 acknowledgment: Exit → P Clients. Reload/new/duplicated-tab boot-exit
+ * lands on the same page, never on a guessed W context. */
+export function workspaceExitLanding(): 'clients' {
+  return 'clients';
 }
 
 export function aliasOf(context: NavContext, id: PageId): PageId | null {

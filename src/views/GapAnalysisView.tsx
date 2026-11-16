@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Scale, UploadCloud, RefreshCw, AlertTriangle, ClipboardList } from 'lucide-react';
+import { Scale, RefreshCw, AlertTriangle, ClipboardList } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiFetch } from '../lib/api.ts';
@@ -101,16 +101,11 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
             <Scale className="w-8 h-8" />
           </div>
           <h3 className="text-xl font-bold text-text mb-2">{t.gapAnalysis.emptyTitle}</h3>
-          <p className="text-muted text-xs max-w-md mx-auto mb-6 leading-relaxed">
+          <p className="text-muted text-xs max-w-md mx-auto leading-relaxed">
             {t.gapAnalysis.emptyDescription}
           </p>
-          <button
-            onClick={() => setActiveTab('import-gri')}
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-brand-ink font-medium hover:bg-brand-strong text-xs transition-colors shadow-xs"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>{t.gapAnalysis.emptyAction}</span>
-          </button>
+          {/* TASK-PROTO-U3-B2 §3 (F3): the Import-GRI shortcut is removed — W,
+              C and E have no `import-gri` page (P-only). Empty state only. */}
         </div>
       </div>
     );

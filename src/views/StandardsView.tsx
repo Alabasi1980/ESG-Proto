@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen,
   Search,
-  UploadCloud,
   FileText,
   Layers,
   RefreshCw,
@@ -87,16 +86,11 @@ export const StandardsView: React.FC<StandardsViewProps> = ({ setActiveTab }) =>
         <h3 className="text-xl font-bold text-text mb-2">
           {t.standards.emptyTitle}
         </h3>
-        <p className="text-muted text-xs max-w-md mx-auto mb-6 leading-relaxed">
+        <p className="text-muted text-xs max-w-md mx-auto leading-relaxed">
           {t.standards.emptyDescription}
         </p>
-        <button
-          onClick={() => setActiveTab('import-gri')}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand text-brand-ink font-medium hover:bg-brand-strong text-xs transition-colors shadow-xs"
-        >
-          <UploadCloud className="w-4 h-4" />
-          <span>{t.standards.emptyAction}</span>
-        </button>
+        {/* TASK-PROTO-U3-B2 §3 (F3): the Import-GRI shortcut is removed — W/C
+            read standards read-only and have no `import-gri` page. */}
       </div>
     );
   }

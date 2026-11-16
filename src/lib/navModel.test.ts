@@ -15,7 +15,7 @@ import path from 'node:path';
 import {
   CONTEXTS, PAGE_IDS, PENDING_PAGE_IDS,
   aliasOf, deriveNavContext, identityLabelKey, isPageAllowed, landingFor, labelOf,
-  menuPages, navPages, pagesIn, resolvePage, shellIdentity,
+  menuPages, navPages, pagesIn, resolvePage, shellIdentity, workspaceExitLanding,
   type NavContext, type PageId,
 } from './navModel.ts';
 import { permittedPages, type AccessContext } from './capabilities.ts';
@@ -105,11 +105,13 @@ test('U3-B1 §3: absent pages are denied by default and resolve to the landing',
 });
 
 test('U3-B1 §3: allowed pages resolve to themselves; pending/contextual-only pages never mount', () => {
+  // TASK-PROTO-U3-B2 implements the last placeholder: nothing is pending now.
+  assert.equal(PENDING_PAGE_IDS.length, 0, 'clients was the last pending page; B2 supplies it');
   for (const context of CONTEXTS) {
     const landing = landingFor(context);
     const entries = navPages(context);
     // §3 `target` rows are contextual only: P's client-detail needs an explicit
-    // target (B2); W/C carry the same ID as a normal sidebar row.
+    // target; W/C carry the same ID as a normal sidebar row.
     const targetIds = entries.filter((entry) => entry.target).map((entry) => entry.id);
     assert.deepEqual(targetIds, context === 'platform' ? ['client-detail'] : [], `${context}: §3 target rows`);
     for (const entry of entries) {
@@ -122,14 +124,28 @@ test('U3-B1 §3: allowed pages resolve to themselves; pending/contextual-only pa
       assert.deepEqual(resolvePage(context, 'client-detail'), { page: landing, redirected: true });
       assert.equal(isPageAllowed(context, 'client-detail'), false);
     }
-    // §3 declares Clients for P only, but B1 has no Clients page: landing, no mount.
+    // §5: `clients` is P only and is now a real, mountable sidebar row (B2).
     if (context === 'platform') {
       assert.equal(pagesIn(context).includes('clients'), true, 'clients stays in the truthful matrix');
-      assert.equal(menuPages(context).some((entry) => entry.id === 'clients'), false, 'not rendered before B2');
+      assert.equal(menuPages(context).some((entry) => entry.id === 'clients'), true, 'clients is a rendered P row');
+      assert.deepEqual(resolvePage(context, 'clients'), { page: 'clients', redirected: false });
+      assert.equal(isPageAllowed(context, 'clients'), true);
+    } else {
+      assert.equal(pagesIn(context).includes('clients'), false, `${context}: clients is P only`);
+      assert.equal(isPageAllowed(context, 'clients'), false);
       assert.deepEqual(resolvePage(context, 'clients'), { page: landing, redirected: true });
     }
-    assert.equal(isPageAllowed(context, 'clients'), false);
   }
+});
+
+test('U3-B2 §2/§7 landings: P fresh login stays ge-overview; Exit/boot-exit lands clients', () => {
+  assert.equal(landingFor('platform'), 'ge-overview', 'fresh P login lands GE Operations');
+  assert.equal(workspaceExitLanding(), 'clients', 'Exit and reload/new-tab boot-exit land on Clients');
+  assert.equal(isPageAllowed('platform', workspaceExitLanding()), true);
+  // Exit is a P concept; C/E still land on their own context pages.
+  assert.equal(landingFor('consultant'), 'dashboard');
+  assert.equal(landingFor('client'), 'client-dashboard');
+  assert.equal(landingFor('employee'), 'gap-analysis');
 });
 
 test('U3-B1 §3 aliases: W client-dashboard -> dashboard, C dashboard -> client-dashboard, no duplicates', () => {
@@ -268,7 +284,13 @@ test('U3-B1 shell wiring: App mounts only the resolved page; Sidebar renders the
   // The mount decision is resolvePage(context, activeTab) — never raw activeTab.
   assert.match(app, /resolvePage\(context, activeTab\)/);
   assert.match(app, /renderView\(currentPage\)/);
-  assert.doesNotMatch(app, /activeTab\s*===/, 'views must not be rendered from the raw requested tab');
+  // No view is chosen from the RAW requested tab. The single raw-tab comparison
+  // allowed is the §3 P redirect (client-detail without an explicit target), and
+  // it must carry the `!clientConfig` guard.
+  assert.doesNotMatch(app,
+    /activeTab\s*===\s*'(dashboard|standards|gap-analysis|actions|initiatives|esg-profile|reports|import-gri|settings|staff-lists|audit-log|notifications|ge-overview|clients|client-dashboard)'/,
+    'views must not be rendered from the raw requested tab');
+  assert.match(app, /activeTab === 'client-detail' && !clientConfig/);
   // Every implemented page has exactly one mount branch.
   for (const id of PAGE_IDS.filter((page) => !PENDING_PAGE_IDS.includes(page))) {
     assert.match(app, new RegExp(`case '${id}':`), `App: missing mount branch for ${id}`);
@@ -277,7 +299,30 @@ test('U3-B1 shell wiring: App mounts only the resolved page; Sidebar renders the
   assert.match(sidebar, /menuPages\(context\)/);
   assert.match(sidebar, /context !== 'employee'/);
   assert.doesNotMatch(sidebar, /Enterprise Level|Unrestricted/);
-  // Header carries the same context identity and no Exit control (B2 owns it).
+  // Header carries the same context identity; TASK-PROTO-U3-B2 adds the W-only
+  // exit control (never hover-only) and keeps the db pill P-only.
   assert.match(header, /shellIdentity\(context/);
-  assert.doesNotMatch(header, /Exit to Clients|الخروج إلى العملاء/);
+  assert.match(header, /context === 'consultant'[\s\S]*?exitToClients/, 'W carries the Exit control');
+  assert.match(header, /context === 'platform' && \(/, 'db diagnostics are behind a P-only guard');
+  assert.match(header, /connectionLabel/);
+  assert.doesNotMatch(header, /PostgreSQL RLS|RLS proven/);
+  assert.doesNotMatch(header, /hidden sm:inline/, 'F4: the client title wraps instead of being hidden');
+  // App gates every protected render on the workspace lifecycle phase (B1-01).
+  assert.match(app, /workspacePhase !== 'idle'/);
+  assert.match(app, /workspacePhase === 'failed'/);
+  assert.match(app, /workspacePhase === 'opening'/);
+  assert.match(app, /workspacePhase === 'closing'/);
+  // Clients is mounted and Configure stays a Clients sub-state.
+  assert.match(app, /case 'clients':/);
+  assert.match(app, /<ClientsView/);
+  assert.match(app, /workspaceExitLanding\(\)/);
+  // §7 boot landing: fresh login → ge-overview, reload/exited W → clients.
+  assert.match(app, /bootLanding/);
+  assert.match(app, /setActiveTab\(bootLanding\)/);
+  const auth = readFileSync(path.resolve('src/context/AuthContext.tsx'), 'utf8');
+  assert.match(auth, /setBootLanding\(workspaceExitLanding\(\)\)/);
+  assert.match(auth, /runBootWorkspace/);
+  assert.match(auth, /enterVerified/);
+  assert.match(auth, /exitVerified/);
+  assert.match(auth, /recoverWorkspace/);
 });

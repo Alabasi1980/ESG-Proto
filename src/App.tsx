@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext.tsx';
 import { useAuth } from './context/AuthContext.tsx';
 import { Sidebar, ActiveTab } from './components/Sidebar.tsx';
 import { Header } from './components/Header.tsx';
-import { deriveNavContext, resolvePage, type PageId } from './lib/navModel.ts';
+import { deriveNavContext, resolvePage, workspaceExitLanding, type PageId } from './lib/navModel.ts';
 import { idleState, idleSecondsRemaining } from './lib/idleTimeout.ts';
 import { validateSelfChosenPassword } from './lib/password.ts';
 import { DashboardView } from './views/DashboardView.tsx';
@@ -18,6 +18,7 @@ import { SettingsView } from './views/SettingsView.tsx';
 import { LoginView } from './views/LoginView.tsx';
 import { SetupView } from './views/SetupView.tsx';
 import { GeOverviewView } from './views/GeOverviewView.tsx';
+import { ClientsView } from './views/ClientsView.tsx';
 import { ClientDetailView } from './views/ClientDetailView.tsx';
 import { StaffListsView } from './views/StaffListsView.tsx';
 import { ClientDashboardView } from './views/ClientDashboardView.tsx';
@@ -26,14 +27,30 @@ import { NotificationsView } from './views/NotificationsView.tsx';
 import { RefreshCw, TimerOff } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { user, token, loading, refreshUser, logout, workspace } = useAuth();
+  const {
+    user,
+    token,
+    loading,
+    refreshUser,
+    logout,
+    workspace,
+    workspacePhase,
+    bootLanding,
+    enterWorkspace,
+    exitWorkspace,
+    retryWorkspace,
+  } = useAuth();
   const { t } = useLanguage();
   // TASK-PROTO-U3-B1 §3: the REQUESTED tab (may be a stale/forbidden value from
   // a previous context). It is never rendered directly — see `currentPage`.
   const [activeTab, setActiveTab] = useState<ActiveTab | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inSetupMode, setInSetupMode] = useState(false);
-  const [dbConnected, setDbConnected] = useState(false);
+  // B1-03 / U3-B2 §3: `null` = not checked yet. The value is only ever polled
+  // and displayed in P; W/C/E get no db diagnostics.
+  const [dbConnected, setDbConnected] = useState<boolean | null>(null);
+  // §3 Configure: a sub-state of the Clients page (sidebar stays on `clients`).
+  const [clientConfig, setClientConfig] = useState<{ id: string; name: string } | null>(null);
   // B11b (S-12): forced-change gate state (AuthContext type is frozen, so the
   // flag travels via /api/auth/me without editing the context module).
   const [mustChange, setMustChange] = useState(false);
@@ -41,6 +58,10 @@ const MainApp: React.FC = () => {
   const [newPass, setNewPass] = useState('');
   const [curPass, setCurPass] = useState('');
   const [gateMsg, setGateMsg] = useState<string | null>(null);
+
+  // §7 acknowledgment: after a confirmed transition the destination heading
+  // receives focus (never the old client content).
+  const focusAfterTransition = useRef(false);
 
   // B12 (S-01): client-side inactivity timer — 30 min → auto logout, warning
   // at 28 min with a bilingual notice + countdown. Any pointer/key/touch
@@ -94,24 +115,6 @@ const MainApp: React.FC = () => {
     };
   }, [token, logout]);
 
-  const checkDb = async () => {
-    try {
-      const res = await fetch('/api/db/status');
-      if (res.ok) {
-        const data = await res.json();
-        setDbConnected(Boolean(data.connected));
-      }
-    } catch {
-      setDbConnected(false);
-    }
-  };
-
-  useEffect(() => {
-    checkDb();
-    const interval = setInterval(checkDb, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
   // TASK-PROTO-U3-B1 §2: the context derives ONLY from the session role plus the
   // workspace tab mirror (platform/consultant + bound client). No URL, no
   // localStorage, no guessed tenant; an unknown role yields no context (no pages).
@@ -119,26 +122,117 @@ const MainApp: React.FC = () => {
     ? deriveNavContext(user.role, workspace?.mode ?? null, Boolean(workspace?.client))
     : null;
 
+  // §2/§7: while a workspace transition is pending the resolved page/chrome is
+  // NOT rendered — the named transition/recovery state replaces it. This is the
+  // W-chrome-only-after-reconcile gate (B1-01).
+  const workspaceBlocked = Boolean(user && user.role === 'ge_admin' && workspacePhase !== 'idle');
+
+  // B1-03 / U3-B2 §3: db/status polling is P ONLY (no C/E diagnostics, no
+  // interval at all outside platform). No "RLS proven" claim anywhere.
+  const checkDb = useCallback(async () => {
+    try {
+      const res = await fetch('/api/db/status');
+      if (res.ok) {
+        const data = await res.json();
+        setDbConnected(Boolean(data.connected));
+      } else {
+        setDbConnected(false);
+      }
+    } catch {
+      setDbConnected(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (context !== 'platform' || workspaceBlocked) {
+      setDbConnected(null);
+      return;
+    }
+    void checkDb();
+    const interval = setInterval(checkDb, 15000);
+    return () => clearInterval(interval);
+  }, [context, workspaceBlocked, checkDb]);
+
   // §3 guard: the requested tab is resolved through the model BEFORE any mount.
   // An absent or not-yet-implemented page becomes the context landing, so a
   // forbidden view is never instantiated, fetched or polled (and nothing of the
   // old view flashes, because rendering only ever uses `currentPage`).
   const resolvedPage = context ? resolvePage(context, activeTab) : null;
-  const currentPage = resolvedPage?.page ?? null;
+  // §3: P Client Detail exists only with an explicit T (the Configure sub-state
+  // below). A bare P `client-detail` request routes to Clients, never to a
+  // first-client default.
+  const platformDetour = context === 'platform' && activeTab === 'client-detail' && !clientConfig
+    ? workspaceExitLanding()
+    : null;
+  const currentPage = platformDetour ?? resolvedPage?.page ?? null;
 
   useEffect(() => {
     if (currentPage && currentPage !== activeTab) setActiveTab(currentPage);
   }, [currentPage, activeTab]);
 
+  // §3: the configuration sub-state belongs to Clients only.
+  useEffect(() => {
+    if (currentPage !== 'clients') setClientConfig(null);
+  }, [currentPage]);
+
+  // §2 P row / §7 reload rule: the first settled boot decides the landing —
+  // fresh login → ge-overview; reload/new/duplicated tab or exited W → clients.
+  useEffect(() => {
+    if (user?.role === 'ge_admin' && workspacePhase === 'idle' && activeTab === null && bootLanding) {
+      setActiveTab(bootLanding);
+    }
+  }, [user?.role, workspacePhase, activeTab, bootLanding]);
+
+  // §7 acknowledgment: focus the destination heading once the transition settles.
+  useEffect(() => {
+    if (workspacePhase === 'idle' && focusAfterTransition.current) {
+      focusAfterTransition.current = false;
+      const heading = document.querySelector<HTMLElement>('[data-page-heading]');
+      heading?.focus();
+    }
+  }, [workspacePhase, currentPage]);
+
+  /**
+   * §2 Enter. The row confirmation already named client+action; this only runs
+   * the server transition. On success the verified W context lands `dashboard`.
+   */
+  const handleEnter = async (clientId: string) => {
+    focusAfterTransition.current = true;
+    const result = await enterWorkspace(clientId);
+    if (result.ok && result.mode === 'consultant') setActiveTab('dashboard');
+  };
+
+  /** §2 Exit: confirm the action, then POST exit → P landing `clients`. */
+  const handleExit = async () => {
+    if (workspacePhase !== 'idle') return;
+    if (!window.confirm(t.workspace.exitConfirm)) return;
+    focusAfterTransition.current = true;
+    // Pre-set the P destination while the transition screen still covers the
+    // shell, so the first post-exit render is Clients (never a landing flash).
+    setActiveTab(workspaceExitLanding());
+    await exitWorkspace();
+  };
+
+  /** §7 Retry: reconcile first; a boot recovery always lands P → Clients. */
+  const handleRetry = async () => {
+    focusAfterTransition.current = true;
+    const result = await retryWorkspace();
+    if (result.ok) {
+      setActiveTab(result.mode === 'consultant' ? 'dashboard' : workspaceExitLanding());
+    }
+  };
+
+  const handleConfigure = (clientId: string, clientName: string) => {
+    setClientConfig({ id: clientId, name: clientName });
+  };
+
   // §3 mount switch: exactly ONE view per resolved page. Views are statically
   // imported (as before) but only the resolved one is ever instantiated/rendered
   // — a forbidden page therefore mounts nothing and fires no fetch/poll.
-  // `clients` is declared in the model but belongs to B2, so it has no branch
-  // and the guard never resolves to it.
   const renderView = (page: PageId) => {
     switch (page) {
       case 'dashboard':
-        return <DashboardView setActiveTab={setActiveTab} dbConnected={dbConnected} />;
+        return <DashboardView setActiveTab={setActiveTab} dbConnected={dbConnected === true} />;
       case 'standards':
         return <StandardsView setActiveTab={setActiveTab} />;
       case 'gap-analysis':
@@ -156,7 +250,7 @@ const MainApp: React.FC = () => {
           <ImportGRIView
             setActiveTab={setActiveTab}
             onDataImported={() => {
-              checkDb();
+              void checkDb();
             }}
           />
         );
@@ -164,14 +258,24 @@ const MainApp: React.FC = () => {
         return (
           <SettingsView
             onDbStatusChanged={() => {
-              checkDb();
+              void checkDb();
             }}
           />
         );
       case 'ge-overview':
         return <GeOverviewView />;
+      case 'clients':
+        return (
+          <ClientsView
+            onEnter={handleEnter}
+            onConfigure={handleConfigure}
+            transitionBusy={workspacePhase !== 'idle'}
+          />
+        );
       case 'client-detail':
-        return <ClientDetailView />;
+        // P mounts Client Detail only through the Configure sub-state (explicit
+        // T); W/C derive their own verified client inside the view.
+        return context === 'platform' ? null : <ClientDetailView />;
       case 'staff-lists':
         return <StaffListsView />;
       case 'client-dashboard':
@@ -180,7 +284,6 @@ const MainApp: React.FC = () => {
         return <AuditLogView />;
       case 'notifications':
         return <NotificationsView />;
-      case 'clients':
       default:
         return null;
     }
@@ -276,10 +379,49 @@ const MainApp: React.FC = () => {
     );
   }
 
+  // §2/§7: the transition states replace ALL protected content — old client
+  // views, context chrome and caches are unmounted, never flashed behind it.
+  if (workspaceBlocked) {
+    if (workspacePhase === 'failed') {
+      return (
+        <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+          <div role="alert" className="max-w-md w-full p-8 bg-surface-2 rounded-2xl border border-danger text-center">
+            <h2 className="text-base font-bold text-text">{t.workspace.confirmFailed}</h2>
+            <p className="text-xs text-muted mt-2">{t.workspace.confirmFailedDesc}</p>
+            <button
+              type="button"
+              onClick={() => void handleRetry()}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{t.workspace.retry}</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+    const message = workspacePhase === 'opening'
+      ? t.workspace.opening
+      : workspacePhase === 'closing'
+        ? t.workspace.closing
+        : t.workspace.checking;
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 text-center">
+          <RefreshCw className="w-8 h-8 text-brand-text animate-spin" />
+          <p className="text-sm font-semibold text-text">{message}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-surface text-text overflow-hidden font-sans">
-      {/* Sidebar with RTL and Tenant Context */}
+      {/* Sidebar with RTL and Tenant Context. `key` remounts it on a context
+          transition so the unread badge/drawer state cannot leak across W/P
+          (§7: clear unread count on transitions). */}
       <Sidebar
+        key={context ?? 'none'}
         context={context}
         activeTab={currentPage}
         setActiveTab={setActiveTab}
@@ -294,6 +436,8 @@ const MainApp: React.FC = () => {
           activeTab={currentPage}
           onOpenMobileMenu={() => setSidebarOpen(true)}
           dbConnected={dbConnected}
+          onExitToClients={() => void handleExit()}
+          exitBusy={workspacePhase !== 'idle'}
         />
 
         {/* B12 (S-01): inactivity warning — bilingual notice + countdown. */}
@@ -326,7 +470,26 @@ const MainApp: React.FC = () => {
 
         <main data-testid="main-content" className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">
-            {context && currentPage ? renderView(currentPage) : null}
+            {context && currentPage ? (
+              context === 'platform' && currentPage === 'clients' && clientConfig ? (
+                <div className="space-y-4">
+                  {/* §3: stay P, highlight `clients`, offer Back to Clients. */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-surface-2 rounded-2xl border border-border">
+                    <h3 className="text-sm font-bold text-text break-words">
+                      {t.workspace.configureTitle}: {clientConfig.name}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setClientConfig(null)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-2 border border-border-strong text-text hover:bg-surface-3"
+                    >
+                      {t.workspace.backToClients}
+                    </button>
+                  </div>
+                  <ClientDetailView key={clientConfig.id} clientId={clientConfig.id} />
+                </div>
+              ) : renderView(currentPage)
+            ) : null}
           </div>
         </main>
       </div>

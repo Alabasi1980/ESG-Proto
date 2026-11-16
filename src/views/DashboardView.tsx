@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  UploadCloud,
-  Database,
   BarChart3,
   CheckCircle2,
   AlertTriangle,
@@ -98,24 +96,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {t.dashboard.emptyDescription}
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <button
-              onClick={() => setActiveTab('import-gri')}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand text-brand-ink font-medium hover:bg-brand-strong shadow-sm transition-colors text-sm"
-            >
-              <UploadCloud className="w-4 h-4" />
-              <span>{t.dashboard.importDataAction}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl border border-border-strong text-text font-medium hover:bg-surface-3 transition-colors text-sm"
-            >
-              <Database className="w-4 h-4" />
-              <span>{t.dashboard.configureDbAction}</span>
-            </button>
-          </div>
-
+          {/* TASK-PROTO-U3-B2 §3 (F3): no Import-GRI / Settings CTAs are rendered
+              in the W workspace — those pages do not exist for this context. */}
           <div className="mt-10 pt-8 border-t border-border grid grid-cols-1 sm:grid-cols-3 gap-4 text-start">
             <div className="p-4 rounded-xl bg-surface-3 border border-border">
               <div className="flex items-center gap-2 text-brand-text mb-1">
@@ -173,13 +155,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>{t.common.refresh}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('import-gri')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-semibold hover:bg-brand-strong transition-colors shadow-xs"
-          >
-            <UploadCloud className="w-3.5 h-3.5" />
-            <span>{t.dashboard.importDataAction}</span>
           </button>
         </div>
       </div>
