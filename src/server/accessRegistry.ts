@@ -245,10 +245,13 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
   // (T), W/C are pinned to their own tenant, E to its own department; every
   // write is E-own-department only (W/C read-only, P read-only — contract §2).
   ...group('documents', [
-    'GET /services/:id/documents|P#service-document-requirements-catalog',
-    'POST /services/:id/documents|P#catalog-document-requirement-create',
-    'PATCH /services/:id/documents/:reqId|P#catalog-document-requirement-update',
-    'DELETE /services/:id/documents/:reqId|P#catalog-requirement-delete-existing-submission-refusals',
+    // ROUND 2 (F-05/L-03): a requirement is CLIENT-scoped, so the platform rows
+    // are P@T — the handler demands an explicit clientId and the writes run
+    // under the platform.config context with that target. No targetless P row.
+    'GET /services/:id/documents|P@T#client-service-document-requirements-catalog',
+    'POST /services/:id/documents|P@T#client-document-requirement-create',
+    'PATCH /services/:id/documents/:reqId|P@T#client-document-requirement-update',
+    'DELETE /services/:id/documents/:reqId|P@T#client-requirement-delete-fk-restrict-refusal',
     'GET /requirements|P@T#read-only-target;W:L;C:L;E:L+D#own-department-submission-state-and-proof-metadata',
     'PATCH /requirements/:id|E:L+D#own-department-provided-note-tag-only-no-W-C-P-write',
     'POST /evidence/:entityType/:entityId/files|E:L+D#own-department-own-parent-5MB-mime-allowlist',

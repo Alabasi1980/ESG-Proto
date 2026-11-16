@@ -166,10 +166,10 @@ const EXPECTED: Record<string, string> = {
   // TASK-PROTO-U4-1c (OD-12 §3–§8): document requirements (P), the department
   // lists (P@T read / W-C linked read / E own-department) and the unified
   // evidence-file surface (E own-department writes).
-  'GET /services/:id/documents': 'P#service-document-requirements-catalog',
-  'POST /services/:id/documents': 'P#catalog-document-requirement-create',
-  'PATCH /services/:id/documents/:reqId': 'P#catalog-document-requirement-update',
-  'DELETE /services/:id/documents/:reqId': 'P#catalog-requirement-delete-existing-submission-refusals',
+  'GET /services/:id/documents': 'P@T#client-service-document-requirements-catalog',
+  'POST /services/:id/documents': 'P@T#client-document-requirement-create',
+  'PATCH /services/:id/documents/:reqId': 'P@T#client-document-requirement-update',
+  'DELETE /services/:id/documents/:reqId': 'P@T#client-requirement-delete-fk-restrict-refusal',
   'GET /requirements': 'P@T#read-only-target;W:L;C:L;E:L+D#own-department-submission-state-and-proof-metadata',
   'PATCH /requirements/:id': 'E:L+D#own-department-provided-note-tag-only-no-W-C-P-write',
   'POST /evidence/:entityType/:entityId/files': 'E:L+D#own-department-own-parent-5MB-mime-allowlist',

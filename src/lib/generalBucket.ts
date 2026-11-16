@@ -2,10 +2,16 @@
 //
 // Owner decision: a free question (an item with no standard/disclosure of its
 // own) is a real requirement, so every service gets a GENERAL bucket created
-// automatically — standard `GENERAL-<SANITIZED_CODE>` («عام / General»),
-// disclosure `GENERAL` («أسئلة عامة / General questions») and the
-// `service_standards` mapping. NO schema change: items living there are
+// automatically — standard `GENERAL-<SANITIZED_CODE>-<FIRST8(SERVICE_ID)>`
+// («عام / General»), disclosure `GENERAL` («أسئلة عامة / General questions») and
+// the `service_standards` mapping. NO schema change: items living there are
 // ordinary items with `esg_class='general'` (the column already allows it).
+//
+// Round 2 (M-01): the code carries an 8-hex suffix of the SERVICE ID, so two
+// services whose codes slug to the same text can never collide on
+// `standards.code` (which is globally UNIQUE). The lookup prefers the service's
+// OWN bucket and only falls back to an already-mapped general standard (the
+// pre-suffix legacy row) so a not-yet-renamed database keeps working.
 //
 // Idempotence is the contract: create / duplicate / backfill may call this in
 // any order, any number of times, and the bucket must converge on exactly one
@@ -25,25 +31,36 @@ export const GENERAL_DISCLOSURE_TITLE = 'أسئلة عامة / General questions
 export const GENERAL_STANDARD_CATEGORY = 'general';
 
 /** Uppercase ASCII slug of a service code. Never empty: a code with no ASCII
- * letter/digit (e.g. an Arabic-only code) falls back to a short digest of the
+ * letter/digit (e.g. an Arabic-only code) falls back to a digest of the
  * ORIGINAL code, so two such services can never share one GENERAL standard. */
 export function sanitizeServiceCode(serviceCode: unknown): string {
   const raw = typeof serviceCode === 'string' ? serviceCode : String(serviceCode ?? '');
-  const slug = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+  const slug = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   if (slug) return slug;
   return `SERVICE-${createHash('sha256').update(raw).digest('hex').slice(0, 8).toUpperCase()}`;
 }
 
-/** Standards.code for a service's general bucket (globally unique, ≤ 56 chars). */
-export function generalStandardCode(serviceCode: unknown): string {
-  return `${GENERAL_STANDARD_PREFIX}${sanitizeServiceCode(serviceCode)}`;
+/** 8 uppercase hex characters derived from the service id (its first 8 for a
+ * canonical UUID, a stable digest otherwise). This is the collision guard. */
+export function serviceBucketSuffix(serviceId: unknown): string {
+  const hex = String(serviceId ?? '').replace(/[^0-9a-fA-F]/g, '');
+  if (hex.length >= 8) return hex.slice(0, 8).toUpperCase();
+  return createHash('sha256').update(String(serviceId ?? '')).digest('hex').slice(0, 8).toUpperCase();
+}
+
+/** Standards.code for a service's general bucket (globally unique by construction). */
+export function generalStandardCode(serviceCode: unknown, serviceId: unknown): string {
+  return `${GENERAL_STANDARD_PREFIX}${sanitizeServiceCode(serviceCode)}-${serviceBucketSuffix(serviceId)}`;
 }
 
 export interface GeneralBucketResult {
   serviceId: string;
   serviceCode: string;
+  standardCode: string;
   standardId: string;
   disclosureId: string;
+  /** True when the service already had a general bucket before this call. */
+  adopted: boolean;
   /** Which of the three objects this call had to create (all false on a repeat). */
   created: { standard: boolean; disclosure: boolean; mapping: boolean };
 }
@@ -59,14 +76,30 @@ const one = async (db: BucketDb, text: string, params: any[]): Promise<any> => (
 export async function ensureGeneralBucket(db: BucketDb, serviceId: string): Promise<GeneralBucketResult> {
   const service = await one(db, 'SELECT id, code FROM services WHERE id = $1', [serviceId]);
   if (!service) throw new Error('general.service_not_found');
-  const code = generalStandardCode(service.code);
+  const expected = generalStandardCode(service.code, service.id);
 
-  const insertedStandard = await one(db,
-    `INSERT INTO standards (code, title, category) VALUES ($1, $2, $3)
-     ON CONFLICT (code) DO NOTHING RETURNING id`,
-    [code, GENERAL_STANDARD_TITLE, GENERAL_STANDARD_CATEGORY]);
-  const standardId = insertedStandard?.id
-    ?? (await one(db, 'SELECT id FROM standards WHERE code = $1', [code]))?.id;
+  // Prefer the service's OWN bucket. A mapped general-category standard is the
+  // only accepted fallback (a pre-suffix legacy row that the live rename
+  // statement has not touched yet) — any other standard is never adopted.
+  const own = await one(db, 'SELECT id FROM standards WHERE code = $1', [expected]);
+  const legacy = own ? null : await one(db,
+    `SELECT st.id FROM service_standards ss JOIN standards st ON st.id = ss.standard_id
+      WHERE ss.service_id = $1 AND st.category = $2 ORDER BY st.code LIMIT 1`,
+    [serviceId, GENERAL_STANDARD_CATEGORY]);
+
+  let standardId: string | undefined = own?.id ?? legacy?.id;
+  let standardCode = expected;
+  let createdStandard = false;
+  if (!standardId) {
+    const inserted = await one(db,
+      `INSERT INTO standards (code, title, category) VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO NOTHING RETURNING id`,
+      [expected, GENERAL_STANDARD_TITLE, GENERAL_STANDARD_CATEGORY]);
+    standardId = inserted?.id ?? (await one(db, 'SELECT id FROM standards WHERE code = $1', [expected]))?.id;
+    createdStandard = Boolean(inserted);
+  } else if (!own) {
+    standardCode = String((await one(db, 'SELECT code FROM standards WHERE id = $1', [standardId]))?.code ?? expected);
+  }
   if (!standardId) throw new Error('general.standard_missing');
 
   const insertedDisclosure = await one(db,
@@ -86,9 +119,11 @@ export async function ensureGeneralBucket(db: BucketDb, serviceId: string): Prom
   return {
     serviceId: String(service.id),
     serviceCode: String(service.code),
+    standardCode,
     standardId: String(standardId),
     disclosureId: String(disclosureId),
-    created: { standard: Boolean(insertedStandard), disclosure: Boolean(insertedDisclosure),
+    adopted: Boolean(own ?? legacy),
+    created: { standard: createdStandard, disclosure: Boolean(insertedDisclosure),
       mapping: (mapping.rowCount ?? 0) > 0 },
   };
 }

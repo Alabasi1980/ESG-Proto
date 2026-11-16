@@ -1396,6 +1396,10 @@ END $$;
 -- U4-1c-B. document_requirements: the department document list (OD-12 §3).
 -- department_id NULL = the requirement applies to every department of the
 -- client. service_id ties the requirement to the ONE service catalog entry.
+-- Round 2 (F-05/L-03): the requirement is CLIENT-scoped — client_id is added by
+-- the DO-block below (NOT inside this CREATE) so a fresh install and the
+-- one-transaction live delta produce the SAME column ordinal, index and
+-- constraint names, i.e. one structural fingerprint for both states.
 CREATE TABLE IF NOT EXISTS document_requirements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
@@ -1408,14 +1412,36 @@ CREATE TABLE IF NOT EXISTS document_requirements (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'document_requirements' AND column_name = 'client_id') THEN
+    ALTER TABLE document_requirements ADD COLUMN client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- U4-1c-B2 (round 2): one title per (client, service, department). PostgreSQL
+-- treats NULL department_id as distinct, so the department-agnostic case gets
+-- its own partial unique index — otherwise the same general title could repeat.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'document_requirements_client_service_department_title_key') THEN
+    ALTER TABLE document_requirements ADD CONSTRAINT document_requirements_client_service_department_title_key
+      UNIQUE (client_id, service_id, department_id, title);
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_document_requirements_general_title
+  ON document_requirements(client_id, service_id, title) WHERE department_id IS NULL;
+
 -- U4-1c-C. document_submissions: ONE row per (client, department, requirement).
 -- submitted_at is the submission stamp: once set, the proof files are locked
--- (append-only), mirroring the U4-1b evidence lock.
+-- (append-only), mirroring the U4-1b evidence lock. Round 2 (H-01): the
+-- requirement FK is ON DELETE RESTRICT — a platform delete can never cascade a
+-- department's submission away; the delete handler maps the FK refusal to 409
+-- documents.dependency.
 CREATE TABLE IF NOT EXISTS document_submissions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  requirement_id UUID NOT NULL REFERENCES document_requirements(id) ON DELETE CASCADE,
+  requirement_id UUID NOT NULL REFERENCES document_requirements(id) ON DELETE RESTRICT,
   provided BOOLEAN NOT NULL DEFAULT false,
   note TEXT,
   tag TEXT,

@@ -275,25 +275,42 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
   const link = await api.ok('POST', `/api/clients/${TENANT_ID}/services`, { serviceId: griService.id }, true);
   log(`client service link -> ${link.status} (${link.json.existed ? 'already linked' : 'linked'})`);
 
+  // U4-1c (OD-12 §7): every service owns a general bucket — standard
+  // `GENERAL-<SLUG>-<ID>` with `category = 'general'`, one disclosure
+  // `GENERAL`, and (until a free question is authored) zero items. That row is
+  // catalog content created by the service, NOT GRI-CSV content, so every CSV
+  // comparison below excludes exactly the standards whose `category` is
+  // `general` (trim + lowercase compare) and, transitively, their disclosures
+  // and items (`item_count`/`disclosure_count` are per-standard aggregates).
+  const isGeneralCategory = (row: any): boolean =>
+    String(row?.category ?? '').trim().toLowerCase() === 'general';
+  const countsOf = (rows: any[]) => ({ standards: rows.length,
+    disclosures: rows.reduce((n, r) => n + Number(r.disclosure_count || 0), 0),
+    items: rows.reduce((n, r) => n + Number(r.item_count || 0), 0) });
   const standardsSum = async () => {
     const r = await api.ok('GET', '/api/standards', undefined, true, [200]);
     const rows = r.json as any[];
-    return { standards: rows.length,
-      disclosures: rows.reduce((n, r2) => n + Number(r2.disclosure_count || 0), 0),
-      items: rows.reduce((n, r2) => n + Number(r2.item_count || 0), 0) };
+    const generalRows = rows.filter(isGeneralCategory);
+    return { catalog: countsOf(rows.filter(row => !isGeneralCategory(row))), raw: countsOf(rows),
+      general: countsOf(generalRows),
+      // `/api/items` carries no category: an item is out of the CSV catalog when
+      // its `standard_code` is one of the general-category standards read above.
+      generalStandardCodes: new Set(generalRows.map(row => String(row.code))) };
   };
   const before = await standardsSum();
-  log(`catalog before GRI commit: ${before.standards} standards / ${before.disclosures} disclosures / ${before.items} items`);
+  log(`catalog before GRI commit: ${before.raw.standards} standards / ${before.raw.disclosures} disclosures / ${before.raw.items} items`);
+  if (before.general.standards) log(`excluding ${before.general.standards} general bucket(s) from the CSV comparison (${before.catalog.standards}/${before.catalog.disclosures}/${before.catalog.items} comparable)`);
 
   const commit = await api.ok('POST', '/api/gri/commit',
     { standards: parsed.standards, clientId: TENANT_ID, serviceId: griService.id }, true, [200]);
   log(`GRI commit -> 200: standards=${commit.json.standardsCount} disclosures=${commit.json.disclosuresCount} items=${commit.json.itemsCount} inserted=${commit.json.inserted} updated=${commit.json.updated} departments=${commit.json.departmentsUpserted} assignments=${commit.json.assignmentsCreated} (updated>0 proves the HTTP upsert overwrote the bootstrap marker rows)`);
 
   const after = await standardsSum();
-  log(`catalog after GRI commit: ${after.standards} standards / ${after.disclosures} disclosures / ${after.items} items`);
-  if (after.items !== parsed.summary.totalItems || after.standards !== parsed.summary.totalStandards
-    || after.disclosures !== parsed.summary.totalDisclosures)
-    die(`catalog counts mismatch the CSV: got ${after.standards}/${after.disclosures}/${after.items}, CSV ${parsed.summary.totalStandards}/${parsed.summary.totalDisclosures}/${parsed.summary.totalItems}`);
+  log(`catalog after GRI commit: ${after.raw.standards} standards / ${after.raw.disclosures} disclosures / ${after.raw.items} items`);
+  if (after.general.standards) log(`excluding ${after.general.standards} general bucket(s) from the CSV comparison (${after.catalog.standards}/${after.catalog.disclosures}/${after.catalog.items} comparable)`);
+  if (after.catalog.items !== parsed.summary.totalItems || after.catalog.standards !== parsed.summary.totalStandards
+    || after.catalog.disclosures !== parsed.summary.totalDisclosures)
+    die(`catalog counts mismatch the CSV: got ${after.raw.standards}/${after.raw.disclosures}/${after.raw.items} raw (${after.catalog.standards}/${after.catalog.disclosures}/${after.catalog.items} excluding ${after.general.standards} general bucket(s)), CSV ${parsed.summary.totalStandards}/${parsed.summary.totalDisclosures}/${parsed.summary.totalItems}`);
 
   const depts = await api.ok('GET', `/api/departments?clientId=${TENANT_ID}`, undefined, true, [200]);
   const deptRows = depts.json as any[];
@@ -327,6 +344,9 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
 
   let mapped = 0, alreadyMapped = 0;
   const standardsList = (await api.ok('GET', '/api/standards', undefined, true, [200])).json as any[];
+  // The general bucket IS listed here on purpose: it stays mapped to its own
+  // service (U4-1c), so this idempotent pass just reports it as already linked
+  // and no count is asserted on the total.
   for (const s of standardsList) {
     const r = await api.ok('POST', `/api/services/${griService.id}/standards`, { standardId: s.id }, true, [200, 201]);
     if (r.json.existed) alreadyMapped++; else mapped++;
@@ -353,9 +373,14 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
 
   await api.login(creds.caEmail, creds.caPassword);
   const items = await api.ok('GET', '/api/items', undefined, false, [200]);
-  log(`client_admin login -> 200; GET /api/items -> ${items.json.length} items`);
-  if (items.json.length !== parsed.summary.totalItems)
-    die(`client_admin sees ${items.json.length} items, expected ${parsed.summary.totalItems}`);
+  // Same exclusion as the standards comparison: `/api/items` exposes
+  // `standard_code` but no category, so an item is CSV-catalog content iff its
+  // standard_code is NOT one of the general-category standards read above.
+  const clientItemRows = (items.json as any[]);
+  const csvCatalogItems = clientItemRows.filter(row => !after.generalStandardCodes.has(String(row.standard_code ?? '')));
+  log(`client_admin login -> 200; GET /api/items -> ${clientItemRows.length} items (${csvCatalogItems.length} outside ${after.general.standards} general bucket(s))`);
+  if (csvCatalogItems.length !== parsed.summary.totalItems)
+    die(`client_admin sees ${csvCatalogItems.length} CSV-catalog items, expected ${parsed.summary.totalItems} (predicate: item.standard_code is not a standard whose category = 'general')`);
   const settings = await api.ok('GET', '/api/report-settings', undefined, false, [200]);
   if (!settings.json.settings) die('client_admin cannot read the saved report settings');
   const profile = await api.ok('GET', '/api/esg-profile', undefined, false, [200]);
@@ -378,7 +403,7 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
   if (home.status !== 200 || !(await home.text()).includes('<!doctype html'))
     die(`GET / -> ${home.status}, expected SPA HTML`);
   log('GET / -> 200 (SPA HTML)');
-  log(`SUMMARY items=${after.items} standards=${after.standards} disclosures=${after.disclosures} departments=${deptRows.length} esgRows=${profile.json.rows.length}`);
+  log(`SUMMARY items=${after.catalog.items} standards=${after.catalog.standards} disclosures=${after.catalog.disclosures} departments=${deptRows.length} esgRows=${profile.json.rows.length}`);
 }
 
 // ---- PERSISTENT shared-DB mode (owner-approved permanent on-machine DB) ----

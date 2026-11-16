@@ -408,7 +408,7 @@ router.post('/services/:id/duplicate', authMiddleware, requireFreshPassword, req
          JOIN standards st ON st.id = ss.standard_id
          WHERE ss.service_id = $2 AND st.code <> $3
          ON CONFLICT DO NOTHING`,
-        [copy.id, src.id, generalStandardCode(src.code)]
+        [copy.id, src.id, generalStandardCode(src.code, src.id)]
       );
       await recordAuditLog(client, {
         clientId: null,

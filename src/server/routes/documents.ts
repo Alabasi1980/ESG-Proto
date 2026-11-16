@@ -40,27 +40,40 @@ const evidenceUpload = multer({
   storage: multer.memoryStorage(),
 });
 
-const REQUIREMENT_COLUMNS = `id, service_id, department_id, title, description, required,
+const REQUIREMENT_COLUMNS = `id, client_id, service_id, department_id, title, description, required,
   sort_order, tags, created_at`;
 
-async function assertServiceExists(client: any, serviceId: string): Promise<void> {
-  const row = (await client.query('SELECT id FROM services WHERE id = $1', [serviceId])).rows[0];
-  if (!row) throw scopeError(404, 'scope.not_found');
+// ----------------------------------------------------------------------
+// P — requirements CRUD under a service, PER CLIENT (round 2, F-05/L-03).
+// Every row is client-scoped: the platform names the target client explicitly
+// (clientId), the service must be linked to it, and the write runs under the
+// platform.config context with that target — so the P@T matrix rows are real.
+// ----------------------------------------------------------------------
+
+/** The explicit target client of a P requirement operation (T). */
+function requirementTenant(req: AuthenticatedRequest): string {
+  const name = req.query.clientId ?? (req.body ?? {}).clientId;
+  return domainTenant(req, name);
 }
 
-// ----------------------------------------------------------------------
-// P — requirements CRUD under a service.
-// ----------------------------------------------------------------------
+/** The service must be linked to the target client (no orphan catalog rows). */
+async function assertLinkedService(client: any, tenant: string, serviceId: string): Promise<void> {
+  const linked = (await client.query("SELECT b17_content_fact('service',$1,$2) AS ok",
+    [tenant, serviceId])).rows[0]?.ok;
+  if (!linked) throw scopeError(403, 'scope.service_unlinked');
+}
 
 router.get('/services/:id/documents', authMiddleware, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const serviceId = scopeId(req.params.id, true)!;
+    const tenant = requirementTenant(req);
     const rows = await domainTransaction(req, async (client) => {
-      await assertServiceExists(client, serviceId);
+      await assertLinkedService(client, tenant, serviceId);
       return (await client.query(
         `SELECT ${REQUIREMENT_COLUMNS} FROM document_requirements
-          WHERE service_id = $1 ORDER BY sort_order ASC, title ASC, id ASC`, [serviceId])).rows;
-    }, readContext);
+          WHERE client_id = $1 AND service_id = $2 ORDER BY sort_order ASC, title ASC, id ASC`,
+        [tenant, serviceId])).rows;
+    }, (live) => live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.json(rows);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
@@ -71,26 +84,29 @@ router.get('/services/:id/documents', authMiddleware, requireDomainAccess, async
 router.post('/services/:id/documents', authMiddleware, requireFreshPassword, requireDomainAccess, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const serviceId = scopeId(req.params.id, true)!;
+    const tenant = requirementTenant(req);
     const parsed = validateRequirementInput(req.body ?? {}, false);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
     const v = parsed.value;
     const created = await domainTransaction(req, async (client) => {
-      await assertServiceExists(client, serviceId);
+      await assertLinkedService(client, tenant, serviceId);
       if (v.departmentId) {
-        const dept = (await client.query('SELECT id FROM departments WHERE id = $1', [v.departmentId])).rows[0];
+        const dept = (await client.query('SELECT id FROM departments WHERE id = $1 AND client_id = $2',
+          [v.departmentId, tenant])).rows[0];
         if (!dept) throw scopeError(400, 'documents.department_invalid');
       }
       const row = (await client.query(
-        `INSERT INTO document_requirements (service_id, department_id, title, description,
+        `INSERT INTO document_requirements (client_id, service_id, department_id, title, description,
            required, sort_order, tags)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::text[]) RETURNING ${REQUIREMENT_COLUMNS}`,
-        [serviceId, v.departmentId ?? null, v.title, v.description ?? null,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[]) RETURNING ${REQUIREMENT_COLUMNS}`,
+        [tenant, serviceId, v.departmentId ?? null, v.title, v.description ?? null,
           v.required ?? true, v.sortOrder ?? 0, v.tags ?? []])).rows[0];
-      await recordAuditLog(client, { clientId: null, userId: req.access!.actorId,
+      await recordAuditLog(client, { clientId: tenant, userId: req.access!.actorId,
         action: 'DOCUMENT_REQUIREMENT_CREATED', entityType: 'document_requirements',
-        entityId: row.id, payload: { serviceId, title: row.title, departmentId: row.department_id } });
+        entityId: row.id, payload: { clientId: tenant, serviceId, title: row.title,
+          departmentId: row.department_id } });
       return row;
-    });
+    }, (live) => live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.status(201).json(created);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
@@ -102,16 +118,19 @@ router.patch('/services/:id/documents/:reqId', authMiddleware, requireFreshPassw
   try {
     const serviceId = scopeId(req.params.id, true)!;
     const requirementId = scopeId(req.params.reqId, true)!;
+    const tenant = requirementTenant(req);
     const parsed = validateRequirementInput(req.body ?? {}, true);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
     const v = parsed.value;
     const updated = await domainTransaction(req, async (client) => {
-      await assertServiceExists(client, serviceId);
+      await assertLinkedService(client, tenant, serviceId);
       const cur = (await client.query(
-        'SELECT id FROM document_requirements WHERE id = $1 AND service_id = $2', [requirementId, serviceId])).rows[0];
+        'SELECT id FROM document_requirements WHERE id = $1 AND service_id = $2 AND client_id = $3',
+        [requirementId, serviceId, tenant])).rows[0];
       if (!cur) throw scopeError(404, 'scope.not_found');
       if (v.departmentId !== undefined && v.departmentId) {
-        const dept = (await client.query('SELECT id FROM departments WHERE id = $1', [v.departmentId])).rows[0];
+        const dept = (await client.query('SELECT id FROM departments WHERE id = $1 AND client_id = $2',
+          [v.departmentId, tenant])).rows[0];
         if (!dept) throw scopeError(400, 'documents.department_invalid');
       }
       const sets: string[] = [];
@@ -125,16 +144,17 @@ router.patch('/services/:id/documents/:reqId', authMiddleware, requireFreshPassw
       if (v.sortOrder !== undefined) push('sort_order', v.sortOrder);
       if (v.departmentId !== undefined) push('department_id', v.departmentId);
       if (v.tags !== undefined) push('tags', v.tags, '::text[]');
-      params.push(requirementId, serviceId);
+      params.push(requirementId, serviceId, tenant);
       const row = (await client.query(
         `UPDATE document_requirements SET ${sets.join(', ')}
-          WHERE id = $${params.length - 1} AND service_id = $${params.length}
+          WHERE id = $${params.length - 2} AND service_id = $${params.length - 1}
+            AND client_id = $${params.length}
           RETURNING ${REQUIREMENT_COLUMNS}`, params)).rows[0];
-      await recordAuditLog(client, { clientId: null, userId: req.access!.actorId,
+      await recordAuditLog(client, { clientId: tenant, userId: req.access!.actorId,
         action: 'DOCUMENT_REQUIREMENT_UPDATED', entityType: 'document_requirements',
-        entityId: row.id, payload: { serviceId, fields: Object.keys(v) } });
+        entityId: row.id, payload: { clientId: tenant, serviceId, fields: Object.keys(v) } });
       return row;
-    });
+    }, (live) => live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.json(updated);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
@@ -146,28 +166,34 @@ router.delete('/services/:id/documents/:reqId', authMiddleware, requireFreshPass
   try {
     const serviceId = scopeId(req.params.id, true)!;
     const requirementId = scopeId(req.params.reqId, true)!;
+    const tenant = requirementTenant(req);
     const result = await domainTransaction(req, async (client) => {
-      await assertServiceExists(client, serviceId);
+      await assertLinkedService(client, tenant, serviceId);
       const cur = (await client.query(
-        'SELECT id, title FROM document_requirements WHERE id = $1 AND service_id = $2 FOR UPDATE',
-        [requirementId, serviceId])).rows[0];
+        'SELECT id, title FROM document_requirements WHERE id = $1 AND service_id = $2 AND client_id = $3 FOR UPDATE',
+        [requirementId, serviceId, tenant])).rows[0];
       if (!cur) throw scopeError(404, 'scope.not_found');
-      // Truthful, catalog-wide blocker count: a department's submission is
-      // evidence and must never be removed by a catalog delete (zero writes).
-      const submissions = (await client.query(
-        'SELECT count(*)::int AS n FROM document_submissions WHERE requirement_id = $1', [requirementId])).rows[0];
-      if ((submissions?.n ?? 0) > 0) {
-        throw new DeferredRefusal(409, {
-          error: `${submissions.n} department submission(s) reference this document requirement. Remove the reference first.`,
-          code: 'documents.dependency',
-        });
+      // ROUND 2 (H-01): NO count pre-check. The guarantee is the FK itself —
+      // document_submissions.requirement_id is ON DELETE RESTRICT — so a
+      // department's submission can never be cascade-deleted, and a delete is
+      // atomic whether or not the caller can see the child rows. The FK
+      // refusal (23503) is mapped to the unit's own 409 body with no raw PG text.
+      try {
+        await client.query('DELETE FROM document_requirements WHERE id = $1', [requirementId]);
+      } catch (fkErr: any) {
+        if (fkErr?.code === '23503') {
+          throw new DeferredRefusal(409, {
+            error: 'A department submission references this document requirement. Remove the reference first.',
+            code: 'documents.dependency',
+          });
+        }
+        throw fkErr;
       }
-      await client.query('DELETE FROM document_requirements WHERE id = $1', [requirementId]);
-      await recordAuditLog(client, { clientId: null, userId: req.access!.actorId,
+      await recordAuditLog(client, { clientId: tenant, userId: req.access!.actorId,
         action: 'DOCUMENT_REQUIREMENT_DELETED', entityType: 'document_requirements',
-        entityId: requirementId, payload: { serviceId, title: cur.title } });
+        entityId: requirementId, payload: { clientId: tenant, serviceId, title: cur.title } });
       return { deleted: true };
-    });
+    }, (live) => live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.json(result);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
@@ -202,7 +228,8 @@ router.get('/requirements', authMiddleware, requireDomainAccess, async (req: Aut
               WHERE s.requirement_id = r.id AND s.client_id = $1
                 AND ($2::uuid IS NULL OR s.department_id = $2)), '[]'::json) AS submissions
          FROM document_requirements r
-        WHERE b17_content_fact('service', $1, r.service_id)
+        WHERE r.client_id = $1
+          AND b17_content_fact('service', $1, r.service_id)
           AND ($2::uuid IS NULL OR r.department_id IS NULL OR r.department_id = $2)
         ORDER BY r.sort_order ASC, r.title ASC, r.id ASC`, [tenant, department])).rows, (live) =>
       live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));

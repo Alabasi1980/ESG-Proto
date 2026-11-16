@@ -29,8 +29,17 @@ export const B17_VERSION = 'B17_U1';
 // policy block and restoring the three predecessor policy texts restores the
 // pre-change content md5 (6f67b44d…) on the pre-change structure, and re-adding
 // the block restores these values.
-export const PREDECESSOR_SHAPE = 'c320ef6ff50675206ac4c8edf762db3b';
-export const B17_SHAPE = '3adef0179b7703b6d8e20750fbe67e8a';
+// U4-1c round 2 (H-01/M-01/F-03/F-05): recomputed after the schema and policy
+// deltas — document_submissions.requirement_id FK RESTRICT (no cascade), the
+// client-scoped document_requirements (client_id column + uniqueness) and the
+// client-matching requirement/submission policies. The bucket-code suffix and
+// the `initiatives.locked` rule are handler-level and change no structure.
+// Falsifiability proved in scripts/u41c-scratch.ts: undoing exactly the round-2
+// schema delta restores the round-1 md5 (c320ef6f… / 99455c0b…), the seven
+// round-2 policy texts restored to their round-1 form restore the schema-only
+// content md5, and re-applying them restores these values.
+export const PREDECESSOR_SHAPE = 'e75eb5f4e4754549849757daec7c478b';
+export const B17_SHAPE = 'f28b8352a1b6f68e01b3cc9d5b725546';
 export const B17_CONTENT_VERSION = 'B17_U2D';
 // G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
 // the CANONICAL content label. Tera ruling: renaming it would strand every
@@ -78,17 +87,10 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // policy (b17_consultant_service_visibility), so BOTH its checksum (sha256,
 // ledger `checksum`) and its catalog shape moved; measured content sha256 was
 // 2e07a7c1… with structure 6f67b44d… (the U4-1c block below supersedes both).
-// U4-1c: recomputed after the document/initiative/evidence row-scope policies,
-// the E/P@T branches on client_initiatives + initiatives_library, the three new
-// P audit actions and the ledger UPDATE gate (b17_version_update: purpose
-// 'migration' only, which no request handler ever sets — without it no
-// row-security-subject role could re-pin a structure_checksum at all). New
-// content sha256: d96d6bc2… (measured in the same scratch run as the shape).
-// Falsifiability: with the policy block removed and the three predecessor
-// policy texts restored, the content md5 returns to the pre-change 6f67b44d… on
-// the pre-change structure; re-adding the block restores this value. No new
-// SECURITY DEFINER, no PUBLIC grant.
-export const B17_CONTENT_SHAPE = '9e06e001dabaa6df41c84b572dfcd494';
+// U4-1c round 2: recomputed after the seven changed requirement/submission
+// policies (client scoping + no targetless submissions branch). New content
+// sha256: 07e9c994… (measured in the same scratch run as the shape).
+export const B17_CONTENT_SHAPE = '79ad1927e72f861081450df86eb35b7f';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

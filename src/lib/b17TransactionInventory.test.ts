@@ -23,12 +23,13 @@ const inventory: Record<string,[number,number]> = {
   'routes/settings.ts':[2,0],
   // TASK-PROTO-U4-1a: the W-only visibility writer, one work-context boundary.
   'routes/serviceVisibility.ts':[1,1],
-  // TASK-PROTO-U4-1c: the department document requirements (4 P catalog rows),
+  // TASK-PROTO-U4-1c: the department document requirements (4 P@T catalog rows),
   // the department list read, the submission patch and the three unified
-  // evidence-file rows (9 boundaries; the P catalog read is the one explicit
-  // readContext site), plus the department initiative status pair (2, target
-  // read + one E write).
-  'routes/documents.ts':[9,1], 'routes/departmentInitiatives.ts':[2,0],
+  // evidence-file rows (9 boundaries; round 2 gives every target read the
+  // platform-config arrow, so this file has no literal readContext selector and
+  // the explicit-work inventory count drops by one), plus the department
+  // initiative status pair (2, target read + one E write).
+  'routes/documents.ts':[9,0], 'routes/departmentInitiatives.ts':[2,0],
 };
 const mask=(s:string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g,
   text => text.replace(/[^\r\n]/g,' '));
@@ -72,7 +73,7 @@ test('G1 every business call site is classified, explicit P-work exceptions reta
     }
     total+=sites.length;work+=explicitWork.length;
   }
-  assert.equal(total,95);assert.equal(work,39);
+  assert.equal(total,95);assert.equal(work,38);
   const provisioning=readFileSync(path.join(root,'routes/adminProvisioning.ts'),'utf8');
   assert.equal((provisioning.match(/await configurationTransaction\(req, target,/g) ?? []).length,3);
   assert.equal(total+3,98,'85 baseline sites minus merged GET clients branch, plus H13 settings, the U4-1a visibility row and the eleven U4-1c rows');
@@ -137,15 +138,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const h13AuthSha256='5848271d5e7f8fefb56424d10993fb5d56b38bf583a6ccf590b1ea857c978dde';
   // U4-1a: routes.ts + accessRegistry.ts gained the one W visibility declaration;
   // b17-content.sql gained the one narrow W policy (approved Option A).
-  // U4-1c (TASK-PROTO-U4-1c): routes.ts + accessRegistry.ts gained eleven
-  // declarations and b17-content.sql gained this unit's documented block (the
-  // four table policy sets, the E/P@T branches on client_initiatives +
-  // initiatives_library, the three DOCUMENT_REQUIREMENT_* audit actions and the
-  // migration-purpose ledger UPDATE gate). Pins re-measured over LF-normalized
-  // bytes after the own-scratch re-measure; any further edit must move them.
+  // U4-1c round 2 (H-01/M-01/F-03/F-05): routes.ts is untouched this round;
+  // accessRegistry.ts moves four rows to P@T and b17-content.sql gains the
+  // client-scoped requirement/submission policies (seven policy texts).
   const h13RoutesSha256='a810933dcab117669a42036ec3d6affe944f5cd1f4e73a68096b4561bbce9820';
-  const h13AccessRegistrySha256='02a4cb18d656bebbf5dd6583dc8da91330a6bd8855341c7b86f82c3eab734a0f';
-  const h13ContentSha256='d96d6bc243dc5b14beb002cceccbbeade2b8e51dcb09c128411d1f010ac41f93';
+  const h13AccessRegistrySha256='10931e42fd5f86e491b5e52836a486a1be72a48964c56e477731feeb6377711b';
+  const h13ContentSha256='07e9c994acd48323b4f9430bf19fc45de99cc34cd73c601d7cad6089a76b892d';
   const postH12Pins: Record<string,string> = {
     'src/server/auth.ts': h13AuthSha256,
     'src/server/routes.ts': h13RoutesSha256,
@@ -172,7 +170,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // columns/tables and the new content policy block were re-measured on an own
   // fresh PG18 scratch (scripts/u41c-scratch.ts), with the drop/re-add
   // falsifiability chain in the same run.
-  const h13ReadinessSha256='f056aaafb5a815e1f58d1b2fe9fd66087e07aa82121156ce01ec8904a09309c5';
+  // U4-1c round 2: the three constants moved again after the FK/client-scope
+  // deltas were re-measured on the own scratch, with their undo/redo proof.
+  const h13ReadinessSha256='59322ac3ba674460066318414cd6be3b5457bd8c31a077a131033defd58c68d1';
   assert.equal(createHash('sha256')
     .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
     .digest('hex'),h13ReadinessSha256,
@@ -315,7 +315,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'security-reports/TASK-PROTO-U4-1a-fix-review.md',
     // TASK-PROTO-U4-1b reviewer evidence (round 2) — reviewer-owned, exact paths.
     'project-control/qa-reports/TASK-PROTO-U4-1b-QA.md',
-    'security-reports/TASK-PROTO-U4-1b-fix-review.md']);
+    'security-reports/TASK-PROTO-U4-1b-fix-review.md',
+    // TASK-PROTO-U4-1c reviewer evidence (round 2) — reviewer-owned, exact paths.
+    'project-control/qa-reports/TASK-PROTO-U4-1c-QA.md',
+    'security-reports/TASK-PROTO-U4-1c-fix-review.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',

@@ -14,7 +14,7 @@ import express, { type Response } from 'express';
 import { recordAuditLog } from '../../db/index.ts';
 import { authMiddleware, type AuthenticatedRequest } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
-import { domainTransaction, deferredFailure, domainTenant } from './initiativeScope.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal, domainTenant } from './initiativeScope.ts';
 import { platformConfigContext, readContext, requireFreshPassword, writeFailure } from './_shared.ts';
 import { ownDepartment, ownEmployeeDepartment, scopeError, scopeId } from '../scope.ts';
 import { stampsSubmission, validateInitiativeStatusPatch } from '../../lib/departmentInitiatives.ts';
@@ -72,6 +72,15 @@ router.patch('/initiatives/department/:id', authMiddleware, requireFreshPassword
         `SELECT * FROM initiative_department_status
           WHERE client_initiative_id = $1 AND department_id = $2`,
         [clientInitiativeId, own])).rows[0];
+      // ROUND 2 (F-04/L-02): once the department submitted its status, the
+      // recorded outcome is part of the record — `performed` may not be reset
+      // (mirror of the document submission lock). Notes stay editable.
+      if (existing?.submitted_at && patch.performed === false) {
+        throw new DeferredRefusal(409, {
+          error: 'This initiative status is already submitted. Notes stay editable; performed cannot be reset.',
+          code: 'initiatives.locked',
+        });
+      }
       const performed = patch.performed ?? existing?.performed ?? false;
       const note = patch.note !== undefined ? patch.note : existing?.note ?? null;
       const submitting = stampsSubmission(performed, existing?.submitted_at);

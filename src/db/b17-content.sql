@@ -812,30 +812,38 @@ CREATE POLICY b17_library ON initiatives_library FOR SELECT USING(CASE
       WHERE ci.client_id::text=b17_setting('target_id') AND ci.initiative_id=initiatives_library.id)
   ELSE false END);
 
--- document_requirements: a service-catalog object. P manages it under either
--- platform context; W/C/E read only requirements of a service linked to their
--- own tenant, and an employee only the department-agnostic ones plus its own
--- department's.
+-- document_requirements: a CLIENT-scoped service-catalog object (round 2,
+-- F-05/L-03: client_id is part of every predicate). P manages it only under the
+-- platform configuration context with an EXPLICIT target T (the declaration is
+-- P@T); W/C/E read only their own client's requirements for a service linked to
+-- that client, and an employee only the department-agnostic ones plus its own
+-- department's. No targetless platform branch exists any more.
 CREATE POLICY b17_document_requirements_read ON document_requirements FOR SELECT USING(
   (b17_setting('current_purpose')='work'
     AND b17_bound_tenant(nullif(b17_setting('current_tenant_id'),'')::uuid)
+    AND client_id::text=b17_setting('current_tenant_id')
     AND b17_content_fact('service',nullif(b17_setting('current_tenant_id'),'')::uuid,service_id)
     AND (b17_setting('current_mode')<>'employee' OR department_id IS NULL
       OR department_id::text=b17_setting('current_user_department_id')))
   OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
-    AND b17_content_fact('service',nullif(b17_setting('target_id'),'')::uuid,service_id))
-  OR b17_platform_config() OR b17_platform_scope());
+    AND client_id::text=b17_setting('target_id')
+    AND b17_content_fact('service',nullif(b17_setting('target_id'),'')::uuid,service_id)));
 CREATE POLICY b17_document_requirements_insert ON document_requirements FOR INSERT
-  WITH CHECK (b17_platform_scope() OR b17_platform_config());
+  WITH CHECK (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id'));
 CREATE POLICY b17_document_requirements_update ON document_requirements FOR UPDATE
-  USING (b17_platform_scope() OR b17_platform_config())
-  WITH CHECK (b17_platform_scope() OR b17_platform_config());
+  USING (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id'))
+  WITH CHECK (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id'));
 CREATE POLICY b17_document_requirements_delete ON document_requirements FOR DELETE
-  USING (b17_platform_scope() OR b17_platform_config());
+  USING (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text=b17_setting('target_id'));
 
 -- document_submissions: ONE row per (client, department, requirement). Written
--- ONLY by an employee for its own department (actor = submitted_by); read by
--- W/C for the whole tenant and by E only for its own department; P@T may read.
+-- ONLY by an employee for its own department; read by W/C for the whole client
+-- and by E only for its own department; P@T may read. The requirement must
+-- belong to the SAME client (round 2: client scoping + H-01 FK RESTRICT below).
 CREATE POLICY b17_document_submissions_read ON document_submissions FOR SELECT USING(
   (b17_work_tenant(client_id) AND b17_content_fact('department',client_id,department_id)
     AND (b17_setting('current_mode')<>'employee'
@@ -847,6 +855,7 @@ CREATE POLICY b17_document_submissions_insert ON document_submissions FOR INSERT
   AND department_id::text=b17_setting('current_user_department_id')
   AND b17_content_fact('department',client_id,department_id)
   AND EXISTS(SELECT 1 FROM document_requirements r WHERE r.id=requirement_id
+    AND r.client_id=document_submissions.client_id
     AND b17_content_fact('service',client_id,r.service_id)
     AND (r.department_id IS NULL OR r.department_id=document_submissions.department_id)));
 CREATE POLICY b17_document_submissions_update ON document_submissions FOR UPDATE
@@ -857,6 +866,7 @@ CREATE POLICY b17_document_submissions_update ON document_submissions FOR UPDATE
     AND department_id::text=b17_setting('current_user_department_id')
     AND b17_content_fact('department',client_id,department_id)
     AND EXISTS(SELECT 1 FROM document_requirements r WHERE r.id=requirement_id
+      AND r.client_id=document_submissions.client_id
       AND b17_content_fact('service',client_id,r.service_id)
       AND (r.department_id IS NULL OR r.department_id=document_submissions.department_id)));
 

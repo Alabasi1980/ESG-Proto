@@ -95,10 +95,10 @@ test('U4-1c evidence entity types are exactly the two contract parents', () => {
 
 test('U4-1c matrix pins: the eleven new declarations carry their exact role rows', () => {
   const expected: Record<string, string> = {
-    'GET /services/:id/documents': 'P#service-document-requirements-catalog',
-    'POST /services/:id/documents': 'P#catalog-document-requirement-create',
-    'PATCH /services/:id/documents/:reqId': 'P#catalog-document-requirement-update',
-    'DELETE /services/:id/documents/:reqId': 'P#catalog-requirement-delete-existing-submission-refusals',
+    'GET /services/:id/documents': 'P@T#client-service-document-requirements-catalog',
+    'POST /services/:id/documents': 'P@T#client-document-requirement-create',
+    'PATCH /services/:id/documents/:reqId': 'P@T#client-document-requirement-update',
+    'DELETE /services/:id/documents/:reqId': 'P@T#client-requirement-delete-fk-restrict-refusal',
     'GET /requirements': 'P@T#read-only-target;W:L;C:L;E:L+D#own-department-submission-state-and-proof-metadata',
     'PATCH /requirements/:id': 'E:L+D#own-department-provided-note-tag-only-no-W-C-P-write',
     'POST /evidence/:entityType/:entityId/files': 'E:L+D#own-department-own-parent-5MB-mime-allowlist',
@@ -123,5 +123,43 @@ test('U4-1c matrix pins: the eleven new declarations carry their exact role rows
     const [method, path] = key.split(' ');
     const route = classifyRoute(method, path.replace(/:[^/]+/g, '00000000-0000-4000-8000-000000000000'))!;
     assert.deepEqual(route.matrix.map((r) => r.context), ['E']);
+  }
+  // ROUND 2 (F-05/L-03): the four platform requirement rows are P@T — the
+  // handler REQUIRES an explicit clientId, so no targetless P row may exist.
+  for (const key of ['GET /services/:id/documents', 'POST /services/:id/documents',
+    'PATCH /services/:id/documents/:reqId', 'DELETE /services/:id/documents/:reqId']) {
+    const [method, path] = key.split(' ');
+    const route = classifyRoute(method, path.replace(/:[^/]+/g, '00000000-0000-4000-8000-000000000000'))!;
+    assert.deepEqual(route.matrix.map((r) => [r.context, r.tenant]), [['P', 'explicit']]);
+  }
+});
+
+test('U4-1c round-2 pins: FK RESTRICT on submissions, no RLS-blind count guard', () => {
+  const schema = readFileSync('src/db/schema.sql', 'utf8');
+  const en = readFileSync('src/server/routes/documents.ts', 'utf8');
+  const content = readFileSync('src/db/b17-content.sql', 'utf8');
+  // H-01: the guarantee is the FK, in the schema AND in every policy that could
+  // reach the row.
+  assert.match(schema, /requirement_id UUID NOT NULL REFERENCES document_requirements\(id\) ON DELETE RESTRICT/);
+  assert.ok(!/requirement_id UUID NOT NULL REFERENCES document_requirements\(id\) ON DELETE CASCADE/.test(schema),
+    'the cascade FK is gone');
+  // The misleading targetless count pre-check is REMOVED, not kept as a fast path.
+  assert.ok(!/SELECT count\(\*\)::int AS n FROM document_submissions/.test(en),
+    'no RLS-blind count pre-check remains');
+  assert.ok(en.includes("fkErr?.code === '23503'") && en.includes("code: 'documents.dependency'"),
+    'the FK refusal maps to the own 409 documents.dependency body');
+  assert.ok(!/error:.*fkErr/.test(en), 'the FK diagnostic is never echoed');
+  // F-05/L-03: requirements are client-scoped end to end.
+  assert.match(schema, /ADD COLUMN client_id UUID NOT NULL REFERENCES clients\(id\) ON DELETE CASCADE/);
+  assert.match(schema, /UNIQUE \(client_id, service_id, department_id, title\)/);
+  assert.ok(content.includes('b17_document_requirements_read') &&
+    content.includes("client_id::text=b17_setting('current_tenant_id')"),
+    'the requirement read policy is client-scoped');
+  assert.ok(en.includes('WHERE r.client_id = $1'), 'the department list is client-scoped');
+  // R3: both P@T lists really run the platform configuration context for P.
+  for (const file of ['src/server/routes/documents.ts', 'src/server/routes/departmentInitiatives.ts']) {
+    const src = readFileSync(file, 'utf8');
+    assert.ok(src.includes("live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live)"),
+      `${file}: the P path uses platformConfigContext(T)`);
   }
 });
