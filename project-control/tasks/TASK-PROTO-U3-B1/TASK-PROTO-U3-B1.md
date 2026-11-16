@@ -27,3 +27,10 @@ Split: **B1 = shell only** (no Clients page, no Enter/Exit flow — B2 owns §5 
 فهمي: كل دور يرى قائمته المعتمدة فقط، والهبوط يتبع السياق، والمسار الممنوع لا يُركّب أصلاً.
 الافتراضات: قدرات الخادم هي مصدر الشرطية؛ لا صفحة عملاء بعد (B2)؛ الهوية في الشريط تصبح صادقة.
 ما سيكشفه القبول: أن الاختلاف الحقيقي بين المنصة/المستشار/العميل/الموظف أصبح مرئياً ومحكوماً من نموذج واحد.
+
+## 5. COMPLETE — accepted (2026-11-16)
+- Round 1 delivered: navModel (single source, §3 matrix), context derivation, landings, truthful identity, deny-by-default guards, E single-item menu with polling off. 282/282, lint 0, build 0.
+- **Live proof (Tera):** P menu = GE Operations/Standards/Initiatives Library/Import/Settings/Staff Lists/Audit/Notifications, landing GE Operations, identity Platform administration, no 'Unrestricted' · C menu = Client Dashboard/Client Detail/Standards/Gap Analysis/Actions/Assigned Initiatives/Staff Lists/Notifications, landing Client Dashboard · **E = exactly one item (My department disclosures), no dashboard, no polling**. Screenshots prototypes/task-proto-u3b1/ctx-{platform,client,employee}.png.
+- **Reviews:** QA **PASS** (10/10 criteria, adversarial oracle parsed from the bindings doc itself) · Shield **0H/0M/3Low**.
+- **Rulings:** (1) SHIELD-B1-01 (W mirror trust before first render) → **binding precondition for B2**: reconcile GET /api/workspace before mounting W chrome; no privilege impact today (server validates every call). (2) SHIELD-B1-02 (GE without tab → P menus) → **keep**: §7 requires 'verified P → Clients'; the 'no pages' clause targets unknown role/binding, which stays enforced. (3) SHIELD-B1-03 (E/C db-status polling + RLS pill claim) → **defect for B2** (§4 forbids W/C/E diagnostics/RLS claims). (4) QA F1 (clients row) / F2 (conditionals producer) / F3 (stray CTAs in views) / F4 (narrow-width pill) → **B2 scope**; INFO typo in this contract corrected (إفصاحات). (5) Static-import interpretation accepted; lazy loading deferred.
+- **ISS-004 resolved by B1** (employee no longer has a dashboard; only own-department disclosures). Round cap 2/2, no push.
