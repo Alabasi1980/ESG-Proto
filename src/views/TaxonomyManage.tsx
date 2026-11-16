@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link2, Pencil, Plus, RefreshCw, Save, Trash2, Unlink } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface StandardRow {
   id: string;
@@ -91,9 +92,9 @@ export const TaxonomyManage: React.FC = () => {
     setError(null);
     try {
       const [sRes, dRes, iRes] = await Promise.all([
-        fetch('/api/standards', { headers: readHeaders() }),
-        fetch('/api/disclosures', { headers: readHeaders() }),
-        fetch('/api/items', { headers: readHeaders() }),
+        apiFetch('/api/standards', { headers: readHeaders() }),
+        apiFetch('/api/disclosures', { headers: readHeaders() }),
+        apiFetch('/api/items', { headers: readHeaders() }),
       ]);
       if (sRes.ok) setStandards(await sRes.json());
       if (dRes.ok) setDisclosures(await dRes.json());
@@ -150,7 +151,7 @@ export const TaxonomyManage: React.FC = () => {
   };
 
   const api = async (path: string, method: string, body?: any) => {
-    const res = await fetch(path, {
+    const res = await apiFetch(path, {
       method,
       headers: headers(),
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -213,7 +214,7 @@ export const TaxonomyManage: React.FC = () => {
   const loadLinks = async (itemId: string) => {
     setError(null);
     try {
-      const res = await fetch(`/api/items/${itemId}/links`, { headers: readHeaders() });
+      const res = await apiFetch(`/api/items/${itemId}/links`, { headers: readHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load links');
       setLinks(data.links || []);

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Building2, CheckCircle2, Undo2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface ReviewDept {
   departmentId: string;
@@ -68,7 +69,7 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
     }
     const loadTenants = async () => {
       try {
-        const res = await fetch('/api/clients', { headers: authOnly });
+        const res = await apiFetch('/api/clients', { headers: authOnly });
         if (res.ok) {
           const list = await res.json();
           setTenants(list || []);
@@ -90,7 +91,7 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/client-review?clientId=${encodeURIComponent(tenantId)}`, { headers: authOnly });
+      const res = await apiFetch(`/api/client-review?clientId=${encodeURIComponent(tenantId)}`, { headers: authOnly });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load client-review queue');
       setGroups(data.groups || []);
@@ -120,7 +121,7 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
     setNotice(null);
     try {
       const version = dept.evaluationVersion ?? dept.answerVersion ?? null;
-      const res = await fetch(`/api/evaluations/${dept.evaluationId}/${action}`, {
+      const res = await apiFetch(`/api/evaluations/${dept.evaluationId}/${action}`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ comment: comment || undefined, ...(version !== null ? { version } : {}) }),

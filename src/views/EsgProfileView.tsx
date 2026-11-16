@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Sprout, RefreshCw, AlertTriangle, BarChart3, PieChart } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface EsgRow {
   id: string;
@@ -42,7 +43,7 @@ export const EsgProfileView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/esg-profile', {
+      const res = await apiFetch('/api/esg-profile', {
         headers: { Authorization: token ? `Bearer ${token}` : '' },
       });
       if (!res.ok) {

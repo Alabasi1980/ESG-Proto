@@ -1,0 +1,235 @@
+/**
+ * TASK-PROTO-U3-A §1 — workspace client layer (module state, no React).
+ *
+ * Every GE (ge_admin) request to /api must present `X-Workspace-Tab` (opaque
+ * 43-char handle) and `X-Workspace-Version` (the tab generation the client last
+ * saw). src/server/access.ts (withWorkspace / deriveDomainAccess) validates that
+ * pair, derives mode/tenant server-side and rejects anything else with
+ * 409 workspace.invalid / 409 workspace.stale / 400 workspace.version_required.
+ * This module is only the client mirror of what the server returned: it never
+ * decides a mode or a tenant by itself.
+ *
+ * Scope is the BROWSER TAB (spec §3): the handle lives in sessionStorage, so
+ * two tabs create two independent tabs and a reload of one tab reuses its own
+ * handle. localStorage would share one handle across tabs — never used here.
+ */
+
+/** Existing token store (AuthContext). Kept here because this is the lower
+ * layer: api.ts imports from this module, never the other way round. */
+export const AUTH_TOKEN_KEY = 'greenedge_token';
+
+/** sessionStorage entry holding {handle,generation,mode,client}. */
+const TAB_STORAGE_KEY = 'greenedge_workspace';
+
+export type WorkspaceMode = 'platform' | 'consultant';
+
+export interface WorkspaceClientSummary {
+  id: string;
+  name: string;
+  suspended?: boolean;
+}
+
+/** The client-side mirror of one workspace tab (per browser tab). */
+export interface WorkspaceTab {
+  handle: string;
+  generation: number;
+  mode: WorkspaceMode;
+  client: WorkspaceClientSummary | null;
+}
+
+/** Envelope returned by POST /workspace/tab and by GET|enter|exit /workspace. */
+export interface WorkspaceEnvelope {
+  tabHandle?: string;
+  generation: number;
+  mode: WorkspaceMode;
+  client: WorkspaceClientSummary | null;
+  expiresAt?: string;
+}
+
+let tab: WorkspaceTab | null = null;
+let loaded = false;
+/** Set after one conclusive "this session cannot own a tab" answer (403/401/
+ * 429): C/E identities have no tab, and probing again on every request would be
+ * noise. Cleared by reset() (logout / re-login / a new handle attempt). */
+let unavailable = false;
+/** Single-flight for POST /workspace/tab: parallel first calls share one tab. */
+let pending: Promise<WorkspaceTab | null> | null = null;
+
+/** sessionStorage may be absent (SSR, denied storage, node tests): tolerate it. */
+function tabStorage(): Storage | null {
+  try {
+    return typeof globalThis.sessionStorage === 'undefined' ? null : globalThis.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Bearer for the workspace endpoints themselves (they are not served by apiFetch). */
+export function readToken(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(AUTH_TOKEN_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isTab(value: unknown): value is WorkspaceTab {
+  const row = value as WorkspaceTab | null;
+  return !!row && typeof row === 'object'
+    && typeof row.handle === 'string' && /^[A-Za-z0-9_-]{43}$/.test(row.handle)
+    && Number.isSafeInteger(row.generation) && row.generation > 0
+    && (row.mode === 'platform' || row.mode === 'consultant');
+}
+
+/** Current tab, hydrated from sessionStorage once per page. A corrupt, expired
+ * or foreign entry is dropped instead of being trusted. */
+function current(): WorkspaceTab | null {
+  if (!loaded) {
+    loaded = true;
+    const store = tabStorage();
+    const raw = store?.getItem(TAB_STORAGE_KEY);
+    if (raw) {
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (isTab(parsed)) tab = parsed;
+        else store?.removeItem(TAB_STORAGE_KEY);
+      } catch {
+        store?.removeItem(TAB_STORAGE_KEY);
+      }
+    }
+  }
+  return tab;
+}
+
+function adopt(envelope: WorkspaceEnvelope): WorkspaceTab | null {
+  const handle = envelope.tabHandle ?? tab?.handle;
+  const next = {
+    handle,
+    generation: Number(envelope.generation),
+    mode: envelope.mode,
+    client: envelope.client ?? null,
+  };
+  if (!isTab(next)) return null;
+  tab = next;
+  loaded = true;
+  unavailable = false;
+  try {
+    tabStorage()?.setItem(TAB_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // A full/denied quota must not break the in-memory handle.
+  }
+  return next;
+}
+
+/** POST /workspace/tab — one fresh tab for this browser tab. */
+async function createTab(): Promise<WorkspaceTab | null> {
+  const token = readToken();
+  if (!token) return null; // no session yet: nothing to bind a tab to
+  try {
+    const res = await fetch('/api/workspace/tab', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 201) return adopt(await res.json() as WorkspaceEnvelope);
+    if (res.status === 403) {
+      const code = await refusalCode(res);
+      // A GE identity that must still change its password is refused now but
+      // will own a tab once it does; only "not a GE identity" is conclusive.
+      if (code !== 'auth.password_change_required') unavailable = true;
+      return null;
+    }
+    // 401: session gone. 429: this session is at TAB_LIMIT. Both are conclusive
+    // for this session, so stop probing; reset() re-opens the path.
+    if ([401, 429].includes(res.status)) unavailable = true;
+    return null;
+  } catch {
+    return null; // network failure: leave the door open for the next call
+  }
+}
+
+async function refusalCode(res: Response): Promise<string | null> {
+  try {
+    const body = await res.json() as { code?: unknown; error?: unknown } | null;
+    if (typeof body?.code === 'string') return body.code;
+    if (typeof body?.error === 'string') return body.error;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Create the tab once per browser tab; returns the current tab when it exists. */
+export async function ensureTab(): Promise<WorkspaceTab | null> {
+  const existing = current();
+  if (existing) return existing;
+  if (unavailable) return null;
+  if (!pending) {
+    pending = createTab().finally(() => { pending = null; });
+  }
+  return pending;
+}
+
+/** `X-Workspace-Tab` + `X-Workspace-Version`, or {} when this session has none. */
+export function headers(): Record<string, string> {
+  const currentTab = current();
+  if (!currentTab) return {};
+  return {
+    'X-Workspace-Tab': currentTab.handle,
+    'X-Workspace-Version': String(currentTab.generation),
+  };
+}
+
+/** GET /workspace (reconcile: no version required) — refresh generation/mode/client. */
+export async function refresh(): Promise<WorkspaceTab | null> {
+  const token = readToken();
+  if (!token) return null;
+  try {
+    const res = await fetch('/api/workspace', { headers: { Authorization: `Bearer ${token}`, ...headers() } });
+    if (!res.ok) return null;
+    return adopt(await res.json() as WorkspaceEnvelope);
+  } catch {
+    return null;
+  }
+}
+
+async function transition(path: string, body?: unknown): Promise<WorkspaceTab> {
+  const token = readToken();
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token ?? ''}`,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...headers(),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({})) as WorkspaceEnvelope & { code?: string; error?: string };
+  const next = res.ok ? adopt(data) : null;
+  if (!next) throw Object.assign(new Error(data.code ?? data.error ?? 'workspace.transition_failed'),
+    { status: res.status, code: data.code ?? data.error ?? null });
+  return next;
+}
+
+/** POST /workspace/enter — server decides mode/tenant and returns the new envelope. */
+export function enter(clientId: string): Promise<WorkspaceTab> {
+  return transition('/api/workspace/enter', { clientId });
+}
+
+/** POST /workspace/exit — back to platform mode; the envelope carries the new generation. */
+export function exit(): Promise<WorkspaceTab> {
+  return transition('/api/workspace/exit');
+}
+
+/** Logout / new session: drop this browser tab's handle (server revokes it) and
+ * forget the "cannot own a tab" verdict so the next session can get its own. */
+export function reset(): void {
+  tab = null;
+  loaded = true;
+  unavailable = false;
+  pending = null;
+  try {
+    tabStorage()?.removeItem(TAB_STORAGE_KEY);
+  } catch {
+    // nothing to clean up
+  }
+}

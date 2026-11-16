@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollText, RefreshCw, Search } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface AuditRow {
   id: string;
@@ -62,7 +63,7 @@ export const AuditLogView: React.FC = () => {
       if (since) params.set('since', since);
       if (until) params.set('until', until);
       params.set('limit', '100');
-      const res = await fetch(`/api/audit-log?${params.toString()}`, { headers: headers() });
+      const res = await apiFetch(`/api/audit-log?${params.toString()}`, { headers: headers() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to read audit log');
       setRows(data.items ?? []);

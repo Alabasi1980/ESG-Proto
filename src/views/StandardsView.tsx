@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 import { ActiveTab } from '../components/Sidebar.tsx';
 import { TaxonomyManage } from './TaxonomyManage.tsx';
 
@@ -41,7 +42,7 @@ export const StandardsView: React.FC<StandardsViewProps> = ({ setActiveTab }) =>
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch('/api/standards', { headers });
+      const res = await apiFetch('/api/standards', { headers });
       if (res.ok) {
         const data = await res.json();
         setStandards(data);

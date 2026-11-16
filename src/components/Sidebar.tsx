@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 export type ActiveTab =
   | 'dashboard'
@@ -64,7 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return;
     }
     try {
-      const res = await fetch('/api/notifications/unread-count', {
+      const res = await apiFetch('/api/notifications/unread-count', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

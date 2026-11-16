@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { ensureTab, reset as resetWorkspace } from '../lib/workspaceClient.ts';
+import { setUnauthorizedHandler } from '../lib/api.ts';
 
 export interface AuthUser {
   id: string;
@@ -30,6 +32,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('greenedge_token'));
   const [loading, setLoading] = useState<boolean>(true);
 
+  // TASK-PROTO-U3-A §4: the single place that clears the session (expired
+  // session, manual logout, or a 401 reported by apiFetch all land here).
+  const clearSession = useCallback(() => {
+    localStorage.removeItem('greenedge_token');
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  // apiFetch reports a 401 through this re-used path only; it never builds a
+  // second logout path of its own.
+  useEffect(() => {
+    setUnauthorizedHandler(clearSession);
+    return () => setUnauthorizedHandler(null);
+  }, [clearSession]);
+
   const refreshUser = useCallback(async () => {
     const currentToken = localStorage.getItem('greenedge_token');
     if (!currentToken) {
@@ -48,10 +65,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
+        // TASK-PROTO-U3-A §4: a GE session needs its workspace tab before any
+        // business call; C/E sessions never own one.
+        if (data.user?.role === 'ge_admin') void ensureTab();
       } else {
-        localStorage.removeItem('greenedge_token');
-        setToken(null);
-        setUser(null);
+        clearSession();
       }
     } catch (err) {
       console.error('Failed to fetch auth session:', err);
@@ -59,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearSession]);
 
   useEffect(() => {
     refreshUser();
@@ -69,6 +87,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('greenedge_token', newToken);
     setToken(newToken);
     setUser(newUser);
+    // A handle is bound to one session: a new session always starts a new tab.
+    resetWorkspace();
+    if (newUser.role === 'ge_admin') void ensureTab();
   };
 
   const logout = async () => {
@@ -77,9 +98,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       // ignore
     } finally {
-      localStorage.removeItem('greenedge_token');
-      setToken(null);
-      setUser(null);
+      clearSession();
+      resetWorkspace();
     }
   };
 

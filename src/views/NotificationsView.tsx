@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Bell, BellOff, CheckCheck, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface NotificationRow {
   id: string;
@@ -36,7 +37,7 @@ export const NotificationsView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/notifications', { headers: headers() });
+      const res = await apiFetch('/api/notifications', { headers: headers() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch notifications');
       setRows(data.items ?? []);
@@ -53,7 +54,7 @@ export const NotificationsView: React.FC = () => {
 
   const markRead = async (id: string) => {
     try {
-      const res = await fetch(`/api/notifications/${id}/read`, { method: 'POST', headers: headers() });
+      const res = await apiFetch(`/api/notifications/${id}/read`, { method: 'POST', headers: headers() });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
       setRows((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
     } catch (err: any) {
@@ -63,7 +64,7 @@ export const NotificationsView: React.FC = () => {
 
   const markAllRead = async () => {
     try {
-      const res = await fetch('/api/notifications/read-all', { method: 'POST', headers: headers() });
+      const res = await apiFetch('/api/notifications/read-all', { method: 'POST', headers: headers() });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
       setRows((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
     } catch (err: any) {

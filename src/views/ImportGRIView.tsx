@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 import { ActiveTab } from '../components/Sidebar.tsx';
 import { GRIParseResult, ParsedGRIStandard } from '../lib/griParser.ts';
 
@@ -62,7 +63,7 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
 
   React.useEffect(() => {
     if (!isGeAdmin || !token) return;
-    fetch('/api/clients', { headers: { Authorization: `Bearer ${token}` } })
+    apiFetch('/api/clients', { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setTenants(Array.isArray(data) ? data : []))
       .catch(() => setTenants([]));
@@ -78,7 +79,7 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const res = await fetch('/api/gri/preview', {
+      const res = await apiFetch('/api/gri/preview', {
         method: 'POST',
         body: formData,
       });
@@ -129,7 +130,7 @@ export const ImportGRIView: React.FC<ImportGRIViewProps> = ({
       if (isGeAdmin && targetTenantId) {
         body.clientId = targetTenantId;
       }
-      const res = await fetch('/api/gri/commit', {
+      const res = await apiFetch('/api/gri/commit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

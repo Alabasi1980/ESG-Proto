@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Lightbulb, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface InitiativeRow {
   id: string;
@@ -44,7 +45,7 @@ export const InitiativesView: React.FC = () => {
       if (department) params.set('department', department);
       if (search.trim()) params.set('search', search.trim());
       const q = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`/api/initiatives${q}`, { headers: authHeaders });
+      const res = await apiFetch(`/api/initiatives${q}`, { headers: authHeaders });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to load initiatives');
@@ -69,8 +70,8 @@ export const InitiativesView: React.FC = () => {
     setError(null);
     try {
       const res = row.selected
-        ? await fetch(`/api/initiatives/select/${row.id}`, { method: 'DELETE', headers: authHeaders })
-        : await fetch('/api/initiatives/select', {
+        ? await apiFetch(`/api/initiatives/select/${row.id}`, { method: 'DELETE', headers: authHeaders })
+        : await apiFetch('/api/initiatives/select', {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({ initiativeId: row.id }),

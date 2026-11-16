@@ -171,7 +171,9 @@ test('H13 SettingsView: platform-only section, server round-trip, immediate appl
   const section = view.slice(view.indexOf('TASK-PROTO-H13: platform-only'),
     view.indexOf('Account Security & Change Password Card'));
   assert.ok(handlers.length > 0 && section.length > 0, 'the section and its handlers exist');
-  assert.match(handlers, /fetch\('\/api\/settings', \{ headers:/, 'current value is loaded from GET /settings');
+  // TASK-PROTO-U3-A: the call site moved from fetch() to the authenticated
+  // transport apiFetch() (workspace headers); the request shape is unchanged.
+  assert.match(handlers, /apiFetch\('\/api\/settings', \{ headers:/, 'current value is loaded from GET /settings');
   assert.match(handlers, /method: 'PUT'/, 'saved through PUT /settings');
   assert.match(handlers, /await refreshUser\(\);/, 'the change applies immediately through the session');
   assert.match(handlers, /setAppTheme\(stored === 'ge' \|\| stored === 'lime' \|\| stored === 'dark' \? stored : 'auto'\)/,

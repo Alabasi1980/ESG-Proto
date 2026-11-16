@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Lock, AlertTriangle, RefreshCw, FileCheck2 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface CheckItem {
   itemId: string;
@@ -71,7 +72,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch('/api/clients', { headers: authOnly });
+        const res = await apiFetch('/api/clients', { headers: authOnly });
         if (res.ok) {
           const list = await res.json();
           setTenants(list || []);
@@ -91,7 +92,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
       return;
     }
     try {
-      const res = await fetch(`/api/reviews/snapshots?clientId=${encodeURIComponent(tenantId)}`, { headers: authOnly });
+      const res = await apiFetch(`/api/reviews/snapshots?clientId=${encodeURIComponent(tenantId)}`, { headers: authOnly });
       if (res.ok) {
         const data = await res.json();
         setSnapshots(data.items || []);
@@ -118,7 +119,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
     try {
       const params = new URLSearchParams({ clientId: tenantId, scope });
       if (scope === 'disclosure') params.set('scopeRef', scopeRef.trim());
-      const res = await fetch(`/api/reviews/ge-check?${params.toString()}`, { headers: authOnly });
+      const res = await apiFetch(`/api/reviews/ge-check?${params.toString()}`, { headers: authOnly });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Check failed');
       setCheck(data);
@@ -134,7 +135,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
     setFreezing(true);
     setNotice(null);
     try {
-      const res = await fetch('/api/reviews/ge-final', {
+      const res = await apiFetch('/api/reviews/ge-final', {
         method: 'POST',
         headers: authJson,
         body: JSON.stringify({ clientId: tenantId, scope, scopeRef: check.scopeRef, confirm: true }),
@@ -154,7 +155,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
 
   const openSnapshot = async (id: string) => {
     try {
-      const res = await fetch(`/api/reviews/snapshots/${encodeURIComponent(id)}`, { headers: authOnly });
+      const res = await apiFetch(`/api/reviews/snapshots/${encodeURIComponent(id)}`, { headers: authOnly });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load snapshot');
       setSelected(data);
@@ -167,7 +168,7 @@ const GeFinalInner: React.FC<{ t: any; token: string | null }> = ({ t, token }) 
     if (!selected || !note.trim()) return;
     setAddingNote(true);
     try {
-      const res = await fetch(`/api/reviews/snapshots/${encodeURIComponent(selected.snapshot.id)}/notes`, {
+      const res = await apiFetch(`/api/reviews/snapshots/${encodeURIComponent(selected.snapshot.id)}/notes`, {
         method: 'POST',
         headers: authJson,
         body: JSON.stringify({ note: note.trim() }),

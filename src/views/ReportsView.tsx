@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 type ReportLevel = 'L1' | 'L2' | 'L3';
 
@@ -124,7 +125,7 @@ export const ReportsView: React.FC = () => {
 
   const loadSettings = useCallback(async () => {
     try {
-      const res = await fetch('/api/report-settings', { headers: authHeaders() });
+      const res = await apiFetch('/api/report-settings', { headers: authHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       setGateOk(Boolean(data?.gate?.ok));
@@ -152,7 +153,7 @@ export const ReportsView: React.FC = () => {
     setError(null);
     setIncompleteCodes([]);
     try {
-      const res = await fetch(`/api/reports/index?level=${level}`, { headers: authHeaders() });
+      const res = await apiFetch(`/api/reports/index?level=${level}`, { headers: authHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.status === 409) {
         setPayload(null);
@@ -197,7 +198,7 @@ export const ReportsView: React.FC = () => {
     setSaving(true);
     setSaveMsg(null);
     try {
-      const res = await fetch('/api/report-settings', {
+      const res = await apiFetch('/api/report-settings', {
         method: 'PUT',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -234,7 +235,7 @@ export const ReportsView: React.FC = () => {
 
   const downloadExport = async (format: 'json' | 'csv') => {
     try {
-      const res = await fetch(`/api/reports/export?level=${level}&format=${format}`, {
+      const res = await apiFetch(`/api/reports/export?level=${level}&format=${format}`, {
         headers: authHeaders(),
       });
       if (!res.ok) {

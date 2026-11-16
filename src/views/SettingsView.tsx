@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 import { ServicesManage } from './ServicesManage.tsx';
 import { validateSelfChosenPassword } from '../lib/password.ts';
 
@@ -106,7 +107,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     if (!isGeAdmin) return;
     setLoadingAppTheme(true);
     try {
-      const res = await fetch('/api/settings', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
+      const res = await apiFetch('/api/settings', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
       if (res.ok) {
         const data = await res.json();
         const stored = data?.theme;
@@ -128,7 +129,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     setAppThemeMessage(null);
     setSavingAppTheme(true);
     try {
-      const res = await fetch('/api/settings', {
+      const res = await apiFetch('/api/settings', {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ theme: appTheme }),
@@ -151,7 +152,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     if (!isAdmin) return;
     setLoadingUsers(true);
     try {
-      const res = await fetch('/api/users', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
+      const res = await apiFetch('/api/users', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
       if (res.ok) {
         setManagedUsers(await res.json());
       }
@@ -167,8 +168,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     try {
       const headers = { Authorization: token ? `Bearer ${token}` : '' };
       const [deptRes, tenantRes] = await Promise.all([
-        fetch('/api/departments', { headers }),
-        isGeAdmin ? fetch('/api/clients', { headers }) : Promise.resolve(null),
+        apiFetch('/api/departments', { headers }),
+        isGeAdmin ? apiFetch('/api/clients', { headers }) : Promise.resolve(null),
       ]);
       if (deptRes.ok) setDepartments(await deptRes.json());
       if (tenantRes && tenantRes.ok) setTenants(await tenantRes.json());
@@ -202,7 +203,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       };
       if (newRole === 'employee' && newDeptId) body.departmentId = newDeptId;
       if (isGeAdmin && newRole !== 'ge_admin' && newTenantId) body.clientId = newTenantId;
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify(body),
@@ -229,7 +230,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
     if (target.is_active && !window.confirm(t.users.deactivateConfirm)) return;
     setUserMessage(null);
     try {
-      const res = await fetch(`/api/users/${target.id}`, {
+      const res = await apiFetch(`/api/users/${target.id}`, {
         method: 'PATCH',
         headers: authHeaders(),
         body: JSON.stringify({ isActive: !target.is_active }),
@@ -260,7 +261,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
   const fetchStorageUsage = async () => {
     setLoadingStorage(true);
     try {
-      const res = await fetch('/api/storage/usage', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
+      const res = await apiFetch('/api/storage/usage', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
       if (res.ok) {
         setStorageUsage(await res.json());
       } else {

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Plus, Trash2, KeyRound } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface StaffRow {
   email: string;
@@ -59,8 +60,8 @@ export const StaffListsView: React.FC = () => {
     setError(null);
     try {
       const [lRes, dRes] = await Promise.all([
-        fetch('/api/staff-lists', { headers: headers() }),
-        fetch('/api/departments', { headers: headers() }),
+        apiFetch('/api/staff-lists', { headers: headers() }),
+        apiFetch('/api/departments', { headers: headers() }),
       ]);
       if (lRes.ok) {
         const data = await lRes.json();
@@ -90,11 +91,11 @@ export const StaffListsView: React.FC = () => {
       const payload = {
         rows: rows.map((r) => ({ email: r.email, name: r.name, departmentId: r.departmentId || undefined, departmentName: r.departmentName, role: r.role })),
       };
-      const res = await fetch('/api/staff-lists', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) });
+      const res = await apiFetch('/api/staff-lists', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       // Auto-submit the draft so the WF-01 chain (Fill → Submit) completes in one action.
-      const sub = await fetch(`/api/staff-lists/${data.id}/submit`, { method: 'POST', headers: jsonHeaders() });
+      const sub = await apiFetch(`/api/staff-lists/${data.id}/submit`, { method: 'POST', headers: jsonHeaders() });
       const subData = await sub.json().catch(() => ({}));
       if (!sub.ok) throw new Error(subData.error || 'Created, but submit failed — submit manually.');
       setRows([{ email: '', name: '', departmentId: '', role: 'employee' }]);
@@ -108,7 +109,7 @@ export const StaffListsView: React.FC = () => {
 
   const handleSubmit = async (id: string) => {
     try {
-      const res = await fetch(`/api/staff-lists/${id}/submit`, { method: 'POST', headers: jsonHeaders() });
+      const res = await apiFetch(`/api/staff-lists/${id}/submit`, { method: 'POST', headers: jsonHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       await fetchAll();
@@ -120,7 +121,7 @@ export const StaffListsView: React.FC = () => {
   const handleApprove = async (id: string) => {
     if (!window.confirm('Approve and provision accounts? OTPs show ONCE.')) return;
     try {
-      const res = await fetch(`/api/staff-lists/${id}/approve`, { method: 'POST', headers: jsonHeaders() });
+      const res = await apiFetch(`/api/staff-lists/${id}/approve`, { method: 'POST', headers: jsonHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setLastOtps({ listId: id, accounts: data.accounts ?? [] });
@@ -137,7 +138,7 @@ export const StaffListsView: React.FC = () => {
       return;
     }
     try {
-      const res = await fetch(`/api/staff-lists/${id}/reject`, {
+      const res = await apiFetch(`/api/staff-lists/${id}/reject`, {
         method: 'POST',
         headers: jsonHeaders(),
         body: JSON.stringify({ reason }),

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Scale, UploadCloud, RefreshCw, AlertTriangle, ClipboardList } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 import { ActiveTab } from '../components/Sidebar.tsx';
 import { EvaluationPanel, QueueItem } from './EvaluationPanel.tsx';
 import { ClientReviewView } from './ClientReviewView.tsx';
@@ -34,7 +35,7 @@ export const GapAnalysisView: React.FC<GapAnalysisViewProps> = ({ setActiveTab }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/queue', {
+      const res = await apiFetch('/api/queue', {
         headers: { Authorization: token ? `Bearer ${token}` : '' },
       });
       if (!res.ok) {

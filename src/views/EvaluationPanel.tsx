@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 export interface QueueItem {
   item_id: string;
@@ -196,7 +197,7 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
   const fetchFiles = React.useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments`, { headers: authOnly });
+      const res = await apiFetch(`/api/answers/${encodeURIComponent(answerId)}/attachments`, { headers: authOnly });
       if (res.ok) {
         const data = await res.json();
         setFiles(data.items || []);
@@ -211,7 +212,7 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
 
   const fetchUsage = React.useCallback(async () => {
     try {
-      const res = await fetch('/api/storage/usage', { headers: authOnly });
+      const res = await apiFetch('/api/storage/usage', { headers: authOnly });
       if (res.ok) setUsage(await res.json());
     } catch (err) {
       console.error('Failed to load storage usage:', err);
@@ -234,7 +235,7 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
     try {
       const form = new FormData();
       form.append('file', pendingFile);
-      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments`, {
+      const res = await apiFetch(`/api/answers/${encodeURIComponent(answerId)}/attachments`, {
         method: 'POST',
         headers: authOnly,
         body: form,
@@ -255,7 +256,7 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
 
   const doDownload = async (f: AttachmentRow) => {
     try {
-      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments/${encodeURIComponent(f.id)}/download`, {
+      const res = await apiFetch(`/api/answers/${encodeURIComponent(answerId)}/attachments/${encodeURIComponent(f.id)}/download`, {
         headers: authOnly,
       });
       if (!res.ok) throw new Error(t.attachments.uploadFailed);
@@ -276,7 +277,7 @@ const AttachmentsSection: React.FC<{ answerId: string; token: string | null; t: 
   const doDelete = async (f: AttachmentRow) => {
     if (!window.confirm(t.attachments.deleteConfirm)) return;
     try {
-      const res = await fetch(`/api/answers/${encodeURIComponent(answerId)}/attachments/${encodeURIComponent(f.id)}`, {
+      const res = await apiFetch(`/api/answers/${encodeURIComponent(answerId)}/attachments/${encodeURIComponent(f.id)}`, {
         method: 'DELETE',
         headers: authOnly,
       });
@@ -431,7 +432,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       }
       setHistoryLoading(true);
       try {
-        const res = await fetch(`/api/evaluations?itemId=${encodeURIComponent(item.item_id)}`, {
+        const res = await apiFetch(`/api/evaluations?itemId=${encodeURIComponent(item.item_id)}`, {
           headers: { Authorization: token ? `Bearer ${token}` : '' },
         });
         if (res.ok) {
@@ -492,7 +493,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     setFormMsg(null);
     setConflict(null);
     try {
-      const res = await fetch('/api/evaluations', {
+      const res = await apiFetch('/api/evaluations', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify(buildDraftBody()),
@@ -522,7 +523,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       // then submit. Submitted rows are never edited here — corrections use A5.
       const saved = await saveDraft();
       if (!saved) return;
-      const queueRes = await fetch('/api/queue', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
+      const queueRes = await apiFetch('/api/queue', { headers: { Authorization: token ? `Bearer ${token}` : '' } });
       const queueData = queueRes.ok ? await queueRes.json() : { items: [] };
       const fresh = (queueData.items || []).find(
         (q: QueueItem) => q.item_id === item.item_id && q.department_id === item.department_id
@@ -530,7 +531,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       const evalId: string | null = fresh?.evaluation_id || item.evaluation_id;
       if (!evalId) throw new Error('Draft was not created.');
       const freshVersion = fresh?.evaluation_version ?? fresh?.answer_version ?? pairVersion;
-      const res = await fetch(`/api/evaluations/${evalId}/submit`, {
+      const res = await apiFetch(`/api/evaluations/${evalId}/submit`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify(freshVersion !== null ? { version: freshVersion } : {}),
@@ -555,7 +556,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
     setDecisionMsg(null);
     setConflict(null);
     try {
-      const res = await fetch(`/api/evaluations/${item.evaluation_id}/${decision}`, {
+      const res = await apiFetch(`/api/evaluations/${item.evaluation_id}/${decision}`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ comment, ...(pairVersion !== null ? { version: pairVersion } : {}) }),
@@ -590,7 +591,7 @@ export const EvaluationPanel: React.FC<{ item: QueueItem; onChanged: () => void 
       }
       // B9-C: corrections require the caller's version.
       if (pairVersion !== null) body.version = pairVersion;
-      const res = await fetch(`/api/evaluations/${item.evaluation_id}/correct`, {
+      const res = await apiFetch(`/api/evaluations/${item.evaluation_id}/correct`, {
         method: 'PUT',
         headers: authHeaders,
         body: JSON.stringify(body),

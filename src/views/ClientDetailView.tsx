@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Link2, Unlink, Save } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface TenantOption {
   id: string;
@@ -73,16 +74,16 @@ export const ClientDetailView: React.FC = () => {
 
   const fetchTenants = useCallback(async () => {
     try {
-      const res = await fetch('/api/clients', { headers: headers() });
+      const res = await apiFetch('/api/clients', { headers: headers() });
       if (res.ok) {
         const data = await res.json();
         setTenants(data);
         if (!selected && user?.clientId) setSelected(user.clientId);
         else if (!selected && data.length > 0 && user?.role === 'ge_admin') setSelected(data[0].id);
       }
-      const sRes = await fetch('/api/services', { headers: headers() });
+      const sRes = await apiFetch('/api/services', { headers: headers() });
       if (sRes.ok) setServices(await sRes.json());
-      const iRes = await fetch('/api/items', { headers: headers() });
+      const iRes = await apiFetch('/api/items', { headers: headers() });
       if (iRes.ok) setItems(await iRes.json());
     } catch {
       /* ignore */
@@ -97,8 +98,8 @@ export const ClientDetailView: React.FC = () => {
       setError(null);
       try {
         const [dRes, aRes] = await Promise.all([
-          fetch(`/api/clients/${id}`, { headers: headers() }),
-          fetch(`/api/assignments?clientId=${id}`, { headers: headers() }),
+          apiFetch(`/api/clients/${id}`, { headers: headers() }),
+          apiFetch(`/api/assignments?clientId=${id}`, { headers: headers() }),
         ]);
         const dData = await dRes.json();
         if (!dRes.ok) throw new Error(dData.error);
@@ -131,7 +132,7 @@ export const ClientDetailView: React.FC = () => {
   const handleLink = async () => {
     if (!linkServiceId || !selected) return;
     try {
-      const res = await fetch(`/api/clients/${selected}/services`, {
+      const res = await apiFetch(`/api/clients/${selected}/services`, {
         method: 'POST',
         headers: jsonHeaders(),
         body: JSON.stringify({ serviceId: linkServiceId }),
@@ -147,7 +148,7 @@ export const ClientDetailView: React.FC = () => {
 
   const handleUnlink = async (serviceId: string) => {
     try {
-      const res = await fetch(`/api/clients/${selected}/services/${serviceId}`, {
+      const res = await apiFetch(`/api/clients/${selected}/services/${serviceId}`, {
         method: 'DELETE',
         headers: headers(),
       });
@@ -161,7 +162,7 @@ export const ClientDetailView: React.FC = () => {
 
   const handleSaveFlags = async (serviceId: string) => {
     try {
-      const res = await fetch(`/api/clients/${selected}/services/${serviceId}`, {
+      const res = await apiFetch(`/api/clients/${selected}/services/${serviceId}`, {
         method: 'PATCH',
         headers: jsonHeaders(),
         body: JSON.stringify(flags[serviceId]),
@@ -176,7 +177,7 @@ export const ClientDetailView: React.FC = () => {
 
   const handleSuspend = async (suspended: boolean) => {
     try {
-      const res = await fetch(`/api/clients/${selected}`, {
+      const res = await apiFetch(`/api/clients/${selected}`, {
         method: 'PATCH',
         headers: jsonHeaders(),
         body: JSON.stringify({ suspended }),
@@ -193,7 +194,7 @@ export const ClientDetailView: React.FC = () => {
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/assignments', {
+      const res = await apiFetch('/api/assignments', {
         method: 'POST',
         headers: jsonHeaders(),
         body: JSON.stringify({ clientId: selected, itemId: assignForm.itemId, departmentId: assignForm.departmentId }),
@@ -209,7 +210,7 @@ export const ClientDetailView: React.FC = () => {
 
   const handleUnassign = async (itemId: string, departmentId: string) => {
     try {
-      const res = await fetch('/api/assignments', {
+      const res = await apiFetch('/api/assignments', {
         method: 'DELETE',
         headers: jsonHeaders(),
         body: JSON.stringify({ clientId: selected, itemId, departmentId }),
@@ -225,7 +226,7 @@ export const ClientDetailView: React.FC = () => {
   const handleNa = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/assignments/na', {
+      const res = await apiFetch('/api/assignments/na', {
         method: 'POST',
         headers: jsonHeaders(),
         body: JSON.stringify({
@@ -250,7 +251,7 @@ export const ClientDetailView: React.FC = () => {
     setHeadMsg(null);
     setHeadSaving(departmentId);
     try {
-      const res = await fetch(`/api/departments/${departmentId}/head`, {
+      const res = await apiFetch(`/api/departments/${departmentId}/head`, {
         method: 'PATCH',
         headers: jsonHeaders(),
         body: JSON.stringify({ headUserId: clear ? null : headPick[departmentId] || null }),

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, PauseCircle } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface DeptScore {
   departmentId: string;
@@ -46,7 +47,7 @@ export const ClientDashboardView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/client/dashboard', {
+      const res = await apiFetch('/api/client/dashboard', {
         headers: { Authorization: token ? `Bearer ${token}` : '' },
       });
       const json = await res.json();

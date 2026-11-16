@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Building2, PauseCircle, PlayCircle, RefreshCw, Link2 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface OverviewClient {
   id: string;
@@ -49,7 +50,7 @@ export const GeOverviewView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/ge/overview', { headers: headers() });
+      const res = await apiFetch('/api/ge/overview', { headers: headers() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load GE overview');
       setClients(data.clients ?? []);
@@ -68,7 +69,7 @@ export const GeOverviewView: React.FC = () => {
   const toggleSuspend = async (c: OverviewClient) => {
     if (!window.confirm(`${c.suspended ? t.geOverview.unsuspendBtn : t.geOverview.suspendBtn}: ${c.name}?`)) return;
     try {
-      const res = await fetch(`/api/clients/${c.id}`, {
+      const res = await apiFetch(`/api/clients/${c.id}`, {
         method: 'PATCH',
         headers: { ...headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ suspended: !c.suspended }),
@@ -83,11 +84,11 @@ export const GeOverviewView: React.FC = () => {
 
   const linkAll = async () => {
     try {
-      const svcRes = await fetch('/api/services', { headers: headers() });
+      const svcRes = await apiFetch('/api/services', { headers: headers() });
       const svcs = await svcRes.json();
       const gri = (Array.isArray(svcs) ? svcs : []).find((s: any) => s.code === 'GRI');
       if (!gri) throw new Error('GRI service not found (run migrations first).');
-      const res = await fetch('/api/services/link-all', {
+      const res = await apiFetch('/api/services/link-all', {
         method: 'POST',
         headers: { ...headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ serviceId: gri.id }),

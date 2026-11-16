@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 import { ActiveTab } from '../components/Sidebar.tsx';
 
 interface DashboardStats {
@@ -55,7 +56,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      const res = await fetch('/api/dashboard/stats', { headers });
+      const res = await apiFetch('/api/dashboard/stats', { headers });
       if (res.ok) {
         const data = await res.json();
         setStats(data);

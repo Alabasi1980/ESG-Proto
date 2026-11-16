@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Boxes, Copy, Link2, Pencil, Plus, RefreshCw, Save, Unlink } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface LinkedStandard {
   id: string;
@@ -63,8 +64,8 @@ export const ServicesManage: React.FC = () => {
     try {
       const h: Record<string, string> = { Authorization: token ? `Bearer ${token}` : '' };
       const [svcRes, stdRes] = await Promise.all([
-        fetch('/api/services', { headers: h }),
-        fetch('/api/standards', { headers: h }),
+        apiFetch('/api/services', { headers: h }),
+        apiFetch('/api/standards', { headers: h }),
       ]);
       if (svcRes.ok) setServices(await svcRes.json());
       if (stdRes.ok) {
@@ -88,7 +89,7 @@ export const ServicesManage: React.FC = () => {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch('/api/services', {
+      const res = await apiFetch('/api/services', {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ code: newCode, name: newName, description: newDesc || null }),
@@ -116,7 +117,7 @@ export const ServicesManage: React.FC = () => {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/services/${id}`, {
+      const res = await apiFetch(`/api/services/${id}`, {
         method: 'PATCH',
         headers: headers(),
         body: JSON.stringify({ name: editName, description: editDesc || null }),
@@ -137,7 +138,7 @@ export const ServicesManage: React.FC = () => {
     setDuplicating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/services/${id}/duplicate`, {
+      const res = await apiFetch(`/api/services/${id}/duplicate`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ code: dupCode }),
@@ -158,7 +159,7 @@ export const ServicesManage: React.FC = () => {
     if (!linkStdId) return;
     setError(null);
     try {
-      const res = await fetch(`/api/services/${serviceId}/standards`, {
+      const res = await apiFetch(`/api/services/${serviceId}/standards`, {
         method: 'POST',
         headers: headers(),
         body: JSON.stringify({ standardId: linkStdId }),
@@ -175,7 +176,7 @@ export const ServicesManage: React.FC = () => {
   const handleUnlink = async (serviceId: string, standardId: string) => {
     setError(null);
     try {
-      const res = await fetch(`/api/services/${serviceId}/standards`, {
+      const res = await apiFetch(`/api/services/${serviceId}/standards`, {
         method: 'DELETE',
         headers: headers(),
         body: JSON.stringify({ standardId }),

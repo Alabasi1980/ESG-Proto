@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ClipboardCheck, Plus, RefreshCw, AlertTriangle, Save, ArrowRight, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
+import { apiFetch } from '../lib/api.ts';
 
 interface ActionRow {
   id: string;
@@ -77,7 +78,7 @@ export const ActionsView: React.FC = () => {
       if (statusFilter) params.set('status', statusFilter);
       if (deptFilter) params.set('departmentId', deptFilter);
       const q = params.toString() ? `?${params.toString()}` : '';
-      const res = await fetch(`/api/actions${q}`, { headers: authHeaders });
+      const res = await apiFetch(`/api/actions${q}`, { headers: authHeaders });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to load actions');
@@ -94,7 +95,7 @@ export const ActionsView: React.FC = () => {
 
   const fetchDepartments = useCallback(async () => {
     try {
-      const res = await fetch('/api/departments', { headers: authHeaders });
+      const res = await apiFetch('/api/departments', { headers: authHeaders });
       if (res.ok) setDepartments(await res.json());
     } catch {
       setDepartments([]);
@@ -128,7 +129,7 @@ export const ActionsView: React.FC = () => {
     setCreating(true);
     try {
       const deptId = user?.role === 'employee' ? user.departmentId : newDept;
-      const res = await fetch('/api/actions', {
+      const res = await apiFetch('/api/actions', {
         method: 'POST',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -158,7 +159,7 @@ export const ActionsView: React.FC = () => {
     setMutating(true);
     setFormMsg(null);
     try {
-      const res = await fetch(`/api/actions/${selected.id}`, {
+      const res = await apiFetch(`/api/actions/${selected.id}`, {
         method: 'PATCH',
         headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
