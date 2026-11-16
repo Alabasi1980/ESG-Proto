@@ -217,6 +217,16 @@ router.delete('/answers/:id/attachments/:attachId', authMiddleware, requireFresh
       if (await isFrozenScope(client, answer.client_id, answer.item_id)) {
         throw frozenWriteError();
       }
+      // R1 (SHIELD M-01): evidence must stay provable. Once an answer leaves the
+      // draft state (submitted and every later approval stage) its attachments are
+      // part of the record: DELETE is refused with zero writes. Post-submit ADD
+      // stays allowed (append-only); the freeze check above keeps its precedence.
+      if (answer.status !== 'draft') {
+        throw new DeferredRefusal(409, {
+          error: 'Attachments on a submitted evaluation are locked; only draft answers may delete evidence.',
+          code: 'attachment.locked',
+        });
+      }
       const fileRes = await client.query('SELECT * FROM evidence_attachments WHERE id = $1 AND answer_id = $2', [
         req.params.attachId,
         answer.id,

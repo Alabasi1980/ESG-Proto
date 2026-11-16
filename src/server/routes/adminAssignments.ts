@@ -217,13 +217,36 @@ export async function assignNotApplicable(req: AuthenticatedRequest, res: Respon
     const result = await domainTransaction(req, async (client) => {
       const tenant = ownTenant(req.access!, body.clientId);
       const asg = await client.query(
-        'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
+        `SELECT a.id, i.answer_type AS answer_type, i.attachment_required AS attachment_required
+           FROM assignments a
+           JOIN items i ON i.id = a.item_id
+          WHERE a.client_id = $1 AND a.item_id = $2 AND a.department_id = $3`,
         [tenant, itemId, departmentId]
       );
       if (!asg.rows[0]) {
         throw Object.assign(new Error('This item is not assigned to the department.'), { statusCode: 403 });
       }
       if (await isFrozenScope(client, tenant, itemId)) throw frozenWriteError();
+      // R2 (SHIELD M-02, OD-12 §2): the shortcut files N/A WITHOUT any evidence.
+      // An item whose attachment is independent-mandatory cannot be satisfied by
+      // this path, so it is refused BEFORE any evaluation/answer/audit write. The
+      // W-only route matrix is untouched; the normal submit path still enforces
+      // the attachment.
+      if (asg.rows[0].attachment_required === true) {
+        throw Object.assign(
+          new Error('This item requires an attachment, so the N/A shortcut cannot be used. Submit N/A through the evaluation workflow with the required attachment.'),
+          { statusCode: 409, code: 'assignment.na_attachment_required' }
+        );
+      }
+      // R3 (round 3, Shield R-A3): keep the shortcut's stored answer value
+      // consistent with the typed-answer module. TEXT keeps its historical
+      // 'N/A' (or the supplied justification); every OTHER type stores '' — the
+      // module's N/A convention (no typed value; a `file` answer never carries
+      // text). Text behaviour is therefore unchanged, and 'N/A' can no longer
+      // become an invalid typed value for number/boolean/date/file items.
+      const naAnswerValue = asg.rows[0].answer_type === 'text'
+        ? (justification || 'N/A')
+        : '';
       const existing = await client.query(
         'SELECT id FROM evaluations WHERE client_id = $1 AND item_id = $2',
         [tenant, itemId]
@@ -244,7 +267,7 @@ export async function assignNotApplicable(req: AuthenticatedRequest, res: Respon
         `INSERT INTO answers (client_id, item_id, department_id, submitted_by, status, value)
          VALUES ($1, $2, $3, $4, 'submitted', $5)
          ON CONFLICT (client_id, item_id, department_id) DO UPDATE SET status = 'submitted', value = EXCLUDED.value`,
-        [tenant, itemId, departmentId, req.access!.actorId, justification || 'N/A']
+        [tenant, itemId, departmentId, req.access!.actorId, naAnswerValue]
       );
       await recordAuditLog(client, {
         clientId: tenant,

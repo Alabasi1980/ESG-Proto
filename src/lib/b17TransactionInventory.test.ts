@@ -170,8 +170,14 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/lib/serviceSettings.ts','src/lib/serviceSettings.test.ts',
     'scripts/u41-mask-scratch.ts',
     // U4-1a round 2: the one W-only visibility writer route file.
-    'src/server/routes/serviceVisibility.ts'];
+    'src/server/routes/serviceVisibility.ts',
+    // U4-1b: the ONE typed-answer contract + its no-DB matrix. evaluations.ts
+    // and routeGates.test.ts are already named above; no other path moves.
+    'src/lib/answerValidation.ts','src/lib/answerValidation.test.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
+    // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
+    // attachment_required guard; no other assignment handler moves.
+    'src/server/routes/adminAssignments.ts',
     'src/server/routes/actions.ts','src/server/routes/audit.ts','src/server/routes/gri.ts',
     'src/server/routes/notifications.ts','src/server/routes/storage.ts','src/server/routes/evaluations.ts',
     'src/server/routes/reports.ts','src/server/routes/initiatives.ts',
@@ -280,7 +286,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'security-reports/TASK-PROTO-U3B2-fix-review.md',
     // TASK-PROTO-U4-1a reviewer evidence (round 2) — reviewer-owned, exact paths.
     'project-control/qa-reports/TASK-PROTO-U4-1a-QA.md',
-    'security-reports/TASK-PROTO-U4-1a-fix-review.md']);
+    'security-reports/TASK-PROTO-U4-1a-fix-review.md',
+    // TASK-PROTO-U4-1b reviewer evidence (round 2) — reviewer-owned, exact paths.
+    'project-control/qa-reports/TASK-PROTO-U4-1b-QA.md',
+    'security-reports/TASK-PROTO-U4-1b-fix-review.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -292,7 +301,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U3-B2 contract (Tera-owned, untracked input).
     'project-control/tasks/TASK-PROTO-U3-B2/TASK-PROTO-U3-B2.md',
     // TASK-PROTO-U4-1a contract (Tera-owned, untracked input).
-    'project-control/tasks/TASK-PROTO-U4-1a/TASK-PROTO-U4-1a.md']);
+    'project-control/tasks/TASK-PROTO-U4-1a/TASK-PROTO-U4-1a.md',
+    // TASK-PROTO-U4-1b contract (Tera-owned, untracked input).
+    'project-control/tasks/TASK-PROTO-U4-1b/TASK-PROTO-U4-1b.md']);
   // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
   // so the path has left `allowed` (nothing may edit it) and only its deletion may
   // pass the write guard — one exact path, no globs, no directory entries. The
@@ -303,7 +314,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,79); // 72 through OD-11 §1 + 6 U4-1a (scope.ts mask lookup, clientFieldMask/serviceSettings modules + their no-DB tests, own-scratch proof script) + 1 U4-1a-R2 (serviceVisibility route)
+  assert.equal(allowed.size,82); // 81 through U4-1b round 1 + 1 round-2 adminAssignments.ts (SHIELD M-02)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
 });

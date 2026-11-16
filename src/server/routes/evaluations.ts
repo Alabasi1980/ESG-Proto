@@ -22,6 +22,14 @@ import {
 } from '../../lib/approvalChain.ts';
 import { calculateAggregateScore, gateDraftEvaluations, type DashboardSourceRow } from '../../lib/scoring.ts';
 import {
+  ANSWER_ATTACHMENT_REQUIRED,
+  ANSWER_ITEM_UNRESOLVED,
+  ANSWER_ITEM_UNRESOLVED_MESSAGE,
+  resolveAnswerType,
+  validateAnswerValue,
+  validateSubmitAnswer,
+} from '../../lib/answerValidation.ts';
+import {
   readContext,
   requireFreshPassword,
   isFrozenScope,
@@ -430,7 +438,6 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
 
     // §3.3: tenant is always the caller's own (a supplied clientId compares,
     // never selects); the department is always the caller's own for E.
-    const note = typeof evidenceNote === 'string' ? evidenceNote : '';
     const result = await domainTransaction(req, async (client) => {
       const user = req.user!;
       const access = req.access!;
@@ -450,12 +457,16 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
       }
       const departmentId = ownDept;
       const assignRes = await client.query(
-        'SELECT id FROM assignments WHERE client_id = $1 AND item_id = $2 AND department_id = $3',
+        `SELECT a.id, i.answer_type AS answer_type
+           FROM assignments a
+           JOIN items i ON i.id = a.item_id
+          WHERE a.client_id = $1 AND a.item_id = $2 AND a.department_id = $3`,
         [clientId, itemId, departmentId]
       );
       if ((assignRes.rowCount ?? 0) === 0) {
         throw Object.assign(new Error('This item is not assigned to the department.'), { statusCode: 403 });
       }
+      const answerType: unknown = assignRes.rows[0].answer_type;
       // G-SHARED fail-closed (U2D round-4 predicate): an ambiguous pair is
       // refused BEFORE the ON CONFLICT upsert can replace another department's
       // evaluator/answer — 409 scope.shared_ambiguous, no rekey.
@@ -464,6 +475,15 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
       // B9-B (WF-05): frozen scope refuses evaluation writes.
       if (await isFrozenScope(client, clientId, itemId)) {
         throw frozenWriteError();
+      }
+
+      // U4-1b §1/§5 (OD-12): the answer value is typed by items.answer_type.
+      // A DRAFT only validates a value that is actually present (blank/absent
+      // is allowed); `file` items never carry text (the attachment is the
+      // answer). The stored value is the canonical (trimmed) form.
+      const typedValue = validateAnswerValue(answerType, evidenceNote);
+      if (!typedValue.ok) {
+        throw Object.assign(new Error(typedValue.message), { statusCode: 400, code: typedValue.code });
       }
 
       const existingAnswer = await client.query(
@@ -492,7 +512,7 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
           existingEval.rows[0],
           existingAnsRes.rows[0] ?? null,
           body.version,
-          { score, notEvaluated: finalNotEvaluated, notApplicable: finalNotApplicable, evidenceNote: note }
+          { score, notEvaluated: finalNotEvaluated, notApplicable: finalNotApplicable, evidenceNote: typedValue.value }
         );
       }
 
@@ -512,7 +532,7 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
             SET evaluator_id = $1, score = $2, not_evaluated = $3, not_applicable = $4,
                 na_reason = $5, justification = $6, version = version + 1, updated_at = NOW()
           WHERE client_id = $7 AND item_id = $8`,
-        [user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null, clientId, itemId]
+        [user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, typedValue.value || null, clientId, itemId]
       );
       if ((updated.rowCount ?? 0) === 0) {
         if (existingEval.rows[0]) {
@@ -523,7 +543,7 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
         await client.query(
           `INSERT INTO evaluations (client_id, item_id, evaluator_id, score, not_evaluated, not_applicable, na_reason, justification)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [clientId, itemId, user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, note || null]
+          [clientId, itemId, user.id, finalScore, finalNotEvaluated, finalNotApplicable, finalNaReason, typedValue.value || null]
         );
       }
 
@@ -539,7 +559,7 @@ router.post('/evaluations', authMiddleware, requireFreshPassword, requireDomainA
             version = answers.version + 1,
             updated_at = NOW()
           RETURNING *`,
-        [clientId, itemId, departmentId, user.id, note]
+        [clientId, itemId, departmentId, user.id, typedValue.value]
       );
 
       // Read the evaluation back NOW that its answer row exists (see above).
@@ -650,6 +670,43 @@ router.post('/evaluations/:id/submit', authMiddleware, requireFreshPassword, req
       // B9-B (WF-05): frozen scope refuses evaluation writes.
       if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
         throw frozenWriteError();
+      }
+
+      // U4-1b §2–4 (OD-12): SUBMIT-only gates. `answer_type` types the stored
+      // value; `attachment_required` is an INDEPENDENT requirement (satisfied
+      // by ≥1 evidence_attachment even when a text answer exists); a `file`
+      // item needs ≥1 attachment and must not carry text. A stored N/A outcome
+      // satisfies the answer requirement but NOT attachment_required (decision
+      // documented in src/lib/answerValidation.ts). Drafts never reach here.
+      const itemMetaRes = await client.query(
+        'SELECT answer_type, attachment_required FROM items WHERE id = $1',
+        [evaluation.item_id]
+      );
+      const itemMeta = itemMetaRes.rows[0];
+      // R3 (SHIELD L-03): submit metadata is FAIL-CLOSED. A missing item row or an
+      // unknown stored answer_type is refused; there is no silent `text` default.
+      if (!itemMeta) {
+        throw Object.assign(new Error(ANSWER_ITEM_UNRESOLVED_MESSAGE), {
+          statusCode: 409, code: ANSWER_ITEM_UNRESOLVED,
+        });
+      }
+      const resolvedType = resolveAnswerType(itemMeta.answer_type);
+      if (!resolvedType.ok) {
+        throw Object.assign(new Error(resolvedType.message), { statusCode: 409, code: resolvedType.code });
+      }
+      const attachmentRes = await client.query(
+        'SELECT COUNT(*)::int AS n FROM evidence_attachments WHERE answer_id = $1',
+        [answer.id]
+      );
+      const submitCheck = validateSubmitAnswer({
+        answerType: resolvedType.type,
+        notApplicable: evaluation.not_applicable === true,
+        value: answer.value,
+        attachmentCount: Number(attachmentRes.rows[0]?.n) || 0,
+        attachmentRequired: itemMeta.attachment_required === true,
+      });
+      if (!submitCheck.ok) {
+        throw Object.assign(new Error(submitCheck.message), { statusCode: 400, code: submitCheck.code });
       }
 
       // B9-C (A-15): submit requires the caller's answer version.
@@ -966,6 +1023,35 @@ router.put('/evaluations/:id/correct', authMiddleware, requireFreshPassword, req
       // B9-B (WF-05): frozen scope refuses corrections (use snapshot notes).
       if (await isFrozenScope(client, evaluation.client_id, evaluation.item_id)) {
         throw frozenWriteError();
+      }
+
+      // R1 (round 3, OD-12 §2): converting the outcome to N/A must NOT bypass the
+      // independent mandatory-attachment rule. When the item requires an
+      // attachment and the answer has none, refuse BEFORE any write (409 own
+      // code). With the evidence present the conversion stays allowed.
+      if (afterNotApplicable) {
+        const itemMetaRes = await client.query(
+          'SELECT attachment_required FROM items WHERE id = $1',
+          [evaluation.item_id]
+        );
+        const itemMeta = itemMetaRes.rows[0];
+        if (!itemMeta) {
+          throw Object.assign(new Error(ANSWER_ITEM_UNRESOLVED_MESSAGE), {
+            statusCode: 409, code: ANSWER_ITEM_UNRESOLVED,
+          });
+        }
+        if (itemMeta.attachment_required === true) {
+          const attachmentRes = await client.query(
+            'SELECT COUNT(*)::int AS n FROM evidence_attachments WHERE answer_id = $1',
+            [answer.id]
+          );
+          if ((Number(attachmentRes.rows[0]?.n) || 0) < 1) {
+            throw Object.assign(
+              new Error('This item requires an attachment, so it cannot be converted to N/A without one. Upload the required evidence first.'),
+              { statusCode: 409, code: ANSWER_ATTACHMENT_REQUIRED }
+            );
+          }
+        }
       }
 
       // B9-C (A-15): correction requires the caller's version.

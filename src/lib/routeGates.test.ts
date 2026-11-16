@@ -626,3 +626,102 @@ test('G2 legacy-helper audit: contextFromUser only in the auth-internal fresh ga
       `${file} must never rebuild context from req.user (any-client fallback)`);
   }
 });
+
+// U4-1b (OD-12 §1–2) — enumerated wire pins for the typed-answer contract.
+// The pure rules live in src/lib/answerValidation.ts (unit-matrixed); these
+// pins make the evaluations route a faithful consumer and keep the submit gate
+// before any state write. A future edit that silently drops a gate fails here.
+test('U4-1b: evaluations save/submit consume the typed-answer contract (submit gate before writes)', () => {
+  const src = fs.readFileSync(path.join(ROUTES_DIR, 'evaluations.ts'), 'utf8');
+  const lib = fs.readFileSync(path.join(SERVER_ROOT, '..', 'lib', 'answerValidation.ts'), 'utf8');
+
+  // Single import; the route holds no duplicate rule text.
+  assert.ok(src.includes("from '../../lib/answerValidation.ts'"), 'evaluations.ts imports the validator module');
+  assert.equal((src.match(/\bvalidateAnswerValue\s*\(/g) ?? []).length, 1,
+    'draft save calls validateAnswerValue exactly once ');
+  assert.equal((src.match(/\bvalidateSubmitAnswer\s*\(/g) ?? []).length, 1,
+    'submit calls validateSubmitAnswer exactly once');
+  // Draft: the item answer_type is read with the assignment and the typed value
+  // is validated before the answer row is written.
+  const draftAt = src.indexOf('validateAnswerValue(answerType, evidenceNote)');
+  const draftWriteAt = src.indexOf("INSERT INTO answers (client_id, item_id, department_id, submitted_by, status, value");
+  assert.ok(draftAt > 0 && draftWriteAt > draftAt,
+    'draft validation precedes the answers upsert');
+  assert.ok(/SELECT a\.id, i\.answer_type AS answer_type/.test(src),
+    'draft save reads items.answer_type alongside the assignment');
+  // Submit: item metadata + attachment count feed the gate, which must run
+  // before enforcePairVersion/any UPDATE.
+  const submitMetaAt = src.indexOf('SELECT answer_type, attachment_required FROM items WHERE id = $1');
+  const submitCountAt = src.indexOf('SELECT COUNT(*)::int AS n FROM evidence_attachments WHERE answer_id = $1');
+  const submitGateAt = src.indexOf('validateSubmitAnswer({');
+  const submitVersionAt = src.indexOf('// B9-C (A-15): submit requires the caller\'s answer version.');
+  assert.ok(submitMetaAt > 0 && submitCountAt > submitMetaAt, 'submit reads item metadata then the attachment count');
+  assert.ok(submitGateAt > submitCountAt && submitVersionAt > submitGateAt,
+    'the submit gate runs after the reads and BEFORE the version/write path');
+  // The lib owns both wire codes and the IO cap (no handler-side literals).
+  assert.ok(lib.includes("ANSWER_TYPE_INVALID = 'answer.type_invalid'"));
+  assert.ok(lib.includes("ANSWER_ATTACHMENT_REQUIRED = 'answer.attachment_required'"));
+  assert.ok(lib.includes('MAX_TEXT_ANSWER_LENGTH = 10_000'));
+  assert.ok(!src.includes("'answer.type_invalid'") && !src.includes("'answer.attachment_required'"),
+    'the route never re-declares the wire codes');
+});
+
+// U4-1b round 2 (SHIELD R1–R4) — enumerated source pins. These keep the
+// evidence lock, the N/A-shortcut guard, the fail-closed submit metadata and the
+// invisible/NUL text rules from being silently removed in a later refactor.
+test('U4-1b R1-R4: evidence lock, N/A attachment guard, fail-closed submit metadata, invisible/NUL text', () => {
+  const read = (relative: string) => fs.readFileSync(path.resolve('src', relative), 'utf8');
+
+  // R1: only non-draft answers are locked, and the lock sits before the DELETE.
+  const storage = read('server/routes/storage.ts');
+  assert.equal((storage.match(/attachment\.locked/g) ?? []).length, 1,
+    'the evidence lock is declared exactly once (upload stays append-only)');
+  const statusAt = storage.indexOf("answer.status !== 'draft'");
+  const deleteAt = storage.indexOf('DELETE FROM evidence_attachments');
+  assert.ok(statusAt > 0 && deleteAt > statusAt, 'the non-draft lock precedes the attachment DELETE');
+
+  // R2: the shortcut refuses an attachment_required item before any write.
+  const assignments = read('server/routes/adminAssignments.ts');
+  assert.ok(assignments.includes('attachment_required'), 'the N/A shortcut reads items.attachment_required');
+  const naGuardAt = assignments.indexOf("'assignment.na_attachment_required'");
+  const naInsertAt = assignments.indexOf('INSERT INTO evaluations');
+  assert.ok(naGuardAt > 0 && naInsertAt > naGuardAt, 'the N/A attachment guard precedes every write');
+
+  // R3: strict metadata resolution; no silent `text` fallback at submit.
+  const evals = read('server/routes/evaluations.ts');
+  assert.ok(evals.includes('resolveAnswerType(itemMeta.answer_type)'), 'submit resolves the type strictly');
+  assert.ok(evals.includes('ANSWER_ITEM_UNRESOLVED'), 'missing item metadata is refused');
+  assert.ok(!/itemMetaRes\.rows\[0\]\s*\?\?\s*\{\s*answer_type:\s*'text'/.test(evals),
+    'no silent text default in submit metadata');
+
+  // R4: invisible-only text and NUL are handled in the pure validator.
+  const lib = read('lib/answerValidation.ts');
+  assert.ok(lib.includes('resolveAnswerType'), 'the strict resolver is exported');
+  assert.ok(lib.includes('\\p{Cf}') && lib.includes('\\uFEFF') && lib.includes('\\u00AD'),
+    'the \u0070{Cf} + soft-hyphen/BOM invisible set is pinned in the validator');
+  assert.ok(lib.includes("const NUL = '\\u0000'") && lib.includes('rawValue.includes(NUL)'),
+    'NUL is refused before any DB write');
+});
+
+// U4-1b round 3 — the correction-conversion guard (R1) and the typed N/A
+// shortcut value (R3) are pinned so a later refactor cannot re-open the
+// attachment_required bypass or reintroduce a literal 'N/A' for typed items.
+test('U4-1b round 3: N/A correction guard precedes writes; typed N/A shortcut value', () => {
+  const read = (relative: string) => fs.readFileSync(path.resolve('src', relative), 'utf8');
+  const evals = read('server/routes/evaluations.ts');
+  const correctStart = evals.indexOf("router.put('/evaluations/:id/correct'");
+  const convertAt = evals.indexOf('if (afterNotApplicable)');
+  const versionAt = evals.indexOf('const gate = await enforcePairVersion(', correctStart);
+  assert.ok(correctStart > 0 && convertAt > correctStart && versionAt > convertAt,
+    'the N/A-conversion attachment guard runs before the correction version/write path');
+  assert.ok(evals.includes('ANSWER_ATTACHMENT_REQUIRED'),
+    'the correction guard reuses the shared attachment-required code');
+
+  const assignments = read('server/routes/adminAssignments.ts');
+  assert.ok(assignments.includes('i.answer_type AS answer_type'),
+    'the N/A shortcut reads the item answer_type');
+  assert.ok(assignments.includes("const naAnswerValue = asg.rows[0].answer_type === 'text'"),
+    'the shortcut derives a typed-appropriate N/A value');
+  assert.ok(assignments.includes('[tenant, itemId, departmentId, req.access!.actorId, naAnswerValue]'),
+    'the shortcut stores that value (text keeps N/A; non-text stores empty)');
+});
