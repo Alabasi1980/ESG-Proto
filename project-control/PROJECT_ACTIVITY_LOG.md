@@ -159,3 +159,5 @@
 | 2026-11-16 | TeraAgent | TASK-PROTO-H13 closed | ثيم تطبيق موحّد من الإعدادات (منصة): app_settings + GET/PUT /settings + حل عام←مستأجر←ge + قسم UI + ISS-005×5 · واقعة حيّة: schema_drift بسبب ملكية الجدول أُصلح (ALTER OWNER) وأُضيف فحص ownership_drift · QA FAIL←PASS (R1-R3) · Shield 0H/1M/1L مغلقان · 245/245 |
 
 | 2026-11-16 | TeraAgent | ISS-006 closed | db/status tableCount (32 = oracle) + guard allowlist · ISS-004/workspace.invalid أعيد تصنيفهما إلى U3 |
+
+| 2026-11-16 | TeraAgent | TASK-PROTO-U3-A closed | عميل مساحة عمل: اعتماد تبويب تلقائي + ترويسات على 88 موضعاً + استرجاع stale مرة واحدة · إثبات حيّ: قائمة الخدمات ظهرت (GRI) و workspace.invalid اختفى و tables=32 · QA PASS + Shield 0H/2M (W→P الصامت أُلغي، epoch guard، عدم إسقاط المقابض) · 271/271 |

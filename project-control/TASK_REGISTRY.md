@@ -32,3 +32,6 @@ ISS-004 (منطق/صلاحيات) · ISS-006 (بيانات/جلسة) · ISS-010 
 
 ## TASK-PROTO-H13 — ثيم التطبيق الموحّد (منصة)
 - Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · round 2/2 · 245/245 · لا نشر
+
+## TASK-PROTO-U3-A — طبقة مساحة العمل في الواجهة
+- Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · round 2/2 · 271/271 · لا نشر
