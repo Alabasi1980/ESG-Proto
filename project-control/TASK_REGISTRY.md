@@ -44,3 +44,6 @@ ISS-004 (منطق/صلاحيات) · ISS-006 (بيانات/جلسة) · ISS-010 
 
 ## TASK-PROTO-U4-1a — نموذج الخدمة الموسّع (OD-11)
 - Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · round 2/2 · 334/334 · 3 أعمدة + مسار W + قناع C · لا نشر
+
+## TASK-PROTO-U4-1b — الاجابة بنوعها + المرفق المستقل
+- Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · 3 rounds · 353/353 · لا نشر

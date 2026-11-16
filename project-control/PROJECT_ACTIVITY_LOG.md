@@ -167,3 +167,5 @@
 | 2026-11-16 | TeraAgent | TASK-PROTO-U3-B2 closed | صفحة العملاء §5 حرفياً + دخول/خروج بهبوطات حتمية + ClientDetail بهدف صريح وبلا محدد + W للقراءة فقط بالوضع + استرجاع مساحة مفقودة · QA FAIL→PASS · Shield 0H/1M مغلق · إثبات حيّ (خروج→العملاء، تحميل→P، صفر محررات في W) · 316/316 · متبقٍ U4 (محددات ClientReview/GeFinal) |
 
 | 2026-11-16 | TeraAgent | TASK-PROTO-U4-1a closed | 3 أعمدة (attachment_required/settings/client_field_mask) + settings API + مسار W لضبط ما يراه العميل + سياسة ضيقة + تنقية C على الخادم · ترحيل حيّ بجلستين (درس: ledger يتطلب superuser) · QA FAIL→PASS · Shield 0H/0M/3L · إثبات حيّ: قناع يعمل وعكوس · 334/334 |
+
+| 2026-11-16 | TeraAgent | TASK-PROTO-U4-1b closed | تحقق الاجابة بنوع البند + المرفق المستقل الاجباري عند الارسال + قفل حذف الدليل بعد الارسال + منع تجاوز N/A + حروف خفية/NUL | QA PASS + recheck + Shield 0H/2M مغلقان · 353/353 |
