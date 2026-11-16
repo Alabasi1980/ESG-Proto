@@ -378,7 +378,13 @@ export async function enterVerified(clientId: string): Promise<VerifiedTransitio
     return { ok: false, reason: 'failed' };
   }
   const confirm = await reconcile('consultant');
-  if (confirm.tab) return { ok: true, tab: confirm.tab };
+  // M3: the confirmed envelope must be the requested tenant — never land W on a
+  // different client because a reply/tenant drifted.
+  if (confirm.tab) {
+    return confirm.tab.client?.id === clientId
+      ? { ok: true, tab: confirm.tab }
+      : { ok: false, reason: 'failed' };
+  }
   if (confirm.status === 401) return { ok: false, reason: 'unauthorized' };
   if (confirm.status === 409 || confirm.status === 403) return { ok: false, reason: 'invalid' };
   return { ok: false, reason: 'failed' };

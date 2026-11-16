@@ -247,7 +247,11 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U3-A (SHIELD-U3A-02): the reviewer-owned QA/fix-review pair for
     // this unit, by exact path only — no globs, prefixes or directory entries.
     'project-control/qa-reports/TASK-PROTO-U3A-QA.md',
-    'security-reports/TASK-PROTO-U3A-fix-review.md']);
+    'security-reports/TASK-PROTO-U3A-fix-review.md',
+    // TASK-PROTO-U3-B2 round-3 reviewer evidence (QA FAIL + Shield Medium) —
+    // reviewer-owned, exact paths only.
+    'project-control/qa-reports/TASK-PROTO-U3B2-QA.md',
+    'security-reports/TASK-PROTO-U3B2-fix-review.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',

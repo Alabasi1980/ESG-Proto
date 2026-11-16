@@ -57,6 +57,25 @@ export interface ClientTargetInput {
   sessionClientId: string | null | undefined;
 }
 
+/** M2: the platform-EDITOR mode is the platform context (ge_admin in platform
+ * mode), not `role === 'ge_admin'` — a consultant actor is also ge_admin but
+ * must get the read-only W projection. Employees get no client-detail page. */
+export interface ClientDetailMode {
+  canEdit: boolean;
+  showUsers: boolean;
+  fetchCatalogs: boolean;
+}
+
+export function clientDetailMode(input: {
+  role: 'ge_admin' | 'client_admin' | 'employee' | null | undefined;
+  workspaceMode: 'platform' | 'consultant' | null | undefined;
+}): ClientDetailMode {
+  if (input.role === 'client_admin') return { canEdit: false, showUsers: true, fetchCatalogs: false };
+  if (input.role !== 'ge_admin') return { canEdit: false, showUsers: false, fetchCatalogs: false };
+  const consultant = input.workspaceMode === 'consultant';
+  return { canEdit: !consultant, showUsers: !consultant, fetchCatalogs: !consultant };
+}
+
 export function resolveTargetClientId(input: ClientTargetInput): string | null {
   if (input.role === 'client_admin') return input.sessionClientId || null;
   if (input.role !== 'ge_admin') return null;
@@ -117,6 +136,8 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
     sessionClientId: user?.clientId,
   }) ?? '';
 
+  const mode = clientDetailMode({ role: user?.role, workspaceMode: workspace?.mode });
+
   const fetchDetail = useCallback(
     async (id: string) => {
       if (!id) return;
@@ -148,9 +169,11 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
     [headers]
   );
 
+  // M2: only the platform configuration context needs the editor catalogs; W/C
+  // issue no services/items fetches from this view.
   useEffect(() => {
-    fetchCatalogs();
-  }, [fetchCatalogs]);
+    if (mode.fetchCatalogs) fetchCatalogs();
+  }, [mode.fetchCatalogs, fetchCatalogs]);
   useEffect(() => {
     if (selected) fetchDetail(selected);
   }, [selected, fetchDetail]);
@@ -192,21 +215,6 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
         method: 'PATCH',
         headers: jsonHeaders(),
         body: JSON.stringify(flags[serviceId]),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      await fetchDetail(selected);
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const handleSuspend = async (suspended: boolean) => {
-    try {
-      const res = await apiFetch(`/api/clients/${selected}`, {
-        method: 'PATCH',
-        headers: jsonHeaders(),
-        body: JSON.stringify({ suspended }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -293,7 +301,8 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
     }
   };
 
-  const isGe = user?.role === 'ge_admin';
+  // M2: editors are the platform context only (consultant actors are ge_admin).
+  const canEdit = mode.canEdit;
 
   // §3: P Client Detail is explicit-target only. Without one the page must not
   // render (App routes P → Clients); W/C always resolve their own verified id.
@@ -336,13 +345,13 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
                     <span className="font-bold">
                       {s.code} — {s.name}
                     </span>
-                    {isGe && (
+                    {canEdit && (
                       <button onClick={() => handleUnlink(s.id)} title={t.clientDetail.unlinkBtn} className="p-1.5 rounded-lg border border-danger text-danger">
                         <Unlink className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
-                  {isGe && flags[s.id] && (
+                  {canEdit && flags[s.id] && (
                     <div className="mt-2 flex items-center gap-3">
                       <label className="flex items-center gap-1">
                         <input
@@ -368,7 +377,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
                 </li>
               ))}
             </ul>
-            {isGe && (
+            {canEdit && (
               <div className="mt-3 flex items-center gap-2">
                 <select value={linkServiceId} onChange={(e) => setLinkServiceId(e.target.value)} className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                   <option value="">—</option>
@@ -387,28 +396,17 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
             )}
           </div>
 
-          {isGe && (
-            <div className="p-5 bg-surface-2 rounded-2xl border border-border">
-              <h4 className="font-bold text-sm mb-1">{t.clientDetail.suspendTitle}</h4>
-              <p className="text-[11px] text-muted mb-2">{t.clientDetail.suspendedNote}</p>
-              <button
-                onClick={() => handleSuspend(!detail.client.suspended)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold text-brand-ink ${detail.client.suspended ? 'bg-brand' : 'bg-danger'}`}
-              >
-                {detail.client.suspended ? 'Unsuspend' : 'Suspend'}
-              </button>
-            </div>
-          )}
+          {/* §5: suspend/unsuspend lives ONLY on the Clients list — removed here. */}
 
           <div className="p-5 bg-surface-2 rounded-2xl border border-border">
             <h4 className="font-bold text-sm mb-2">{t.assignments.title}</h4>
-            {!isGe && (
+            {!canEdit && (
               <p className="text-[11px] text-muted mb-3 leading-relaxed">
                 <span className="font-bold text-text">{t.b16.assignGeOnlyTitle}. </span>
                 {t.b16.assignGeOnlyDesc}
               </p>
             )}
-            {isGe && (
+            {canEdit && (
             <form onSubmit={handleAssign} className="flex flex-col sm:flex-row gap-2 mb-3">
               <select value={assignForm.itemId} onChange={(e) => setAssignForm({ ...assignForm, itemId: e.target.value })} required className="flex-1 px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 <option value="">{t.assignments.itemLabel}…</option>
@@ -437,7 +435,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
                   <span>
                     {a.item_code} → {a.department_name}
                   </span>
-                  {isGe && (
+                  {canEdit && (
                     <button onClick={() => handleUnassign(a.item_id, a.department_id)} className="px-2 py-1 rounded-lg border border-danger text-danger font-bold">
                       {t.assignments.unassignBtn}
                     </button>
@@ -445,7 +443,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
                 </li>
               ))}
             </ul>
-            {isGe && (
+            {canEdit && (
             <form onSubmit={handleNa} className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select value={naForm.itemId} onChange={(e) => setNaForm({ ...naForm, itemId: e.target.value })} required className="px-3 py-2 rounded-xl text-xs border border-border-strong bg-surface-3 text-text">
                 <option value="">Item…</option>
@@ -482,9 +480,9 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
             <div className="p-5 bg-surface-2 rounded-2xl border border-border">
               <h4 className="font-bold text-sm mb-1">
                 {t.clientDetail.departmentsTitle} ({detail.departments.length})
-                {isGe && <span className="ms-2 text-[11px] font-semibold text-muted">· {t.b16.headTitle}</span>}
+                {canEdit && <span className="ms-2 text-[11px] font-semibold text-muted">· {t.b16.headTitle}</span>}
               </h4>
-              {isGe && <p className="text-[11px] text-muted mb-3 leading-relaxed">{t.b16.headDesc}</p>}
+              {canEdit && <p className="text-[11px] text-muted mb-3 leading-relaxed">{t.b16.headDesc}</p>}
               {headMsg && (
                 <div className={`mb-2 p-2.5 rounded-lg text-[11px] ${headMsg.kind === 'ok' ? 'bg-success-soft text-success-text' : 'bg-danger-soft text-danger'}`}>
                   {headMsg.text}
@@ -507,7 +505,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
                           <span className="text-[10px] text-muted">{t.b16.headNone}</span>
                         )}
                       </div>
-                      {isGe && (
+                      {canEdit && (
                         <div className="mt-2 flex items-center gap-2">
                           <select
                             value={headPick[d.id] ?? ''}
@@ -544,17 +542,20 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({ clientId = n
                 })}
               </ul>
             </div>
-            <div className="p-5 bg-surface-2 rounded-2xl border border-border">
-              <h4 className="font-bold text-sm mb-2">{t.clientDetail.usersTitle} ({detail.users.length})</h4>
-              <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
-                {detail.users.map((u) => (
-                  <li key={u.id}>
-                    {u.name} · {u.email} · {u.role}
-                    {u.must_change_password && <span className="text-warning-text"> · {t.clientDetail.mustChangeBadge}</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* M2 §6: no user roster is rendered in the W read-only context. */}
+            {mode.showUsers && (
+              <div className="p-5 bg-surface-2 rounded-2xl border border-border">
+                <h4 className="font-bold text-sm mb-2">{t.clientDetail.usersTitle} ({detail.users.length})</h4>
+                <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
+                  {detail.users.map((u) => (
+                    <li key={u.id}>
+                      {u.name} · {u.email} · {u.role}
+                      {u.must_change_password && <span className="text-warning-text"> · {t.clientDetail.mustChangeBadge}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </>
       )}

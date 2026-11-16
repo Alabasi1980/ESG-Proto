@@ -15,7 +15,7 @@ import path from 'node:path';
 import {
   CONTEXTS, PAGE_IDS, PENDING_PAGE_IDS,
   aliasOf, deriveNavContext, identityLabelKey, isPageAllowed, landingFor, labelOf,
-  menuPages, navPages, pagesIn, resolvePage, shellIdentity, workspaceExitLanding,
+  menuPages, navPages, pagesIn, resolvePage, resolveShellPage, shellIdentity, workspaceExitLanding,
   type NavContext, type PageId,
 } from './navModel.ts';
 import { permittedPages, type AccessContext } from './capabilities.ts';
@@ -146,6 +146,43 @@ test('U3-B2 §2/§7 landings: P fresh login stays ge-overview; Exit/boot-exit la
   assert.equal(landingFor('consultant'), 'dashboard');
   assert.equal(landingFor('client'), 'client-dashboard');
   assert.equal(landingFor('employee'), 'gap-analysis');
+});
+
+test('U3-B2 M1 shell resolution: pending Landing wins, boot/reload → clients, logout → fresh landing', () => {
+  const base = {
+    activeTab: null as PageId | null,
+    bootLanding: null as 'ge-overview' | 'clients' | null,
+    pendingLanding: null as PageId | null,
+    hasConfigTarget: false,
+  };
+  // Fresh login (no tab, no pending, fresh-landing signal).
+  assert.equal(resolveShellPage({ ...base, context: 'platform', phase: 'idle', bootLanding: 'ge-overview' }), 'ge-overview');
+  // Reload / duplicated tab while P or while W (boot-exit) → P → Clients.
+  assert.equal(resolveShellPage({ ...base, context: 'platform', phase: 'idle', bootLanding: 'clients' }), 'clients');
+  // Explicit Exit: the destination survives the old W tab and the context change.
+  assert.equal(resolveShellPage({
+    ...base, context: 'consultant', phase: 'idle', activeTab: 'dashboard', pendingLanding: 'clients',
+  }), 'dashboard', 'W cannot render a P page mid-transition (truthful)');
+  assert.equal(resolveShellPage({
+    ...base, context: 'platform', phase: 'idle', activeTab: 'dashboard', pendingLanding: 'clients',
+  }), 'clients', 'after the exit settles the pending destination wins');
+  // Boot while W: nothing mounts during `checking`; then P → Clients.
+  assert.equal(resolveShellPage({
+    ...base, context: 'consultant', phase: 'checking', activeTab: 'dashboard', bootLanding: 'clients',
+  }), null);
+  // Invalid/expired handle → P → Clients (never the old W tab).
+  assert.equal(resolveShellPage({
+    ...base, context: 'platform', phase: 'idle', activeTab: 'notifications', bootLanding: 'clients', pendingLanding: 'clients',
+  }), 'clients');
+  // Normal navigation is unchanged, and every transition phase mounts nothing.
+  assert.equal(resolveShellPage({ ...base, context: 'consultant', phase: 'idle', activeTab: 'standards' }), 'standards');
+  assert.equal(resolveShellPage({ ...base, context: 'client', phase: 'idle' }), 'client-dashboard');
+  for (const phase of ['checking', 'opening', 'closing', 'failed'] as const) {
+    assert.equal(resolveShellPage({ ...base, context: 'platform', phase, activeTab: 'clients' }), null, phase);
+  }
+  // P client-detail without an explicit T routes to Clients.
+  assert.equal(resolveShellPage({ ...base, context: 'platform', phase: 'idle', activeTab: 'client-detail' }), 'clients');
+  assert.equal(resolveShellPage({ ...base, context: 'platform', phase: 'idle', activeTab: 'client-detail', hasConfigTarget: true }), 'ge-overview');
 });
 
 test('U3-B1 §3 aliases: W client-dashboard -> dashboard, C dashboard -> client-dashboard, no duplicates', () => {
@@ -282,7 +319,7 @@ test('U3-B1 shell wiring: App mounts only the resolved page; Sidebar renders the
   const sidebar = readFileSync(path.resolve('src/components/Sidebar.tsx'), 'utf8');
   const header = readFileSync(path.resolve('src/components/Header.tsx'), 'utf8');
   // The mount decision is resolvePage(context, activeTab) — never raw activeTab.
-  assert.match(app, /resolvePage\(context, activeTab\)/);
+  assert.match(app, /resolveShellPage\(\{/);
   assert.match(app, /renderView\(currentPage\)/);
   // No view is chosen from the RAW requested tab. The single raw-tab comparison
   // allowed is the §3 P redirect (client-detail without an explicit target), and
@@ -290,7 +327,8 @@ test('U3-B1 shell wiring: App mounts only the resolved page; Sidebar renders the
   assert.doesNotMatch(app,
     /activeTab\s*===\s*'(dashboard|standards|gap-analysis|actions|initiatives|esg-profile|reports|import-gri|settings|staff-lists|audit-log|notifications|ge-overview|clients|client-dashboard)'/,
     'views must not be rendered from the raw requested tab');
-  assert.match(app, /activeTab === 'client-detail' && !clientConfig/);
+  assert.match(readFileSync(path.resolve('src/lib/navModel.ts'), 'utf8'),
+    /requested === 'client-detail' && !request\.hasConfigTarget/);
   // Every implemented page has exactly one mount branch.
   for (const id of PAGE_IDS.filter((page) => !PENDING_PAGE_IDS.includes(page))) {
     assert.match(app, new RegExp(`case '${id}':`), `App: missing mount branch for ${id}`);
@@ -316,13 +354,22 @@ test('U3-B1 shell wiring: App mounts only the resolved page; Sidebar renders the
   assert.match(app, /case 'clients':/);
   assert.match(app, /<ClientsView/);
   assert.match(app, /workspaceExitLanding\(\)/);
-  // §7 boot landing: fresh login → ge-overview, reload/exited W → clients.
-  assert.match(app, /bootLanding/);
-  assert.match(app, /setActiveTab\(bootLanding\)/);
+  // M1: ONE deterministic resolution — never a raw-tab normaliser race.
+  assert.match(app, /resolveShellPage\(\{/);
+  assert.match(app, /pendingLanding/);
+  assert.match(app, /setPendingLanding\(workspaceExitLanding\(\)\)/);
+  assert.match(app, /if \(!user\) \{[\s\S]{0,160}?setActiveTab\(null\)/, 'logout resets the tab request');
   const auth = readFileSync(path.resolve('src/context/AuthContext.tsx'), 'utf8');
   assert.match(auth, /setBootLanding\(workspaceExitLanding\(\)\)/);
   assert.match(auth, /runBootWorkspace/);
   assert.match(auth, /enterVerified/);
   assert.match(auth, /exitVerified/);
   assert.match(auth, /recoverWorkspace/);
+  // M4: the lost-handle hook notifies the shell (no silent platform reuse) and
+  // the recovery destination is consumed in the same resolution (no P flash).
+  assert.match(auth, /setWorkspaceLostHandler\(recoverLostWorkspace\)/);
+  assert.match(readFileSync(path.resolve('src/lib/api.ts'), 'utf8'), /workspaceLostHandler\?\.\(\)/);
+  assert.match(app, /recoveryLandingActive/);
+  assert.match(app, /recoveryConsumedRef/);
+  assert.match(app, /shellPending/);
 });

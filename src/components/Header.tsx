@@ -51,8 +51,8 @@ export const Header: React.FC<HeaderProps> = ({
   const connectionLabel = dbConnected === null
     ? t.common.checking
     : dbConnected
-      ? t.settings.connected
-      : t.settings.disconnected;
+      ? t.common.connected
+      : t.common.disconnected;
 
   const getTabSubtitle = () => {
     switch (activeTab) {

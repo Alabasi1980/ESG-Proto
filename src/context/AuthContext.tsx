@@ -18,7 +18,7 @@ import {
   type WorkspaceTab,
   type WorkspaceTransitionState,
 } from '../lib/workspaceClient.ts';
-import { setUnauthorizedHandler } from '../lib/api.ts';
+import { setUnauthorizedHandler, setWorkspaceLostHandler } from '../lib/api.ts';
 import { workspaceExitLanding } from '../lib/navModel.ts';
 
 export interface AuthUser {
@@ -59,6 +59,10 @@ interface AuthContextType {
   // tab (a stored tab mirror exists) or an exited consultant tab lands
   // `clients`. App applies this once, before the user navigates anywhere.
   bootLanding: 'ge-overview' | 'clients' | null;
+  // M4: incremented when a lost/expired consultant handle forces the explicit
+  // exit-to-P → Clients recovery; App parks that destination regardless of the
+  // previous W tab.
+  recoveryLandingToken: number;
   login: (token: string, user: AuthUser) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -81,6 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [workspace, setWorkspace] = useState<WorkspaceTab | null>(null);
   const [workspacePhase, setWorkspacePhase] = useState<WorkspacePhase>('idle');
   const [bootLanding, setBootLanding] = useState<'ge-overview' | 'clients' | null>(null);
+  const [recoveryLandingToken, setRecoveryLandingToken] = useState(0);
   // The first boot of this session decides the landing (reload vs fresh login);
   // later refreshUser() passes (password change, theme save) never re-land.
   const bootSettledRef = useRef(false);
@@ -286,6 +291,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [applyTransition, clearSession]);
 
+  /**
+   * M4: a 409 `workspace.invalid` while a consultant handle is in use cannot be
+   * repaired by minting a platform tab (that would keep W chrome over a P
+   * handle). Reconcile the same handle first; boot recovery exits a confirmed
+   * consultant tab to P, and a conclusive invalid handle establishes verified P.
+   */
+  const recoverLostWorkspace = useCallback(() => {
+    if (!claimWorkspaceTransition('boot')) return;
+    const begun = beginWorkspaceTransition(transitionRef.current, 'boot');
+    applyTransition(begun);
+    void (async () => {
+      try {
+        const outcome = await recoverWorkspace('boot');
+        if (outcome.unauthorized) {
+          clearSession();
+          return;
+        }
+        if (!outcome.ok) {
+          applyTransition(failWorkspaceTransition(begun));
+          return;
+        }
+        setWorkspace(currentTab());
+        setBootLanding(workspaceExitLanding());
+        setRecoveryLandingToken((token) => token + 1);
+        applyTransition(settleWorkspaceTransition());
+      } finally {
+        releaseWorkspaceTransition();
+      }
+    })();
+  }, [applyTransition, clearSession]);
+
+  useEffect(() => {
+    setWorkspaceLostHandler(recoverLostWorkspace);
+    return () => setWorkspaceLostHandler(null);
+  }, [recoverLostWorkspace]);
+
   const logout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
@@ -305,6 +346,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       workspace,
       workspacePhase,
       bootLanding,
+      recoveryLandingToken,
       login,
       logout,
       refreshUser,

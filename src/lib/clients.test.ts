@@ -21,7 +21,7 @@ import {
   readStatus,
   type ClientServiceProgress,
 } from '../views/ClientsView.tsx';
-import { resolveTargetClientId } from '../views/ClientDetailView.tsx';
+import { clientDetailMode, resolveTargetClientId } from '../views/ClientDetailView.tsx';
 import { isPageAllowed, type NavContext } from './navModel.ts';
 
 const source = (file: string) => readFileSync(path.resolve(file), 'utf8');
@@ -213,17 +213,19 @@ test('U3-B2 R1b ClientDetail: selector and client-list lookup are gone; handlers
   assert.match(src, /resolveTargetClientId\(/);
   assert.match(src, /if \(!selected\) return null/, 'P without a target renders nothing');
   // Every existing handler is preserved (no behaviour change beyond the target).
-  for (const handler of ['handleLink', 'handleUnlink', 'handleSaveFlags', 'handleSuspend',
+  // M2 removes only the suspend handler (§5: suspend lives on Clients alone).
+  for (const handler of ['handleLink', 'handleUnlink', 'handleSaveFlags',
     'handleAssign', 'handleUnassign', 'handleNa', 'handleSetHead']) {
     assert.match(src, new RegExp(`const ${handler} =`), `${handler} preserved`);
   }
+  assert.doesNotMatch(src, /const handleSuspend =/);
 });
 
-test('U3-B2 R1a App routes P without a target to Clients (no first-client mount)', () => {
+test('U3-B2 R1a/M1 App routes P without a target to Clients (no first-client mount)', () => {
   const app = source('src/App.tsx');
-  assert.match(app, /context === 'platform' && activeTab === 'client-detail' && !clientConfig/);
-  assert.match(app, /platformDetour/);
-  assert.match(app, /platformDetour \?\? resolvedPage\?\.page/);
+  // The detour is part of the ONE shell resolver, not a raw-tab effect.
+  assert.match(app, /resolveShellPage\(\{/);
+  assert.match(app, /hasConfigTarget: Boolean\(clientConfig\)/);
   assert.match(app, /case 'client-detail':[\s\S]{0,220}?context === 'platform' \? null : <ClientDetailView/);
   assert.match(app, /<ClientDetailView key=\{clientConfig\.id\} clientId=\{clientConfig\.id\} \/>/);
 });
@@ -240,4 +242,50 @@ test('U3-B2 R2 refreshUser: the only view caller is P-only Settings (no W/C boot
   // App's own refreshUser call is the forced-change gate, which runs before any
   // shell context exists (ge_admin boot at most; C/E boot never exits).
   assert.match(source('src/App.tsx'), /await refreshUser\(\)/);
+});
+
+// --- TASK-PROTO-U3-B2 round 3 (M2/M5) --------------------------------------
+
+test('U3-B2 M2 editor mode is the platform MODE, not role=ge_admin (W is read-only)', () => {
+  // Platform context: editors + catalogs, roster shown.
+  assert.deepEqual(clientDetailMode({ role: 'ge_admin', workspaceMode: 'platform' }),
+    { canEdit: true, showUsers: true, fetchCatalogs: true });
+  assert.deepEqual(clientDetailMode({ role: 'ge_admin', workspaceMode: null }),
+    { canEdit: true, showUsers: true, fetchCatalogs: true }, 'P before the mirror settles is still P');
+  // Consultant (the actor is ALSO ge_admin): zero editors, zero catalogs, no roster.
+  assert.deepEqual(clientDetailMode({ role: 'ge_admin', workspaceMode: 'consultant' }),
+    { canEdit: false, showUsers: false, fetchCatalogs: false });
+  // C: own-company read-only; roster stays. E/unknown: nothing.
+  assert.deepEqual(clientDetailMode({ role: 'client_admin', workspaceMode: null }),
+    { canEdit: false, showUsers: true, fetchCatalogs: false });
+  assert.deepEqual(clientDetailMode({ role: 'employee', workspaceMode: 'consultant' }),
+    { canEdit: false, showUsers: false, fetchCatalogs: false });
+  assert.deepEqual(clientDetailMode({ role: null, workspaceMode: null }),
+    { canEdit: false, showUsers: false, fetchCatalogs: false });
+});
+
+test('U3-B2 M2 source: every editor subtree is platform-gated; suspend panel removed', () => {
+  const src = source('src/views/ClientDetailView.tsx');
+  assert.doesNotMatch(src, /isGe|handleSuspend|suspendTitle|suspendedNote/);
+  // Editors: unlink, flags, link service, assign form, unassign, N/A, head controls.
+  assert.ok((src.match(/\{canEdit &&/g) ?? []).length >= 8, 'editor subtrees gated on canEdit');
+  assert.match(src, /\{!canEdit && \(/, 'read-only note for non-platform contexts');
+  assert.match(src, /\{mode\.showUsers && \(/, 'roster is never rendered in W');
+  assert.match(src, /if \(mode\.fetchCatalogs\) fetchCatalogs\(\);/, 'catalog fetch gated');
+  assert.match(src, /if \(!selected\) return null/);
+});
+
+test('U3-B2 M5: success only after the authoritative refetch; binding copy', () => {
+  const clients = source('src/views/ClientsView.tsx');
+  assert.match(clients, /await load\(queryRef\.current\.applied\);[\s\S]{0,80}?setNotice\(outcome\)/);
+  const i18n = source('src/i18n/translations.ts');
+  assert.match(i18n, /emptyTitle: 'لا يوجد عملاء'/);
+  assert.doesNotMatch(i18n, /emptyTitle: 'لا يوجد عملاء بعد'/);
+  assert.match(i18n, /connected: 'Connected'/);
+  assert.match(i18n, /connected: 'متصل'/);
+  assert.match(i18n, /disconnected: 'غير متصل'/);
+  const header = source('src/components/Header.tsx');
+  assert.match(header, /t\.common\.connected/);
+  assert.match(header, /t\.common\.disconnected/);
+  assert.doesNotMatch(header, /t\.settings\.connected|t\.settings\.disconnected/);
 });

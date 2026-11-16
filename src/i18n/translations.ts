@@ -679,6 +679,8 @@ export interface Translations {
     file: string;
     demoBanner: string;
     checking: string;
+    connected: string;
+    disconnected: string;
   };
 
   geOverview: Record<string, string>;
@@ -1116,6 +1118,8 @@ export const translations: Record<Language, Translations> = {
         file: 'Document Attachment',
         demoBanner: "Demo build — content is the client's own GRI workbook",
         checking: 'Checking',
+        connected: 'Connected',
+        disconnected: 'Disconnected',
       },
 
     actions: {
@@ -1838,7 +1842,7 @@ export const translations: Record<Language, Translations> = {
       active: 'نشط',
       suspended: 'موقوف',
       statusUnknown: 'الحالة غير متاحة',
-      emptyTitle: 'لا يوجد عملاء بعد',
+      emptyTitle: 'لا يوجد عملاء',
       emptySearchTitle: 'لا توجد نتائج مطابقة',
       loadFailed: 'تعذّر تحميل العملاء.',
       noLinkedServices: 'لا توجد خدمات مرتبطة',
@@ -1960,6 +1964,8 @@ export const translations: Record<Language, Translations> = {
         file: 'مرفق مستند',
         demoBanner: 'نسخة عرض تجريبية — المحتوى من ملف GRI الخاص بالعميل',
         checking: 'جارٍ التحقق',
+        connected: 'متصل',
+        disconnected: 'غير متصل',
       },
 
     actions: {

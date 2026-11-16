@@ -50,6 +50,18 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
+/**
+ * TASK-PROTO-U3-B2 M4 — a consultant tab whose handle became invalid/expired
+ * cannot be repaired locally: minting a fresh platform tab would silently keep
+ * W chrome over a P handle. AuthContext registers the shell's exit-to-P
+ * recovery here; without a handler (tests) the original 409 is surfaced.
+ */
+let workspaceLostHandler: (() => void) | null = null;
+
+export function setWorkspaceLostHandler(handler: (() => void) | null): void {
+  workspaceLostHandler = handler;
+}
+
 function clearAuth(): void {
   const handler = unauthorizedHandler;
   if (handler) {
@@ -122,7 +134,12 @@ async function repair(): Promise<boolean> {
 
   if (outcome.tab) return true;
   if (outcome.code !== 'workspace.invalid') return false;
-  if (expected === 'consultant') return false;
+  if (expected === 'consultant') {
+    // M4: never silently replace a consultant handle with a platform tab. The
+    // shell performs the explicit exit-to-P → Clients recovery instead.
+    workspaceLostHandler?.();
+    return false;
+  }
 
   resetWorkspace();
   const created = await ensureTab();

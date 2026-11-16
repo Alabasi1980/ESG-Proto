@@ -171,6 +171,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onEnter, onConfigure, 
     if (!window.confirm(confirmText)) return;
     setPendingRow(row.id);
     setNotice(null);
+    let outcome: { kind: 'success' | 'error'; text: string };
     try {
       const res = await apiFetch(`/api/clients/${row.id}`, {
         method: 'PATCH',
@@ -179,14 +180,16 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ onEnter, onConfigure, 
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error((data as { error?: string } | null)?.error || t.clients.saveFailed);
-      setNotice({ kind: 'success', text: t.clients.suspendSaved });
+      outcome = { kind: 'success', text: t.clients.suspendSaved };
     } catch (err) {
       // Uncertain outcome: keep the last confirmed server state + error.
-      setNotice({ kind: 'error', text: (err as Error)?.message || t.clients.saveFailed });
-    } finally {
-      setPendingRow(null);
-      await load(queryRef.current.applied); // authoritative refetch before any success claim
+      outcome = { kind: 'error', text: (err as Error)?.message || t.clients.saveFailed };
     }
+    setPendingRow(null);
+    // Authoritative refetch FIRST; the success notice is only claimed after it
+    // resolves (never an optimistic success).
+    await load(queryRef.current.applied);
+    setNotice(outcome);
   };
 
   const enterRow = (row: ClientRow) => {

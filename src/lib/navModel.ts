@@ -217,6 +217,43 @@ export function workspaceExitLanding(): 'clients' {
   return 'clients';
 }
 
+/** §7: the shell phase (mirrors the workspace lifecycle; kept local so this
+ * module stays dependency-free). Only `idle` may resolve a protected page. */
+export type ShellPhase = 'idle' | 'checking' | 'opening' | 'closing' | 'failed';
+
+export interface ShellPageRequest {
+  context: NavContext | null;
+  phase: ShellPhase;
+  /** The last committed tab (raw request; never rendered directly). */
+  activeTab: PageId | null;
+  /** §2/§7 first-boot destination: fresh login ge-overview, reload/exit clients. */
+  bootLanding: 'ge-overview' | 'clients' | null;
+  /** An explicit shell destination that must survive a context transition. */
+  pendingLanding: PageId | null;
+  /** True while the P Configure sub-state holds an explicit T. */
+  hasConfigTarget: boolean;
+}
+
+/**
+ * TASK-PROTO-U3-B2 M1 — ONE deterministic resolution for every transition.
+ *
+ * Precedence is `pendingLanding` > `activeTab` > `bootLanding`, so:
+ *  - an explicit Exit/recovery destination is never coerced by the old context's
+ *    raw tab (the QA F1 defect);
+ *  - a reload/mid-session recovery (bootLanding = clients) wins over a stale tab;
+ *  - a fresh login (no pending, no tab, bootLanding = ge-overview) lands §2;
+ *  - P `client-detail` without an explicit target resolves to Clients;
+ *  - while a transition is pending nothing is mounted (null).
+ */
+export function resolveShellPage(request: ShellPageRequest): PageId | null {
+  if (!request.context || request.phase !== 'idle') return null;
+  const requested = request.pendingLanding ?? request.activeTab ?? request.bootLanding;
+  if (request.context === 'platform' && requested === 'client-detail' && !request.hasConfigTarget) {
+    return workspaceExitLanding();
+  }
+  return resolvePage(request.context, requested).page;
+}
+
 export function aliasOf(context: NavContext, id: PageId): PageId | null {
   return ALIASES[context]?.[id] ?? null;
 }

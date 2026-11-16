@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apiFetch, setUnauthorizedHandler } from './api.ts';
+import { apiFetch, setUnauthorizedHandler, setWorkspaceLostHandler } from './api.ts';
 import { AUTH_TOKEN_KEY, currentTab, ensureTab, enter, reset as resetWorkspace } from './workspaceClient.ts';
 
 // --- fakes -----------------------------------------------------------------
@@ -58,6 +58,7 @@ function setup(token: string | null = 'token-a') {
   setGlobal('sessionStorage', memoryStorage());
   resetWorkspace();
   setUnauthorizedHandler(null);
+  setWorkspaceLostHandler(null);
 }
 
 // --- tests -----------------------------------------------------------------
@@ -249,6 +250,47 @@ test('a non-API/absolute URL never receives session headers', async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].headers.get('Authorization'), null);
   assert.equal(calls[0].headers.get('X-Workspace-Tab'), null);
+});
+
+test('U3-B2 M4: an invalid consultant handle notifies the shell once and never mints a platform tab', async () => {
+  setup();
+  let lost = 0;
+  setWorkspaceLostHandler(() => { lost += 1; });
+  const calls = stubFetch([
+    TAB_CREATED,
+    ENTERED,
+    { path: '/api/clients', status: 409, body: { code: 'workspace.invalid' } },
+    { path: '/api/workspace', status: 409, body: { code: 'workspace.invalid' } },
+  ]);
+  await ensureTab();
+  await enter('c-1');
+
+  const res = await apiFetch('/api/clients');
+
+  assert.equal(res.status, 409, 'the original refusal still reaches the caller');
+  assert.equal(lost, 1, 'the shell is asked to perform the explicit exit-to-P recovery');
+  assert.equal(calls.filter((call) => call.path === '/api/workspace/tab').length, 1,
+    'no silent platform reuse');
+  assert.equal(currentTab()?.mode, 'consultant', 'nothing is adopted behind the shell recovery');
+});
+
+test('U3-B2 M4: the lost-handle hook is not fired for a repairable platform handle or a stale reconcile', async () => {
+  setup();
+  let lost = 0;
+  setWorkspaceLostHandler(() => { lost += 1; });
+  stubFetch([
+    TAB_CREATED,
+    { path: '/api/clients', status: 409, body: { code: 'workspace.invalid' } },
+    { path: '/api/workspace', status: 409, body: { code: 'workspace.invalid' } },
+    { path: '/api/workspace/tab', status: 201,
+      body: { tabHandle: HANDLE_B, generation: 1, mode: 'platform', client: null } },
+    { path: '/api/clients', status: 200, body: [] },
+  ]);
+
+  const res = await apiFetch('/api/clients');
+
+  assert.equal(res.status, 200);
+  assert.equal(lost, 0, 'platform repair stays local (never a shell transition)');
 });
 
 test('without a token apiFetch sends the caller headers untouched and never creates a tab', async () => {

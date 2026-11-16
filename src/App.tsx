@@ -3,7 +3,7 @@ import { LanguageProvider, useLanguage } from './i18n/LanguageContext.tsx';
 import { useAuth } from './context/AuthContext.tsx';
 import { Sidebar, ActiveTab } from './components/Sidebar.tsx';
 import { Header } from './components/Header.tsx';
-import { deriveNavContext, resolvePage, workspaceExitLanding, type PageId } from './lib/navModel.ts';
+import { deriveNavContext, resolveShellPage, workspaceExitLanding, type PageId } from './lib/navModel.ts';
 import { idleState, idleSecondsRemaining } from './lib/idleTimeout.ts';
 import { validateSelfChosenPassword } from './lib/password.ts';
 import { DashboardView } from './views/DashboardView.tsx';
@@ -36,6 +36,7 @@ const MainApp: React.FC = () => {
     workspace,
     workspacePhase,
     bootLanding,
+    recoveryLandingToken,
     enterWorkspace,
     exitWorkspace,
     retryWorkspace,
@@ -51,6 +52,9 @@ const MainApp: React.FC = () => {
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   // §3 Configure: a sub-state of the Clients page (sidebar stays on `clients`).
   const [clientConfig, setClientConfig] = useState<{ id: string; name: string } | null>(null);
+  // M1: a destination that must survive the upcoming context change (Exit /
+  // recovery). It outranks the raw tab, so the old context cannot coerce it.
+  const [pendingLanding, setPendingLanding] = useState<PageId | null>(null);
   // B11b (S-12): forced-change gate state (AuthContext type is frozen, so the
   // flag travels via /api/auth/me without editing the context module).
   const [mustChange, setMustChange] = useState(false);
@@ -157,31 +161,54 @@ const MainApp: React.FC = () => {
   // An absent or not-yet-implemented page becomes the context landing, so a
   // forbidden view is never instantiated, fetched or polled (and nothing of the
   // old view flashes, because rendering only ever uses `currentPage`).
-  const resolvedPage = context ? resolvePage(context, activeTab) : null;
-  // §3: P Client Detail exists only with an explicit T (the Configure sub-state
-  // below). A bare P `client-detail` request routes to Clients, never to a
-  // first-client default.
-  const platformDetour = context === 'platform' && activeTab === 'client-detail' && !clientConfig
-    ? workspaceExitLanding()
-    : null;
-  const currentPage = platformDetour ?? resolvedPage?.page ?? null;
+  // M4: a generated recovery destination is consumed exactly once, and it is
+  // part of the SAME deterministic resolution (no transient P page paints).
+  const recoveryConsumedRef = useRef(-1);
+  const recoveryLandingActive = recoveryLandingToken > 0
+    && recoveryConsumedRef.current !== recoveryLandingToken;
+  const shellPending = pendingLanding ?? (recoveryLandingActive ? workspaceExitLanding() : null);
+
+  // M1: ONE deterministic resolution (pendingLanding > activeTab > bootLanding).
+  // During a transition nothing is resolved/mounted.
+  const currentPage = resolveShellPage({
+    context,
+    phase: workspacePhase,
+    activeTab,
+    bootLanding,
+    pendingLanding: shellPending,
+    hasConfigTarget: Boolean(clientConfig),
+  });
 
   useEffect(() => {
+    if (!context || workspacePhase !== 'idle') return;
+    if (shellPending) {
+      // Commit + clear the destination only after the new context is settled.
+      setActiveTab(resolveShellPage({
+        context, phase: 'idle', activeTab: null, bootLanding, pendingLanding: shellPending, hasConfigTarget: Boolean(clientConfig),
+      }) ?? shellPending);
+      if (recoveryLandingActive) recoveryConsumedRef.current = recoveryLandingToken;
+      setPendingLanding(null);
+      return;
+    }
     if (currentPage && currentPage !== activeTab) setActiveTab(currentPage);
-  }, [currentPage, activeTab]);
+  }, [context, workspacePhase, shellPending, recoveryLandingActive, recoveryLandingToken, bootLanding, currentPage, activeTab, clientConfig]);
+
+  // §2/§7: logout (or expiry) resets the tab request, so the next fresh login
+  // lands on the context landing (§2) rather than replaying a stale W tab.
+  useEffect(() => {
+    if (!user) {
+      setActiveTab(null);
+      setPendingLanding(null);
+      setClientConfig(null);
+    }
+  }, [user]);
+
+
 
   // §3: the configuration sub-state belongs to Clients only.
   useEffect(() => {
     if (currentPage !== 'clients') setClientConfig(null);
   }, [currentPage]);
-
-  // §2 P row / §7 reload rule: the first settled boot decides the landing —
-  // fresh login → ge-overview; reload/new/duplicated tab or exited W → clients.
-  useEffect(() => {
-    if (user?.role === 'ge_admin' && workspacePhase === 'idle' && activeTab === null && bootLanding) {
-      setActiveTab(bootLanding);
-    }
-  }, [user?.role, workspacePhase, activeTab, bootLanding]);
 
   // §7 acknowledgment: focus the destination heading once the transition settles.
   useEffect(() => {
@@ -207,9 +234,9 @@ const MainApp: React.FC = () => {
     if (workspacePhase !== 'idle') return;
     if (!window.confirm(t.workspace.exitConfirm)) return;
     focusAfterTransition.current = true;
-    // Pre-set the P destination while the transition screen still covers the
-    // shell, so the first post-exit render is Clients (never a landing flash).
-    setActiveTab(workspaceExitLanding());
+    // M1: park the destination BEFORE the context changes; pendingLanding wins
+    // over the old tab, so the first post-exit render is Clients (no coercion).
+    setPendingLanding(workspaceExitLanding());
     await exitWorkspace();
   };
 

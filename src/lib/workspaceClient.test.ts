@@ -419,3 +419,18 @@ test('U3-B2 §7 retry with a conclusive invalid handle establishes verified P', 
   assert.deepEqual(await recoverWorkspace('boot'), { ok: true, mode: 'platform', unauthorized: false });
   assert.deepEqual(calls.map((call) => call.path), ['/api/workspace', '/api/workspace/tab']);
 });
+
+test('U3-B2 M3 enter: a confirmed envelope for another client is a failure (no wrong-tenant W)', async () => {
+  setup();
+  stubFetch((path) => {
+    if (path === '/api/workspace/tab') return json(201, envelope());
+    if (path === '/api/workspace/enter') {
+      return json(200, { generation: 2, mode: 'consultant', client: { id: 'c-1', name: 'Acme Ltd' } });
+    }
+    // The reconciliation reports a DIFFERENT tenant than the requested one.
+    return json(200, { generation: 2, mode: 'consultant', client: { id: 'c-2', name: 'Other Ltd' } });
+  });
+
+  await ensureTab();
+  assert.deepEqual(await enterVerified('c-1'), { ok: false, reason: 'failed' });
+});
