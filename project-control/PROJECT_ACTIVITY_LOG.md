@@ -173,3 +173,4 @@
 | 2026-11-16 | TeraAgent | TASK-PROTO-U4-1c-PROTECT round 1 accepted (local integration, bounded) | FK RESTRICT + سرعة أول كاتب + 409 نسخة عربية معتمدة + حماية المرفقات | QA PASS (371/371 scratch) + Shield 0 High/0M/2L + Auditor CONDITIONAL (unit only) |
 
 | 2026-11-16 | TeraAgent | TASK-PROTO-U4-1c-PROTECT closed (unit, local) | أرشفة بدل الحذف + إعادة الربط بلا تكرار + رفض الكتابة على المؤرشف + بروتوكول نسخة برسائل معتمدة + قيد RESTRICT | QA3 PASS 9/9 + Shield SEC3 0H/0M + Auditor CONDITIONAL (unit) | 372/372 |
+| 2026-11-17 | TeraAgent | U4-2 services workspace built + round-2 fixes + live PROTECT migration | شاشة خدمات (راف + 5 تبويبات + حفر ثلاثي + محرر جانبي)؛ إزالة Import GRI من قائمة المنصة وإزالة قسم Services من الإعدادات؛ ترحيل PROTECT طُبّق على القاعدة المشتركة بعد نسخة احتياطية (b17_pre_protect_20261117_124925.dump) | design-review REVISE → round-2 fixed; live menu verified; 385/385 |
