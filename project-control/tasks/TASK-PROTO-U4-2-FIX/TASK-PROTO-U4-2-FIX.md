@@ -21,6 +21,8 @@ Deferred legs confirmed: single-PATCH version+snapshot+reopen → P4 (one txn pe
 
 ### P3 — Service-scoped import (no client)
 `POST /api/import/preview|commit` (+ one-release `/gri/*` aliases), per-service template `GET …/import/template`, column mapping, row-level errors, catalog-only commit (400 on clientId, no provisioning), frozen-skip preserved. Negative test N-5.
+**Result 2026-11-17: ACCEPTED with 1 pre-step → P4.** 3 rounds (build/registry/one-line Shield fix — cap respected). Evidence: 11/11 new tests · 408/409 suite (single red = guard registration of reviewer-owned P3 QA report, product green) · lint/build clean · Shield PASS (P3-01 fixed in r3; P3-02 frozen-skip always-0 CONFIRMED as final reading: no tenant ⇒ no determinable freeze; tenant freeze stays enforced on answers/evaluations paths — no bypass) · QA PARTIAL zero-fail (live proof → F1 in P4).
+P4 pre-step: allowlist `qa-reports/TASK-PROTO-U4-2-FIX-P3-QA.md` exact path in guard (Tera-owned control artifact), suite green before P4 work starts.
 
 ### P4 — History / freeze / approved copy API
 PATCH/DELETE reopen+archive paths (answers→`reopened`, `REOPEN_ITEM_SCOPE`), `POST /api/approved-copies/seal` in GE-final txn, `GET …/approved-copy` (works after source deletion). Negative tests N-2/N-3/N-4.
@@ -49,6 +51,10 @@ Required Action: delegate P1 only.
 ## P2 Pre-Execution Gate Result (2026-11-17)
 Smallest safe unit PASS (catalog CRUD + item version/archive paths only; import/history-viewer/seal stay P3/P4) · one objective PASS · no deferrable work PASS · no secrets PASS · rollback PASS (code revert; no DDL in P2) · acceptance testable PASS (N-1/N-6/N-7/N-8 + matrix 403s).
 Gate Status: PASS → delegate P2.
+
+## P3 Pre-Execution Gate Result (2026-11-17)
+Smallest safe unit PASS (import path only: preview/commit aliases + template + mapping + catalog-only commit; no catalog CRUD changes, no history/seal) · one objective PASS · no secrets PASS · rollback PASS (code revert; no DDL in P3) · acceptance testable PASS (N-5 + row-level errors + zero-provisioning proof).
+Gate Status: PASS → delegate P3.
 
 ## فهم القرار
 فهمي: الإصلاح خمس مراحل متسلسلة تبدأ بالقاعدة (إضافية فقط، بلا مساس بالحيّ) ثم الواجهات البرمجية ثم الشاشة، وكل مرحلة تُقبل قبل التالية.
