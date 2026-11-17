@@ -47,3 +47,10 @@ ISS-004 (منطق/صلاحيات) · ISS-006 (بيانات/جلسة) · ISS-010 
 
 ## TASK-PROTO-U4-1b — الاجابة بنوعها + المرفق المستقل
 - Closed (Accepted محلي) · COMPLIANT · 2026-11-16 · 3 rounds · 353/353 · لا نشر
+
+## TASK-PROTO-U4-1c (+PROTECT) — حماية الربط/الأرشفة
+- Parent: ESCALATED / NOT ACCEPTED (R3-03 bucket collision + R3-04 rebinding مفتوحتان) · PROTECT: وحدة مقبولة محلياً فقط (unit/local — QA3/SEC3/Auditor-FINAL) · لا إجراء حيّ خارج ترحيل PROTECT المطبق 2026-11-17 · لا نشر
+
+## TASK-PROTO-U4-2 — شاشة الخدمات (P)
+## TASK-PROTO-U4-2-FIX — تصحيح شاشة الخدمات (OD-13)
+- Status: **Draft execution contract** — spec APPROVED_FOR_GATE · Pre-Execution Gate PASS · defaults approved 2026-11-17 · **pending Build Mode («ابدأ»)** · phases P1(DB) → P2(catalog API) → P3(import) → P4(history/copy) → P5(screen) · no live DB mutation without backup + separate approval · لا نشر

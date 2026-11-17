@@ -33,4 +33,18 @@ Unit tests for level drill/counters/search/empty states/tab gating; lint/tests/b
 - Independent design review verdict was REVISE (5 P1 + P2). Round 2 fixed: sticky workspace header (removed clipping overflow), responsive item editor (drawer below xl), Rules field widths/max-heights, panel text wrap, Overview definition alignment (bdi isolation), unsaved-draft guard, friendly error copy, rail total counter, aria-controls/tab keyboard, unlink confirmation, edit icon, pluralisation, moderated counters.
 - Owner instructions applied: «Import GRI Data» removed from the platform sidebar (import lives in Services → Import); Services section removed from Settings & Database. Staff Lists relocation to client account + GE-consultant password provisioning is RECORDED for U4-3, not implemented here.
 - Verification: lint clean, 385/385 tests, build ok, zero literal colours, enumerated pin edits. Tera live check: menu cleaned (verified), bdi present; sticky/drawer behaviour at 1152px and full AR/EN walkthrough NOT re-verified by Tera in this round — design re-review remains the gate.
-- Approved cleanup pending: retire unreferenced src/views/ServicesManage.tsx; split import-format hint per language later.
+## 7. Owner review 2026-11-17 — REOPENED (not closed)
+
+- Status correction: U4-2 was **never Accepted/Closed** (no registry closure; re-review ended REVISE-narrow + final polish landed without a fresh visual sign-off). It returns to **Needs Fix** as `TASK-PROTO-U4-2-FIX`.
+- Owner answers (binding, recorded as OD-13 in `prototype/OWNER_DECISIONS.md`):
+  1. Flexible service structure — yes (standards/disclosures not mandatory; groups or direct items allowed; item details are not a level).
+  2. One department per item — no multi-department assignment in the service definition.
+  3. Editing an approved item before final approval — reopen for the client + keep old item/answers as viewable history (per Tera recommendation).
+  4. Deleting an item with work on a non-approved client — remove from current scope, preserve answers/attachments/approvals in history.
+  5. Extra binding condition — an approved client service must survive **unchanged even if the source service is fully removed** (complete viewable copy: definition + content + scope + results + attachment references).
+## 8. Design handback 2026-11-17 (tera-software-designer, NEW session)
+
+- Spec: `project-control/task-engineering-reviews/TASK-PROTO-U4-2-FIX_TECHNICAL_SPECIFICATION.md` (518 lines, design only, no code/DB). Classification SDA_REQUIRED. Decision: REVISION_REQUIRED narrow (DG-01) → APPROVED_FOR_GATE on confirmation.
+- DG-01 resolved by Tera (no owner round-trip): «النقاط 1–8» هي بنود المراجعة الثمانية نفسها؛ الأربعة المجاب عنها + الشرط الإضافي مسجلة في OD-13، والبنود 2/3/5/7 تعليمات مباشرة في §7 أعلاه. FIX = §7 كما هو مكتوب.
+- Remaining defaults for owner one-line confirmation (DG-02…DG-06): full-service delete refused while tenant work/copies exist (else archive); GRI adapter first + mapping framework; reopen notifies assigned dept inbox + `reopened` status; approved copy duplicates attachment bytes (absolute immunity, demo-scale monitored); bulk edit = answerType/priority/esgClass/attachment_required with per-row version checks.
+- Suggested post-execution reviewers: SecurityAgent + QA + Auditor. Next: Pre-Execution Gate → phased execution (catalog CRUD → import → history/freeze/copy → screen), no U4-3 interleaving, no live DB mutation without backup + explicit approval.
