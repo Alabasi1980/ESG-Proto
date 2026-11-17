@@ -169,3 +169,7 @@
 | 2026-11-16 | TeraAgent | TASK-PROTO-U4-1a closed | 3 أعمدة (attachment_required/settings/client_field_mask) + settings API + مسار W لضبط ما يراه العميل + سياسة ضيقة + تنقية C على الخادم · ترحيل حيّ بجلستين (درس: ledger يتطلب superuser) · QA FAIL→PASS · Shield 0H/0M/3L · إثبات حيّ: قناع يعمل وعكوس · 334/334 |
 
 | 2026-11-16 | TeraAgent | TASK-PROTO-U4-1b closed | تحقق الاجابة بنوع البند + المرفق المستقل الاجباري عند الارسال + قفل حذف الدليل بعد الارسال + منع تجاوز N/A + حروف خفية/NUL | QA PASS + recheck + Shield 0H/2M مغلقان · 353/353 |
+
+| 2026-11-16 | TeraAgent | TASK-PROTO-U4-1c-PROTECT round 1 accepted (local integration, bounded) | FK RESTRICT + سرعة أول كاتب + 409 نسخة عربية معتمدة + حماية المرفقات | QA PASS (371/371 scratch) + Shield 0 High/0M/2L + Auditor CONDITIONAL (unit only) |
+
+| 2026-11-16 | TeraAgent | TASK-PROTO-U4-1c-PROTECT closed (unit, local) | أرشفة بدل الحذف + إعادة الربط بلا تكرار + رفض الكتابة على المؤرشف + بروتوكول نسخة برسائل معتمدة + قيد RESTRICT | QA3 PASS 9/9 + Shield SEC3 0H/0M + Auditor CONDITIONAL (unit) | 372/372 |
