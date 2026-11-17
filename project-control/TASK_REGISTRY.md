@@ -53,4 +53,4 @@ ISS-004 (منطق/صلاحيات) · ISS-006 (بيانات/جلسة) · ISS-010 
 
 ## TASK-PROTO-U4-2 — شاشة الخدمات (P)
 ## TASK-PROTO-U4-2-FIX — تصحيح شاشة الخدمات (OD-13)
-- Status: **Draft execution contract** — spec APPROVED_FOR_GATE · Pre-Execution Gate PASS · defaults approved 2026-11-17 · **pending Build Mode («ابدأ»)** · phases P1(DB) → P2(catalog API) → P3(import) → P4(history/copy) → P5(screen) · no live DB mutation without backup + separate approval · لا نشر
+- Status: **P1 ACCEPTED · P2 ACCEPTED (2 follow-ups → P4)** — spec APPROVED_FOR_GATE · Gate PASS · defaults approved 2026-11-17 · Build Mode «ابدأ» · 398/398 · Shield PASS/PASS · QA PASS/PARTIAL · live shared mutation: none · لا نشر

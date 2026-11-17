@@ -15,6 +15,9 @@ Suggested agent: engineering-agent-typescript · Reviewers: Auditor (diff-first)
 
 ### P2 — Catalog CRUD API (P-only)
 ADD `POST /api/standards`, `POST /api/disclosures`, `POST /api/items/bulk`, `GET /api/items/:id/history`, `DELETE /api/services/:id` (DG-02 preconditions), named-settings validation on `PATCH /services/:id`, version-check + snapshot-on-PATCH and archive-on-DELETE for items. Auth matrix §API-5. Negative tests N-1/N-6/N-7/N-8.
+**Result 2026-11-17: ACCEPTED with 2 follow-ups → P4.** 2 rounds. Evidence: 13/13 new tests · 398/398 suite · lint/build clean · Shield PASS (1 Low SHIELD-P2-01 re-audit-on-redundant-archive → documented follow-up, no silent hiding) · QA PARTIAL (zero failures; untested = live handler proof on isolated harness) · Auditor pattern as P1 (static-traceable, QA/Security-gated).
+Follow-ups (P4 must close): (F1) live isolated-harness proof of P2+P4 handler paths (archive/reopen/version/seal); (F2) SHIELD-P2-01 re-audit vs idempotent-silent on redundant archive. U-01/U-02 closed on chain+registry evidence + P4 live proof.
+Deferred legs confirmed: single-PATCH version+snapshot+reopen → P4 (one txn per spec DB-5); named-settings whitelist → P5 with its UI.
 
 ### P3 — Service-scoped import (no client)
 `POST /api/import/preview|commit` (+ one-release `/gri/*` aliases), per-service template `GET …/import/template`, column mapping, row-level errors, catalog-only commit (400 on clientId, no provisioning), frozen-skip preserved. Negative test N-5.
@@ -42,6 +45,10 @@ INV-DEF-APP (no client writes from Services) · INV-SINGLE-DEPT · INV-CODE-IMMU
 Gate Status: PASS — Build Mode authorized by owner («ابدأ» 2026-11-17).
 Defaults approval recorded: AUD-0039 + activity log 2026-11-17 → spec decision now APPROVED_FOR_GATE (DG-01 resolved by Tera mapping; DG-02…DG-06 defaults approved as written above).
 Required Action: delegate P1 only.
+
+## P2 Pre-Execution Gate Result (2026-11-17)
+Smallest safe unit PASS (catalog CRUD + item version/archive paths only; import/history-viewer/seal stay P3/P4) · one objective PASS · no deferrable work PASS · no secrets PASS · rollback PASS (code revert; no DDL in P2) · acceptance testable PASS (N-1/N-6/N-7/N-8 + matrix 403s).
+Gate Status: PASS → delegate P2.
 
 ## فهم القرار
 فهمي: الإصلاح خمس مراحل متسلسلة تبدأ بالقاعدة (إضافية فقط، بلا مساس بالحيّ) ثم الواجهات البرمجية ثم الشاشة، وكل مرحلة تُقبل قبل التالية.
