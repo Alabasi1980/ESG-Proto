@@ -8,6 +8,7 @@ import { idleState, idleSecondsRemaining } from './lib/idleTimeout.ts';
 import { validateSelfChosenPassword } from './lib/password.ts';
 import { DashboardView } from './views/DashboardView.tsx';
 import { StandardsView } from './views/StandardsView.tsx';
+import { ServicesView } from './views/ServicesView.tsx';
 import { GapAnalysisView } from './views/GapAnalysisView.tsx';
 import { ActionsView } from './views/ActionsView.tsx';
 import { InitiativesView } from './views/InitiativesView.tsx';
@@ -261,7 +262,9 @@ const MainApp: React.FC = () => {
       case 'dashboard':
         return <DashboardView setActiveTab={setActiveTab} dbConnected={dbConnected === true} />;
       case 'standards':
-        return <StandardsView setActiveTab={setActiveTab} />;
+        // B17 §10 (OD-11) / TASK-PROTO-U4-2: the `standards` id is the P
+        // services workspace; W/C keep the GRI catalogue page unchanged.
+        return context === 'platform' ? <ServicesView /> : <StandardsView setActiveTab={setActiveTab} />;
       case 'gap-analysis':
         return <GapAnalysisView setActiveTab={setActiveTab} />;
       case 'actions':

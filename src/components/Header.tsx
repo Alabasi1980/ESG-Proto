@@ -54,6 +54,12 @@ export const Header: React.FC<HeaderProps> = ({
       : t.common.disconnected;
 
   const getTabSubtitle = () => {
+    // TASK-PROTO-U4-2 (B17 §10 / OD-11): in P the `standards` id mounts the
+    // services workspace, so its subtitle follows the service identity exactly
+    // as the title does. W/C still render the GRI catalogue — untouched.
+    if (activeTab === 'standards' && context === 'platform') {
+      return t.servicesWorkspace.headerSubtitle;
+    }
     switch (activeTab) {
       case 'dashboard':
         return t.dashboard.subtitle;

@@ -84,6 +84,10 @@ const DEFAULT_LABELS: Record<PageId, PageLabel> = {
 
 /** §3 same-ID / different-label rows (gap-analysis in E; initiatives in W/C). */
 const LABEL_OVERRIDES: Partial<Record<NavContext, Partial<Record<PageId, PageLabel>>>> = {
+  // TASK-PROTO-U4-2 / B17 §10 (OD-11): P's `standards` id now mounts the
+  // services workspace, so the P label follows the service identity. W/C keep
+  // the GRI catalogue page and its label untouched.
+  platform: { 'standards': { ar: 'الخدمات', en: 'Services' } },
   consultant: { 'initiatives': { ar: 'المبادرات المسندة', en: 'Assigned Initiatives' } },
   client: { 'initiatives': { ar: 'المبادرات المسندة', en: 'Assigned Initiatives' } },
   employee: { 'gap-analysis': { ar: 'إفصاحات قسمي', en: 'My department disclosures' } },
@@ -110,7 +114,9 @@ const PAGES: Record<NavContext, readonly MatrixEntry[]> = {
     { id: 'clients', order: 2, menu: true },
     { id: 'standards', order: 3, menu: true },
     { id: 'initiatives', order: 4, menu: true },
-    { id: 'import-gri', order: 5, menu: true },
+    // TASK-PROTO-U4-2 (owner instruction): `import-gri` leaves the P sidebar —
+    // importing now lives inside Services → Import (per service). The route id
+    // stays in the model/App (unreachable from nav in P), W/C are untouched.
     { id: 'settings', order: 6, menu: true },
     { id: 'staff-lists', order: 7, menu: true },
     { id: 'audit-log', order: 8, menu: true },

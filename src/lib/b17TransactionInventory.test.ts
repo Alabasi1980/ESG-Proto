@@ -210,7 +210,11 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'scripts/u41c-e2e.ts',
     // TASK-PROTO-U4-1c-PROTECT round 1: the isolated concurrent proof harness
     // + upgrade/rollback simulation (real-router barrier proof, scratch only).
-    'scripts/u41c-protect-scratch.ts'];
+    'scripts/u41c-protect-scratch.ts',
+    // TASK-PROTO-U4-2: the services workspace files are bounded (view ≤500,
+    // each presentational component <400) so the screen cannot grow unchecked.
+    'src/views/ServicesView.tsx','src/components/services/ServiceRail.tsx',
+    'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -300,7 +304,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/server/routes/serviceVisibility.ts',
     // TASK-PROTO-U4-1c-PROTECT: the ONE narrow shared anchor + version helper in
     // initiativeScope (delta §3.4/§4 only — no other file in this module moves).
-    'src/server/routes/initiativeScope.ts']);
+    'src/server/routes/initiativeScope.ts',
+    // TASK-PROTO-U4-2 (B17 §10 / OD-11): the P services workspace — the view,
+    // its two presentational components and the no-DB behavioural test.
+    // App/navModel/translations are already named above; no server/db/style path.
+    'src/views/ServicesView.tsx','src/components/services/ServiceRail.tsx',
+    'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -348,6 +357,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U4-1c-PROTECT round-1 auditor report (auditor-owned, exact
     // path only — same convention; the implementer never edits it).
     'project-control/audit-reports/TASK-PROTO-U4-1c-PROTECT-AUD01.md',
+    // TASK-PROTO-U4-2 reviewer evidence: the independent design review and its
+    // three screenshots (reviewer-owned, exact paths only).
+    'project-control/design-reviews/TASK-PROTO-U4-2-REVIEW.md',
+    'project-control/prototypes/task-proto-u4-2/services-ar.png',
+    'project-control/prototypes/task-proto-u4-2/services-content.png',
+    'project-control/prototypes/task-proto-u4-2/services-drill.png',
     'project-control/audit-reports/TASK-PROTO-U4-1c-PROTECT-FINAL.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
@@ -371,6 +386,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U4-1c-PROTECT round 2 (Tera ruling): the TWO Tera-owned
     // activity/audit records are control logs, not product code — excluded by
     // exact path only; the implementer never edits them.
+    // TASK-PROTO-U4-2 contract (Tera-owned, untracked input) — same convention.
+    'project-control/tasks/TASK-PROTO-U4-2/TASK-PROTO-U4-2.md',
+    // U4-1c-PROTECT live-migration control artifacts (owner/Tera-owned, arrived
+    // untracked from that unit — not product code, never edited by this session).
+    'project-control/tasks/TASK-PROTO-U4-1c/PROTECT_LIVE_MIGRATION.md',
+    'project-control/tasks/TASK-PROTO-U4-1c/PROTECT_LIVE_MIGRATION.sql',
     'project-control/PROJECT_ACTIVITY_LOG.md',
     'project-control/TERA_AUDIT_TRAIL.md']);
   // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
@@ -383,7 +404,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,94); // 91 through U4-1c round 2 + round-3 E2E + PROTECT anchor helper + protect harness
+  assert.equal(allowed.size,98); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

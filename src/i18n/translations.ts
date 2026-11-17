@@ -607,6 +607,107 @@ export interface Translations {
     manageHint: string;
   };
 
+  // TASK-PROTO-U4-2 §2 — the P services workspace (rail, tabs, drill, rules,
+  // settings, per-service import). Key names are workspace-specific so no
+  // existing block's counter (clients.test i18n census) can be disturbed.
+  servicesWorkspace: {
+    headerSubtitle: string;
+    railSearchLabel: string;
+    railSearchPh: string;
+    railEmpty: string;
+    railEmptyHint: string;
+    createHint: string;
+    emptySearch: string;
+    selectTitle: string;
+    selectHint: string;
+    statusReady: string;
+    statusEmpty: string;
+    tabOverview: string;
+    tabContent: string;
+    tabRules: string;
+    tabSettings: string;
+    tabImport: string;
+    definition: string;
+    created: string;
+    descriptionEmpty: string;
+    linkedClients: string;
+    clientsUnit: string;
+    lastImport: string;
+    lastImportNone: string;
+    lastImportHint: string;
+    contentState: string;
+    contentEmpty: string;
+    contentOk: string;
+    duplicateHint: string;
+    duplicateCodeLabel: string;
+    duplicateNameLabel: string;
+    duplicateSubmit: string;
+    breadcrumbAll: string;
+    levelStandards: string;
+    levelDisclosures: string;
+    levelItems: string;
+    searchLevelPh: string;
+    addStandard: string;
+    addStandardHint: string;
+    noStandards: string;
+    noStandardsHint: string;
+    noDisclosures: string;
+    noDisclosuresHint: string;
+    noItems: string;
+    noItemsHint: string;
+    disclosureImportNote: string;
+    itemDetail: string;
+    itemRequirement: string;
+    itemAnswerType: string;
+    itemPriority: string;
+    itemEsgClass: string;
+    itemHint: string;
+    codeImmutable: string;
+    attachmentRequired: string;
+    attachmentNotRequired: string;
+    attachmentReadOnly: string;
+    selectedCount: string;
+    bulkClient: string;
+    bulkDepartment: string;
+    bulkAssign: string;
+    bulkDone: string;
+    bulkNoClients: string;
+    rulesScope: string;
+    rulesItems: string;
+    rulesSave: string;
+    rulesSaved: string;
+    rulesNoChanges: string;
+    rulesFilterPh: string;
+    rulesAnswerHint: string;
+    rulesShownOf: string;
+    discardDraft: string;
+    dirtyDraft: string;
+    unlinkStandardConfirm: string;
+    identityTitle: string;
+    identitySave: string;
+    jsonSettingsTitle: string;
+    settingsHint: string;
+    settingsSave: string;
+    settingsInvalid: string;
+    settingsEcho: string;
+    actionFailed: string;
+    workspaceLoadFailed: string;
+    fieldRequired: string;
+    importTitle: string;
+    importTarget: string;
+    importDrop: string;
+    importFormats: string;
+    importPreview: string;
+    importPreviewing: string;
+    importConfirm: string;
+    importConfirmAction: string;
+    importing: string;
+    importDone: string;
+    importNoClient: string;
+    importNoClientHint: string;
+    importFailed: string;
+  };
+
   taxonomy: {
     manageTitle: string;
     manageSubtitle: string;
@@ -1384,6 +1485,104 @@ export const translations: Record<Language, Translations> = {
       linkButton: 'Link',
       unlinkButton: 'Unlink',
       manageHint: 'Services and their standard links are managed by platform admins only.',
+    },
+
+    servicesWorkspace: {
+      headerSubtitle: 'One workspace per service — definition, content, rules, settings, import',
+      railSearchLabel: 'Search services',
+      railSearchPh: 'Name or code',
+      railEmpty: 'No services yet',
+      railEmptyHint: 'Create the first service to see it here.',
+      createHint: 'A new service starts empty; content comes from the Content tab and the importer.',
+      emptySearch: 'No matching services.',
+      selectTitle: 'No service selected',
+      selectHint: 'Pick a service from the rail or create a new one.',
+      statusReady: 'Content ready',
+      statusEmpty: 'No content',
+      tabOverview: 'Overview',
+      tabContent: 'Content',
+      tabRules: 'Rules',
+      tabSettings: 'Settings',
+      tabImport: 'Import',
+      definition: 'Service definition',
+      created: 'Created',
+      descriptionEmpty: 'No description',
+      linkedClients: 'Linked clients',
+      clientsUnit: 'Linked clients',
+      lastImport: 'Last import',
+      lastImportNone: 'not available per service',
+      lastImportHint: 'import events are recorded per tenant in the audit log.',
+      contentState: 'Content state',
+      contentEmpty: 'No items yet — start from the Import tab or add an item.',
+      contentOk: 'Content is ready for linking and assignment.',
+      duplicateHint: 'Standard links are copied to the new code; content is not copied.',
+      duplicateCodeLabel: 'New service code',
+      duplicateNameLabel: 'Name (optional)',
+      duplicateSubmit: 'Create copy',
+      breadcrumbAll: 'All standards',
+      levelStandards: 'Standards',
+      levelDisclosures: 'Disclosures',
+      levelItems: 'Items',
+      searchLevelPh: 'Search this level',
+      addStandard: 'Link standard',
+      addStandardHint: 'Standards are created by the importer; this links an existing one to the service.',
+      noStandards: 'No standards linked',
+      noStandardsHint: 'Link a standard to start the content.',
+      noDisclosures: 'No disclosures',
+      noDisclosuresHint: 'This standard has no disclosures inside this service.',
+      noItems: 'No items',
+      noItemsHint: 'Add an item or import the service data.',
+      disclosureImportNote: 'Disclosures are created by the importer.',
+      itemDetail: 'Item detail',
+      itemRequirement: 'Requirement',
+      itemAnswerType: 'Answer type',
+      itemPriority: 'Priority',
+      itemEsgClass: 'Classification',
+      itemHint: 'Hint',
+      codeImmutable: 'The code is immutable.',
+      attachmentRequired: 'Attachment required',
+      attachmentNotRequired: 'No attachment',
+      attachmentReadOnly: 'read from the server, not editable here',
+      selectedCount: 'Selected: {n}',
+      bulkClient: 'Client',
+      bulkDepartment: 'Department',
+      bulkAssign: 'Assign selected',
+      bulkDone: '{n} assigned',
+      bulkNoClients: 'No client is linked to this service.',
+      rulesScope: 'Service scope',
+      rulesItems: 'Item rules',
+      rulesSave: 'Save rules',
+      rulesSaved: '{n} saved',
+      rulesNoChanges: 'No changes to save.',
+      rulesFilterPh: 'Search items',
+      rulesAnswerHint: 'Only the answer type is saved; the attachment flag is read-only.',
+      rulesShownOf: 'Showing {shown} of {total}',
+      discardDraft: 'You have unsaved changes. Discard them?',
+      dirtyDraft: 'Unsaved changes',
+      unlinkStandardConfirm: 'Unlink standard {code} from this service?',
+      identityTitle: 'Service identity',
+      identitySave: 'Save identity',
+      jsonSettingsTitle: 'Service settings (JSON)',
+      settingsHint: 'The object is written whole (replace) and capped at 8 KB. The API exposes no read of stored settings before writing.',
+      settingsSave: 'Save settings',
+      settingsInvalid: 'Enter a valid JSON object (not an array or a scalar).',
+      settingsEcho: 'Server response after saving:',
+      actionFailed: 'The operation could not be completed.',
+      workspaceLoadFailed: 'Services data could not be loaded.',
+      fieldRequired: 'This field is required.',
+      importTitle: 'Import service data',
+      importTarget: 'Target client',
+      importDrop: 'Drop the file here or choose it',
+      importFormats: 'Excel or CSV with columns: Standard Code, Standard Title, Category, Disclosure Code, Disclosure Title, Item Code, Requirement (optional: Priority, ESG Class, Answer Type, Hint, Department).',
+      importPreview: 'Preview',
+      importPreviewing: 'Parsing...',
+      importConfirm: 'Import into «{service}» for client «{client}»? The catalogue is updated by this batch.',
+      importConfirmAction: 'Confirm import',
+      importing: 'Importing...',
+      importDone: 'Imported — standards / disclosures / items',
+      importNoClient: 'No client is linked to this service',
+      importNoClientHint: 'Importing needs a client linked to the service; link it from the Clients page first.',
+      importFailed: 'The import could not be completed.',
     },
 
     taxonomy: {
@@ -2229,6 +2428,104 @@ export const translations: Record<Language, Translations> = {
       linkButton: 'ربط',
       unlinkButton: 'فك الربط',
       manageHint: 'الخدمات وروابط معاييرها تُدار من مديري المنصة فقط.',
+    },
+
+    servicesWorkspace: {
+      headerSubtitle: 'مساحة عمل لكل خدمة — التعريف والمحتوى والقواعد والإعدادات والاستيراد',
+      railSearchLabel: 'البحث في الخدمات',
+      railSearchPh: 'الاسم أو الرمز',
+      railEmpty: 'لا توجد خدمات بعد',
+      railEmptyHint: 'أنشئ أول خدمة لتظهر هنا.',
+      createHint: 'تبدأ الخدمة فارغة؛ يأتي المحتوى من تبويب المحتوى والاستيراد.',
+      emptySearch: 'لا خدمات مطابقة.',
+      selectTitle: 'لا توجد خدمة محددة',
+      selectHint: 'اختر خدمة من القائمة أو أنشئ خدمة جديدة.',
+      statusReady: 'محتوى متاح',
+      statusEmpty: 'بلا محتوى',
+      tabOverview: 'نظرة عامة',
+      tabContent: 'المحتوى',
+      tabRules: 'القواعد',
+      tabSettings: 'الإعدادات',
+      tabImport: 'الاستيراد',
+      definition: 'تعريف الخدمة',
+      created: 'تاريخ الإنشاء',
+      descriptionEmpty: 'لا وصف',
+      linkedClients: 'العملاء المرتبطون',
+      clientsUnit: 'العملاء المرتبطون',
+      lastImport: 'آخر استيراد',
+      lastImportNone: 'غير متاح لكل خدمة',
+      lastImportHint: 'أحداث الاستيراد تُسجَّل لكل مستأجر في سجل التدقيق.',
+      contentState: 'حالة المحتوى',
+      contentEmpty: 'لا بنود بعد — ابدأ من تبويب الاستيراد أو أضف بنداً.',
+      contentOk: 'المحتوى جاهز للربط والإسناد.',
+      duplicateHint: 'تُنسخ روابط المعايير إلى الرمز الجديد؛ المحتوى لا يُنسخ.',
+      duplicateCodeLabel: 'رمز الخدمة الجديدة',
+      duplicateNameLabel: 'الاسم (اختياري)',
+      duplicateSubmit: 'إنشاء نسخة',
+      breadcrumbAll: 'كل المعايير',
+      levelStandards: 'المعايير',
+      levelDisclosures: 'الإفصاحات',
+      levelItems: 'البنود',
+      searchLevelPh: 'بحث في هذا المستوى',
+      addStandard: 'ربط معيار',
+      addStandardHint: 'تُنشأ المعايير عبر الاستيراد؛ هنا يُربط معيار قائم بالخدمة.',
+      noStandards: 'لا معايير مرتبطة',
+      noStandardsHint: 'اربط معياراً لبدء المحتوى.',
+      noDisclosures: 'لا إفصاحات',
+      noDisclosuresHint: 'لا توجد إفصاحات لهذا المعيار داخل هذه الخدمة.',
+      noItems: 'لا بنود',
+      noItemsHint: 'أضف بنداً أو استورد بيانات الخدمة.',
+      disclosureImportNote: 'الإفصاحات تُنشأ عبر الاستيراد.',
+      itemDetail: 'تفاصيل البند',
+      itemRequirement: 'المتطلب',
+      itemAnswerType: 'نوع الإجابة',
+      itemPriority: 'الأولوية',
+      itemEsgClass: 'التصنيف',
+      itemHint: 'تلميح',
+      codeImmutable: 'الرمز ثابت ولا يُعدَّل.',
+      attachmentRequired: 'مرفق مطلوب',
+      attachmentNotRequired: 'بلا مرفق',
+      attachmentReadOnly: 'تُقرأ من الخادم ولا تُحرَّر هنا',
+      selectedCount: 'المحدد: {n}',
+      bulkClient: 'العميل',
+      bulkDepartment: 'القسم',
+      bulkAssign: 'إسناد المحدد',
+      bulkDone: 'تم الإسناد: {n}',
+      bulkNoClients: 'لا عميل مرتبط بهذه الخدمة.',
+      rulesScope: 'نطاق الخدمة',
+      rulesItems: 'قواعد البنود',
+      rulesSave: 'حفظ القواعد',
+      rulesSaved: 'تم الحفظ: {n}',
+      rulesNoChanges: 'لا تغييرات لحفظها.',
+      rulesFilterPh: 'بحث في البنود',
+      rulesAnswerHint: 'يُحفظ نوع الإجابة فقط؛ حالة المرفق للقراءة.',
+      rulesShownOf: 'عرض {shown} من {total}',
+      discardDraft: 'لديك تغييرات غير محفوظة. تجاهلها؟',
+      dirtyDraft: 'تغييرات غير محفوظة',
+      unlinkStandardConfirm: 'فك ربط المعيار {code} من هذه الخدمة؟',
+      identityTitle: 'هوية الخدمة',
+      identitySave: 'حفظ الهوية',
+      jsonSettingsTitle: 'إعدادات الخدمة (JSON)',
+      settingsHint: 'يُكتب الكائن كاملاً (استبدال) وبحد أقصى 8KB؛ لا يوفّر الـ API قراءة الإعدادات المحفوظة قبل الكتابة.',
+      settingsSave: 'حفظ الإعدادات',
+      settingsInvalid: 'أدخل كائن JSON صالحاً (لا مصفوفة ولا قيمة مفردة).',
+      settingsEcho: 'ما أعاده الخادم بعد الحفظ:',
+      actionFailed: 'تعذّر إتمام العملية.',
+      workspaceLoadFailed: 'تعذّر تحميل بيانات الخدمات.',
+      fieldRequired: 'هذا الحقل مطلوب.',
+      importTitle: 'استيراد بيانات الخدمة',
+      importTarget: 'العميل الهدف',
+      importDrop: 'أفلت الملف هنا أو اختره',
+      importFormats: 'Excel أو CSV بالأعمدة: Standard Code, Standard Title, Category, Disclosure Code, Disclosure Title, Item Code, Requirement (واختيارياً: Priority, ESG Class, Answer Type, Hint, Department).',
+      importPreview: 'معاينة',
+      importPreviewing: 'جارٍ التحليل...',
+      importConfirm: 'استيراد إلى «{service}» للعميل «{client}»؟ سيُحدَّث الكتالوج بهذه الدفعة.',
+      importConfirmAction: 'تأكيد الاستيراد',
+      importing: 'جارٍ الاستيراد...',
+      importDone: 'تم الاستيراد — معايير / إفصاحات / بنود',
+      importNoClient: 'لا عميل مرتبط بهذه الخدمة',
+      importNoClientHint: 'الاستيراد يتطلب عميلاً مرتبطاً بالخدمة؛ اربط الخدمة بعميل من صفحة العملاء أولاً.',
+      importFailed: 'تعذّر إكمال الاستيراد.',
     },
 
     taxonomy: {

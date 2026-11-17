@@ -27,9 +27,8 @@ const EXPECTED: Record<NavContext, readonly Row[]> = {
   platform: [
     ['ge-overview', 1, true, 'عمليات GE', 'GE Operations'],
     ['clients', 2, true, 'العملاء', 'Clients'],
-    ['standards', 3, true, 'معايير GRI', 'GRI Standards'],
+    ['standards', 3, true, 'الخدمات', 'Services'],
     ['initiatives', 4, true, 'مكتبة المبادرات', 'Initiatives Library'],
-    ['import-gri', 5, true, 'استيراد بيانات GRI', 'Import GRI Data'],
     ['settings', 6, true, 'الإعدادات وقاعدة البيانات', 'Settings & Database'],
     ['staff-lists', 7, true, 'قوائم الموظفين', 'Staff Lists'],
     ['audit-log', 8, true, 'سجل التدقيق', 'Audit Log'],
@@ -135,6 +134,20 @@ test('U3-B1 §3: allowed pages resolve to themselves; pending/contextual-only pa
       assert.equal(isPageAllowed(context, 'clients'), false);
       assert.deepEqual(resolvePage(context, 'clients'), { page: landing, redirected: true });
     }
+  }
+});
+
+test('U4-2 owner instruction: P sidebar carries no Import page (import lives inside Services)', () => {
+  // The page id still exists (App keeps its branch) but P navigation never
+  // offers it and the guard redirects a stale request to the P landing.
+  assert.ok(PAGE_IDS.includes('import-gri'), 'the id stays defined for the route');
+  assert.equal(menuPages('platform').some((entry) => entry.id === 'import-gri'), false);
+  assert.equal(pagesIn('platform').includes('import-gri'), false);
+  assert.equal(isPageAllowed('platform', 'import-gri'), false);
+  assert.deepEqual(resolvePage('platform', 'import-gri'), { page: landingFor('platform'), redirected: true });
+  // W/C never had it and remain untouched.
+  for (const context of ['consultant', 'client', 'employee'] as NavContext[]) {
+    assert.equal(pagesIn(context).includes('import-gri'), false, `${context}: no import page`);
   }
 });
 
@@ -297,9 +310,14 @@ test('U3-B1 nav model never exceeds the approved server page sets (default capab
       assert.ok(server.has(id), `${context}/${id}: presented page missing from the server-approved set`);
     }
   }
-  // P and E are exact (no conditional rows, and P's contextual target is server-listed too).
+  // P and E are exact except one OWNER-DECIDED nav omission (TASK-PROTO-U4-2):
+  // importing lives inside Services → Import, so `import-gri` is not a P menu
+  // page even though the server still permits the id (route unreachable from
+  // navigation). W/C keep their own sets untouched.
   const sorted = (ids: readonly string[]) => [...ids].sort();
-  assert.deepEqual(sorted(pagesIn('platform')), sorted(permittedPages(accessFor('platform'))));
+  const withheldPlatform = permittedPages(accessFor('platform')).filter((id) => !pagesIn('platform').includes(id as PageId));
+  assert.deepEqual(withheldPlatform, ['import-gri'], 'P hides only the import page from nav');
+  assert.deepEqual(sorted(pagesIn('platform')), sorted(permittedPages(accessFor('platform')).filter((id) => id !== 'import-gri')));
   assert.deepEqual(sorted(pagesIn('employee')), sorted(permittedPages(accessFor('employee'))));
   // W/C withhold exactly the two unproven `*` rows; the server's alias-shaped
   // equivalents (client-dashboard in W) are alias-only in the UI, not pages.

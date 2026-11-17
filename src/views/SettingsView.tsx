@@ -19,7 +19,6 @@ import {
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiFetch } from '../lib/api.ts';
-import { ServicesManage } from './ServicesManage.tsx';
 import { validateSelfChosenPassword } from '../lib/password.ts';
 
 interface SettingsViewProps {
@@ -466,8 +465,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDbStatusChanged })
       </div>
 
       {/* B9-D3: evidence storage monitor */}
-      {/* B11a (S-04): GE-only services management (Settings-adjacent, one place). */}
-      {isGeAdmin && <ServicesManage />}
+      {/* TASK-PROTO-U4-2 (owner instruction): the Services section moved to its
+          own workspace (Services page) — no duplicate management surface here. */}
 
       <div className="bg-surface-2 rounded-2xl border border-border p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-border">
