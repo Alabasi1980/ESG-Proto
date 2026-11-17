@@ -13,11 +13,15 @@ import { ensureGeneralBucket, generalStandardCode } from '../lib/generalBucket.t
 import { normalizeIndicatorCode, normalizeTags } from '../lib/documents.ts';
 import {
   canonicalLinkPair,
+  checkItemVersion,
   isEsgClass,
   isItemAnswerType,
   isItemPriority,
-  itemDeleteRefusal,
+  serviceDeleteRefusal,
+  validateBulkPatch,
+  validateNewDisclosure,
   validateNewItem,
+  validateNewStandard,
 } from '../lib/taxonomy.ts';
 
 // B11a — services / taxonomy / items / equivalent-links (S-04, S-05, S-06, S-08).
@@ -171,7 +175,7 @@ router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomy
       const result = await client.query(
         `SELECT d.id, d.standard_id, d.code, d.title, d.description, d.sort_order,
                 s.code AS standard_code, s.title AS standard_title,
-                COUNT(DISTINCT i.id)::int AS item_count
+                COUNT(DISTINCT i.id) FILTER (WHERE i.status = 'active')::int AS item_count
          FROM disclosures d
          JOIN standards s ON s.id = d.standard_id
          LEFT JOIN items i ON i.disclosure_id = d.id
@@ -195,18 +199,24 @@ router.get('/disclosures', authMiddleware, requireDomainAccess, validateTaxonomy
 router.get('/items', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const disclosureId = readFilter(req.query.disclosureId);
+    // TASK-PROTO-U4-2-FIX P2 (OD-13 G-4): archived items are out of the live
+    // scope — excluded by default; P history views (P4) opt back in. A
+    // repeated/array param is never 'true', so it fails closed to exclusion.
+    const includeArchived = req.query.includeArchived === 'true';
     const rows = await domainTransaction(req, async (client) => {
       const params: any[] = [];
-      let where = '';
+      const conditions: string[] = [];
       if (disclosureId) {
         params.push(disclosureId);
-        where = `WHERE i.disclosure_id = $${params.length}`;
+        conditions.push(`i.disclosure_id = $${params.length}`);
       }
+      if (!includeArchived) conditions.push(`i.status = 'active'`);
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const result = await client.query(
         `SELECT i.id, i.disclosure_id, i.code, i.requirement, i.answer_type, i.hint,
                 i.priority, i.esg_class, i.weight, i.objective, i.topic, i.reference,
                 i.department_id, i.sort_order, i.attachment_required,
-                i.indicator_code, i.tags,
+                i.indicator_code, i.tags, i.version, i.status,
                 d.code AS disclosure_code, s.code AS standard_code
          FROM items i
          JOIN disclosures d ON d.id = i.disclosure_id
@@ -501,6 +511,106 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, r
   }
 });
 
+// TASK-PROTO-U4-2-FIX P2 (OD-13 DG-02, owner default): full service removal.
+// Preconditions (409 `service.delete_blocked`) while ANY blocker exists:
+// tenant work on reachable items (answers/evaluations/assignments/actions),
+// history versions, approved copies, tenant links, or service-bound tenant
+// rows (report settings, document requirements, ESG profiles, standalone
+// actions — CASCADE would silently drop them, NO ACTION would 500). Else
+// hard delete: exclusive auto-buckets (GENERAL/GROUP with no other service
+// link) + the service row; catalog CASCADE clears mappings. Audit in-txn.
+
+router.delete('/services/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const cur = await client.query('SELECT id, code FROM services WHERE id = $1 FOR UPDATE', [req.params.id]);
+      const row = cur.rows[0];
+      if (!row) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
+
+      const itemRes = await client.query(
+        `SELECT i.id FROM items i
+          JOIN disclosures d ON d.id = i.disclosure_id
+          JOIN service_standards ss ON ss.standard_id = d.standard_id
+          WHERE ss.service_id = $1`,
+        [req.params.id]
+      );
+      const itemIds: string[] = itemRes.rows.map((r: any) => String(r.id));
+      const work = await client.query(
+        `SELECT COALESCE((SELECT SUM(b17_catalog_child_count('item.answers', u)) FROM unnest($1::uuid[]) u), 0)::int AS answers,
+                COALESCE((SELECT SUM(b17_catalog_child_count('item.evaluations', u)) FROM unnest($1::uuid[]) u), 0)::int AS evaluations,
+                COALESCE((SELECT SUM(b17_catalog_child_count('item.assignments', u)) FROM unnest($1::uuid[]) u), 0)::int AS assignments,
+                COALESCE((SELECT SUM(b17_catalog_child_count('item.actions', u)) FROM unnest($1::uuid[]) u), 0)::int AS actions`,
+        [itemIds]
+      );
+      const scoped = await client.query(
+        `SELECT (SELECT COUNT(*) FROM item_versions WHERE item_id = ANY($2::uuid[]))::int AS versions,
+                (SELECT COUNT(*) FROM approved_service_copies WHERE service_id = $1)::int AS copies,
+                (SELECT COUNT(*) FROM client_services WHERE service_id = $1)::int AS links,
+                (SELECT COUNT(*) FROM report_settings WHERE service_id = $1)::int AS report_settings,
+                (SELECT COUNT(*) FROM document_requirements WHERE service_id = $1)::int AS requirements,
+                (SELECT COUNT(*) FROM esg_profile WHERE service_id = $1)::int AS profiles,
+                (SELECT COUNT(*) FROM actions WHERE service_id = $1)::int AS service_actions`,
+        [req.params.id, itemIds]
+      );
+      const blockers = {
+        code: row.code,
+        answers: work.rows[0]?.answers ?? 0,
+        evaluations: work.rows[0]?.evaluations ?? 0,
+        assignments: work.rows[0]?.assignments ?? 0,
+        actions: work.rows[0]?.actions ?? 0,
+        versions: scoped.rows[0]?.versions ?? 0,
+        copies: scoped.rows[0]?.copies ?? 0,
+        links: scoped.rows[0]?.links ?? 0,
+        reportSettings: scoped.rows[0]?.report_settings ?? 0,
+        requirements: scoped.rows[0]?.requirements ?? 0,
+        profiles: scoped.rows[0]?.profiles ?? 0,
+        serviceActions: scoped.rows[0]?.service_actions ?? 0,
+      };
+      const total = blockers.answers + blockers.evaluations + blockers.assignments + blockers.actions
+        + blockers.versions + blockers.copies + blockers.links + blockers.reportSettings
+        + blockers.requirements + blockers.profiles + blockers.serviceActions;
+      if (total > 0) {
+        throw Object.assign(new Error(serviceDeleteRefusal(blockers)), {
+          statusCode: 409,
+          code: 'service.delete_blocked',
+        });
+      }
+
+      // Exclusive auto-buckets only: the service's own GENERAL bucket plus any
+      // GROUP bucket with no link to another service. Shared standards stay.
+      const bucketRes = await client.query(
+        `SELECT st.id FROM standards st
+          JOIN service_standards ss ON ss.standard_id = st.id
+          WHERE ss.service_id = $1 AND (st.code = $2 OR st.category = 'group')
+          AND NOT EXISTS (
+            SELECT 1 FROM service_standards ss2
+            WHERE ss2.standard_id = st.id AND ss2.service_id <> $1
+          )`,
+        [req.params.id, generalStandardCode(row.code, row.id)]
+      );
+      const bucketIds: string[] = bucketRes.rows.map((r: any) => String(r.id));
+      if (bucketIds.length > 0) {
+        await client.query('DELETE FROM standards WHERE id = ANY($1::uuid[])', [bucketIds]);
+      }
+      await client.query('DELETE FROM services WHERE id = $1', [req.params.id]);
+      await recordAuditLog(client, {
+        clientId: null,
+        userId: user.id,
+        action: 'SERVICE_DELETED',
+        entityType: 'services',
+        entityId: req.params.id,
+        payload: { code: row.code, bucketsRemoved: bucketIds.length },
+      });
+      return { deleted: true, bucketsRemoved: bucketIds.length };
+    });
+    res.json(result);
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to delete service');
+  }
+});
+
 // ----------------------------------------------------------------------
 // B. Taxonomy (S-05) — GE-only writes. Codes are natural import keys:
 // renaming a code with rows under it is FORBIDDEN (400); titles editable.
@@ -508,6 +618,98 @@ router.delete('/services/:id/standards', authMiddleware, requireFreshPassword, r
 // No create/delete of standards/disclosures via UI — the import path owns
 // creation (see the /gri/commit upsert on the natural key).
 // ----------------------------------------------------------------------
+
+// TASK-PROTO-U4-2-FIX P2 (OD-13 G-1): surgical single-row creation for the
+// flexible levels (standards incl. GROUP buckets, disclosures/groups,
+// direct-item containers). Natural-key upsert refusal (409), codes immutable
+// after creation; audit in-txn.
+
+router.post('/standards', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const validation = validateNewStandard(req.body ?? {});
+    if (!validation.ok) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+    const v = validation.value;
+    const created = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      let row;
+      try {
+        const ins = await client.query(
+          `INSERT INTO standards (code, title, category) VALUES ($1, $2, $3)
+           RETURNING id, code, title, category`,
+          [v.code, v.title, v.category]
+        );
+        row = ins.rows[0];
+      } catch (dbErr: any) {
+        if (dbErr?.code === '23505') {
+          throw Object.assign(new Error(`A standard with code '${v.code}' already exists.`), {
+            statusCode: 409,
+          });
+        }
+        throw dbErr;
+      }
+      await recordAuditLog(client, {
+        clientId: null,
+        userId: user.id,
+        action: 'CREATE_STANDARD',
+        entityType: 'standards',
+        entityId: row.id,
+        payload: { code: row.code, title: row.title, category: row.category },
+      });
+      return row;
+    });
+    res.status(201).json(created);
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to create standard');
+  }
+});
+
+router.post('/disclosures', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const validation = validateNewDisclosure(req.body ?? {});
+    if (!validation.ok) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+    const v = validation.value;
+    const created = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const std = await client.query('SELECT id, code FROM standards WHERE id = $1', [v.standardId]);
+      if (!std.rows[0]) throw Object.assign(new Error('Standard not found.'), { statusCode: 404 });
+      let row;
+      try {
+        const ins = await client.query(
+          `INSERT INTO disclosures (standard_id, code, title, description) VALUES ($1, $2, $3, $4)
+           RETURNING id, standard_id, code, title, description`,
+          [v.standardId, v.code, v.title, v.description]
+        );
+        row = ins.rows[0];
+      } catch (dbErr: any) {
+        if (dbErr?.code === '23505') {
+          throw Object.assign(
+            new Error(`A disclosure with code '${v.code}' already exists in this standard.`),
+            { statusCode: 409 }
+          );
+        }
+        throw dbErr;
+      }
+      await recordAuditLog(client, {
+        clientId: null,
+        userId: user.id,
+        action: 'CREATE_DISCLOSURE',
+        entityType: 'disclosures',
+        entityId: row.id,
+        payload: { standardCode: std.rows[0].code, code: row.code, title: row.title },
+      });
+      return row;
+    });
+    res.status(201).json(created);
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to create disclosure');
+  }
+});
 
 router.patch('/standards/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -746,13 +948,13 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
         // NOTE: weight is intentionally NOT set — enforce_item_weight_priority
         // derives it from priority (high=3, mid=2, low=1).
         const ins = await client.query(
-          `INSERT INTO items (disclosure_id, code, requirement, answer_type, hint, priority,
-                              esg_class, objective, topic, reference, department_id, sort_order,
-                              indicator_code, tags)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-           RETURNING id, disclosure_id, code, requirement, answer_type, hint, priority,
-                     esg_class, weight, objective, topic, reference, department_id, sort_order,
-                     indicator_code, tags`,
+           `INSERT INTO items (disclosure_id, code, requirement, answer_type, hint, priority,
+                               esg_class, objective, topic, reference, department_id, sort_order,
+                               indicator_code, tags)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING id, disclosure_id, code, requirement, answer_type, hint, priority,
+                      esg_class, weight, objective, topic, reference, department_id, sort_order,
+                      indicator_code, tags, version, status`,
           [
             disclosureId,
             v.code,
@@ -794,6 +996,121 @@ router.post('/items', authMiddleware, requireFreshPassword, requireDomainAccess,
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     catalogFailure(res, err, 'Failed to create item');
+  }
+});
+
+// TASK-PROTO-U4-2-FIX P2 (OD-13 DG-06): bulk edit of the whitelisted item
+// subset (answerType/priority/esgClass/attachment_required) with per-row
+// optimistic versions. One transaction, per-row results — a row failure
+// never aborts its siblings and never applies silently. Department changes
+// stay single-item (per-row refusal). Spec §API-3: 200 + row results carry
+// the multi-status semantics.
+
+router.post('/items/bulk', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const body = req.body ?? {};
+    if (!Array.isArray(body.ids) || body.ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array of item ids.' });
+    }
+    const patchCheck = validateBulkPatch(body.patch);
+    if (!patchCheck.ok && !patchCheck.perRow) {
+      const patchError: string = patchCheck.error;
+      return res.status(patchCheck.status).json({ error: patchError });
+    }
+    const expectedVersions = body.expectedVersions;
+    if (expectedVersions !== undefined && expectedVersions !== null
+      && (typeof expectedVersions !== 'object' || Array.isArray(expectedVersions))) {
+      return res.status(400).json({ error: 'expectedVersions must be an object of id to version.' });
+    }
+    const sets = patchCheck.ok ? patchCheck.sets : [];
+    const departmentError: string | null = patchCheck.ok ? null : patchCheck.error;
+
+    // Canonical lock order (sorted ids) so two concurrent bulks can never
+    // deadlock on row locks; results are re-ordered to the request order.
+    const entries = body.ids.map((raw: unknown, index: number) => ({ raw, index }));
+    const ordered = [...entries].sort((a, b) => String(a.raw) < String(b.raw) ? -1 : 1);
+
+    const byIndex: { index: number; result: Record<string, unknown> }[] = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      const out: { index: number; result: Record<string, unknown> }[] = [];
+      for (const entry of ordered) {
+        const rawId = entry.raw;
+        if (typeof rawId !== 'string' || rawId.trim() === '') {
+          out.push({ index: entry.index, result: { id: rawId ?? null, ok: false, error: 'Invalid item id.', code: 'scope.id_invalid' } });
+          continue;
+        }
+        const id = rawId.trim();
+        if (departmentError !== null) {
+          out.push({ index: entry.index, result: { id, ok: false, error: departmentError } });
+          continue;
+        }
+        try {
+          scopeId(id, true);
+        } catch {
+          out.push({ index: entry.index, result: { id, ok: false, error: 'Invalid item id.', code: 'scope.id_invalid' } });
+          continue;
+        }
+        try {
+          const cur = await client.query(
+            'SELECT id, code, version, status FROM items WHERE id = $1 FOR UPDATE', [id]
+          );
+          const row = cur.rows[0];
+          if (!row) {
+            out.push({ index: entry.index, result: { id, ok: false, error: 'Item not found.' } });
+            continue;
+          }
+          if (row.status === 'archived') {
+            out.push({
+              index: entry.index,
+              result: { id, ok: false, error: 'Item is archived. Unarchive it before editing.', code: 'item.archived' },
+            });
+            continue;
+          }
+          const gate = checkItemVersion(row.version, expectedVersions?.[id]);
+          if (!gate.ok) {
+            const gateError: string = gate.error;
+            const gateCode = gate.status === 409 ? 'item.version_conflict' : undefined;
+            out.push({
+              index: entry.index,
+              result: gateCode ? { id, ok: false, error: gateError, code: gateCode } : { id, ok: false, error: gateError },
+            });
+            continue;
+          }
+          const params: any[] = [];
+          const fragments = sets.map((s) => {
+            params.push(s.value);
+            return `${s.column} = $${params.length}`;
+          });
+          params.push(id);
+          const upd = await client.query(
+            `UPDATE items SET ${fragments.join(', ')}, version = version + 1 WHERE id = $${params.length}
+             RETURNING id, code, version, status`,
+            params
+          );
+          const updated = upd.rows[0];
+          await recordAuditLog(client, {
+            clientId: null,
+            userId: user.id,
+            action: 'UPDATE_ITEM',
+            entityType: 'items',
+            entityId: updated.id,
+            payload: { code: updated.code, fields: sets.map((s) => s.key), bulk: true },
+          });
+          out.push({ index: entry.index, result: { id, ok: true, version: updated.version } });
+        } catch {
+          // One row never aborts its siblings; unexpected row failures stay
+          // static (no diagnostic echo — G2 E3-02).
+          out.push({ index: entry.index, result: { id, ok: false, error: 'Failed to update item.' } });
+        }
+      }
+      return out;
+    });
+    const results = byIndex.sort((a, b) => a.index - b.index).map((e) => e.result);
+    const updated = results.filter((r) => r.ok === true).length;
+    res.json({ results, updated, failed: results.length - updated });
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to bulk-update items');
   }
 });
 
@@ -948,21 +1265,30 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
 
 router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const body = req.body ?? {};
+    const rawReason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    // Caller-supplied archive note; capped so the history row stays a note.
+    const archiveReason = rawReason === '' ? null : rawReason.slice(0, 500);
     const result = await domainTransaction(req, async (client) => {
       const user = req.user!;
       // Serialize FK writers before counting: no concurrent action insertion
-      // may slip between a truthful count and the ON DELETE SET NULL edge.
-      const cur = await client.query('SELECT id, code FROM items WHERE id = $1 FOR UPDATE', [req.params.id]);
+      // may slip between a truthful count and the archive/hard-delete edge.
+      const cur = await client.query('SELECT id, code, status FROM items WHERE id = $1 FOR UPDATE', [req.params.id]);
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+      // DELETE is idempotent: an archived item is already out of the live
+      // scope, so a repeat reports the state without auditing again.
+      if (row.status === 'archived') return { archived: true };
       // §22/§23 D1: truthful catalog-wide counts for every blocker — answers,
       // evaluations and assignments (incl. OTHER tenants' rows) come from the
-      // count-only definer, so the refusal can never fail open into CASCADE.
+      // count-only definer, so the archive decision can never fail open into
+      // CASCADE. Versions are read directly: RESTRICT must never fire.
       const counts = await client.query(
         `SELECT b17_catalog_child_count('item.answers', $1) AS answers,
                 b17_catalog_child_count('item.evaluations', $1) AS evaluations,
                 b17_catalog_child_count('item.assignments', $1) AS assignments,
-                b17_catalog_child_count('item.actions', $1) AS actions`,
+                b17_catalog_child_count('item.actions', $1) AS actions,
+                (SELECT COUNT(*) FROM item_versions WHERE item_id = $1)::int AS versions`,
         [req.params.id]
       );
       const blockers = {
@@ -971,13 +1297,26 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
         assignments: counts.rows[0]?.assignments ?? 0,
       };
       const actions = counts.rows[0].actions;
+      const versions = counts.rows[0]?.versions ?? 0;
       const otherCount = blockers.answers + blockers.evaluations + blockers.assignments;
-      if (otherCount + actions > 0) {
-        const refusal = actions > 0 ? (otherCount > 0
-          ? itemDeleteRefusal(blockers).replace(' reference it.', `, ${actions} action(s) reference it.`)
-          : `Cannot delete this item: ${actions} action(s) reference it. Remove the references first.`)
-          : itemDeleteRefusal(blockers);
-        throw Object.assign(new Error(refusal), { statusCode: 409 });
+      // TASK-PROTO-U4-2-FIX P2 (OD-13 G-4): any tenant work or preserved
+      // history archives instead of deleting — the item leaves the live scope
+      // with its answers/attachments/approvals retained for history.
+      if (otherCount + actions + versions > 0) {
+        await client.query(
+          `UPDATE items SET status = 'archived', archived_at = clock_timestamp(), archive_reason = $2
+           WHERE id = $1`,
+          [req.params.id, archiveReason]
+        );
+        await recordAuditLog(client, {
+          clientId: null,
+          userId: user.id,
+          action: 'ARCHIVE_ITEM',
+          entityType: 'items',
+          entityId: req.params.id,
+          payload: { code: row.code, reason: archiveReason },
+        });
+        return { archived: true };
       }
       // item_links rows cascade (ON DELETE CASCADE) — links never block deletion.
       await client.query('DELETE FROM items WHERE id = $1', [req.params.id]);

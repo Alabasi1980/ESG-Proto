@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 
 const root=path.resolve('src/server');
 const inventory: Record<string,[number,number]> = {
-  'taxonomy.ts':[19,4], 'routes/gri.ts':[3,2], 'routes/evaluations.ts':[14,14],
+  'taxonomy.ts':[23,4], 'routes/gri.ts':[3,2], 'routes/evaluations.ts':[14,14],
   'routes/actions.ts':[3,3], 'routes/storage.ts':[5,5], 'routes/audit.ts':[1,1],
   'routes/notifications.ts':[4,4], 'routes/adminClients.ts':[8,0],
   'routes/adminDirectory.ts':[3,0], 'routes/adminAssignments.ts':[4,1],
@@ -73,10 +73,10 @@ test('G1 every business call site is classified, explicit P-work exceptions reta
     }
     total+=sites.length;work+=explicitWork.length;
   }
-  assert.equal(total,95);assert.equal(work,38);
+  assert.equal(total,99);assert.equal(work,38);
   const provisioning=readFileSync(path.join(root,'routes/adminProvisioning.ts'),'utf8');
   assert.equal((provisioning.match(/await configurationTransaction\(req, target,/g) ?? []).length,3);
-  assert.equal(total+3,98,'85 baseline sites minus merged GET clients branch, plus H13 settings, the U4-1a visibility row and the eleven U4-1c rows');
+  assert.equal(total+3,102,'85 baseline sites minus merged GET clients branch, plus H13 settings, the U4-1a visibility row, the eleven U4-1c rows and the four U4-2-FIX P2 catalog routes');
   const clients=readFileSync(path.join(root,'routes/adminClients.ts'),'utf8');
   assert.match(boundaries(clients)[0].text,/live\.access!\.mode === 'platform' \? platformGlobalContext\(live\) : readContext\(live\)/);
   const directory=readFileSync(path.join(root,'routes/adminDirectory.ts'),'utf8');
@@ -142,7 +142,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // target-bound requirement branch); its sha256 pin and the readiness pin
   // (constant + note) move with it.
   const h13RoutesSha256='a810933dcab117669a42036ec3d6affe944f5cd1f4e73a68096b4561bbce9820';
-  const h13AccessRegistrySha256='10931e42fd5f86e491b5e52836a486a1be72a48964c56e477731feeb6377711b';
+  const h13AccessRegistrySha256='5ae398e5ebf150268a6e94b944269fd29b900f79d818c2fece851913848d5b4f';
+  // TASK-PROTO-U4-2-FIX P2: the taxonomy group gains the four P-only catalog
+  // rows (POST /standards, POST /disclosures, POST /items/bulk,
+  // DELETE /services/:id); re-pinned deliberately over LF-normalized bytes.
   // U4-1c-PROTECT round 3 (§21): b17-content.sql carries the ONE approved hunk
   // (b17_selection_update, same scope as the delete policy); sha + readiness
   // shape move together, version label stays B17_U2D.
@@ -217,7 +220,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // rerun + rollback, own PG18 harness only, never the shared DB).
     'scripts/u42fix-p1-rehearse.ts',
     'src/views/ServicesView.tsx','src/components/services/ServiceRail.tsx',
-    'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts'];
+    'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts',
+    // TASK-PROTO-U4-2-FIX P2: the no-DB behavioral + matrix test for the catalog
+    // CRUD and item version/archive paths (new-file bound 500 applies).
+    'src/lib/u42fix-p2.test.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -226,6 +232,8 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/server/routes/notifications.ts','src/server/routes/storage.ts','src/server/routes/evaluations.ts',
     'src/server/routes/reports.ts','src/server/routes/initiatives.ts',
     'src/lib/routeGates.test.ts','src/lib/b17TransactionInventory.test.ts','src/db/b17Readiness.ts',
+    // TASK-PROTO-U4-2-FIX P2: the shared catalog validators live here.
+    'src/lib/taxonomy.ts',
     // D-H01-06 (2026-11-15, owner-authorized): theme-center track H02a/H02b — 8 paths only.
     'src/App.tsx','src/components/Header.tsx','src/components/Sidebar.tsx','src/index.css',
     'src/main.tsx','src/context/ThemeContext.tsx','src/styles/tokens.css','src/styles/themes.css',
@@ -415,7 +423,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,99); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script
+  assert.equal(allowed.size,101); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test (via the ...newFiles spread)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

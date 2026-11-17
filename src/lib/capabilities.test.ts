@@ -4,12 +4,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { LEGACY_ROUTES, ACCESS_REGISTRY, classifyRoute, assertRegistryCoverage } from '../server/accessRegistry.ts';
 import { activeBusinessCapabilities, permittedPages, validBinding, type AccessContext } from './capabilities.ts';
 
-test('B17 exact route inventory: all 109 legacy declarations classified once; 0 unactivated (U2-F + H13 + U4-1a + U4-1c)', () => {
+test('B17 exact route inventory: all 113 legacy declarations classified once; 0 unactivated (U2-F + H13 + U4-1a + U4-1c + U4-2-FIX P2)', () => {
   const files = ['src/server/taxonomy.ts', ...readdirSync('src/server/routes')
     .filter(name => name.endsWith('.ts')).map(name => `src/server/routes/${name}`)];
   const actual = files.flatMap(file => [...readFileSync(file,'utf8').matchAll(/router\.(get|post|put|patch|delete)\('([^']+)'/g)]
     .map(match => `${match[1].toUpperCase()} ${match[2]}`)).sort();
-  assert.equal(actual.length, 109);
+  assert.equal(actual.length, 113);
   assert.deepEqual(actual, LEGACY_ROUTES.map(route => `${route.method} ${route.path}`).sort());
   assert.equal(new Set(actual).size, actual.length);
   // U2-F: round 1 flipped the 22 non-provisioning rows (25 -> 3); round 2 (final)

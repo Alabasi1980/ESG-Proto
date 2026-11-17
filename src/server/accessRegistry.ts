@@ -102,6 +102,11 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /services/:id/duplicate|P#global-service-configuration',
     'POST /services/:id/standards|P#global-service-standard-mapping',
     'DELETE /services/:id/standards|P#global-service-standard-mapping',
+    // TASK-PROTO-U4-2-FIX P2: catalog create/bulk + full-service removal (P only).
+    'POST /standards|P#catalog',
+    'POST /disclosures|P#catalog',
+    'POST /items/bulk|P#catalog',
+    'DELETE /services/:id|P#global-service-configuration',
     'PATCH /standards/:id|P#catalog',
     'DELETE /standards/:id|P#catalog-existing-dependency-refusals',
     'PATCH /disclosures/:id|P#catalog',

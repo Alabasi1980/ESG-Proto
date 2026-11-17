@@ -60,6 +60,11 @@ const EXPECTED: Record<string, string> = {
   'DELETE /items/:id/links': 'P#catalog-equivalence-mapping',
   'GET /items/:id/links':
     'P#catalog-metadata-only-no-tenant-overlay;W:L;C:L;E:L+D#both-ends-linked-own-department-state-only',
+  // TASK-PROTO-U4-2-FIX P2: catalog create/bulk + full-service removal (P only).
+  'POST /standards': 'P#catalog',
+  'POST /disclosures': 'P#catalog',
+  'POST /items/bulk': 'P#catalog',
+  'DELETE /services/:id': 'P#global-service-configuration',
   'POST /gri/preview': 'P#authenticate-before-upload-parser',
   'POST /gri/commit': 'P@T#explicit-target-plus-linked-serviceId-no-implicit-service-grant',
   'GET /gri/template': 'P#fetch-with-auth-tab-then-download',
@@ -198,10 +203,10 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-F final activation split: 0 UNACTIVATED; exact 101 business flips + 8 system/session + 4 workspace', () => {
-  assert.equal(LEGACY_ROUTES.length, 109);
+test('U2-F final activation split: 0 UNACTIVATED; exact 105 business flips + 8 system/session + 4 workspace', () => {
+  assert.equal(LEGACY_ROUTES.length, 113);
   assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 0);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 109);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 113);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
   // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F round-1 + 3
@@ -224,6 +229,8 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 101 business flips + 8 s
     'PATCH /disclosures/:id', 'DELETE /disclosures/:id',
     'POST /items', 'PATCH /items/:id', 'DELETE /items/:id',
     'POST /items/:id/links', 'DELETE /items/:id/links', 'GET /items/:id/links',
+    // TASK-PROTO-U4-2-FIX P2: the four P-only catalog rows (create/bulk + service removal).
+    'POST /standards', 'POST /disclosures', 'POST /items/bulk', 'DELETE /services/:id',
     'POST /gri/preview', 'POST /gri/commit', 'GET /gri/template',
     'GET /standards', 'GET /dashboard/stats',
     'GET /initiatives', 'POST /initiatives', 'PATCH /initiatives/:id',
@@ -264,7 +271,7 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 101 business flips + 8 s
     'DELETE /evidence/:entityType/:entityId/files/:fileId',
     'GET /initiatives/department', 'PATCH /initiatives/department/:id',
   ];
-  assert.equal(FLIPPED.length, 101);
+  assert.equal(FLIPPED.length, 105);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -316,7 +323,7 @@ test('U2-A mounted declarations are covered (routes.ts runs assertRegistryCovera
   await import('../server/routes.ts');
   // Reaching this line means assertRegistryCoverage passed against every real
   // Express router: mounted method/path set === ACCESS_REGISTRY, no duplicates.
-  assert.equal(ACCESS_REGISTRY.length, 113);
+  assert.equal(ACCESS_REGISTRY.length, 117);
 });
 
 // ---------------------------------------------------------------------------
