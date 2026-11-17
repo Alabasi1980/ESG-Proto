@@ -147,12 +147,17 @@ test('U2-E E-3: client-* refuse non-client_admin, read catches are sanitized, no
   assert.equal(
     (src.match(/snapshotPayloadFullyLinked\(client, access, snapshot\.payload\)/g) ?? []).length, 2,
     'GET /:id and POST /:id/notes share the identical full-visibility gate');
-  // Ruling 1(b): the GRI-commit freeze recheck must come AFTER the lock line.
+  // Ruling 1(b) SUPERSEDED by TASK-PROTO-U4-2-FIX P3: the import commit is
+  // service-scoped catalog-only (no tenant), so the BF-01 tenant advisory
+  // lock and the tenant-keyed freeze recheck are BOTH gone from this path
+  // (spec API-2 CHANGE, INV-IMPORT-SAFE — no freeze scope is determinable
+  // without a tenant). Tenant freeze enforcement stays where the tenant
+  // exists (evaluations ge-final lock above + answers paths).
   const gri = fs.readFileSync(path.join(ROUTES_DIR, 'gri.ts'), 'utf8');
-  const lockAt = gri.indexOf('pg_advisory_xact_lock(hashtextextended($1,1717005))');
-  const recheckAt = gri.indexOf("SELECT is_scope_frozen($1) AS frozen", lockAt);
-  assert.ok(lockAt > 0, 'gri.ts takes the BF-01 lock');
-  assert.ok(recheckAt > lockAt, 'the freeze recheck must run INSIDE (after) the lock, not before it');
+  assert.ok(!gri.includes('pg_advisory_xact_lock(hashtextextended($1,1717005))'),
+    'gri.ts takes no BF-01 tenant lock on the service-scoped import path');
+  assert.ok(!gri.includes('SELECT is_scope_frozen($1) AS frozen'),
+    'no tenant-keyed freeze query on the catalog import path');
 });
 
 // U2-F round 1 (task §3(3)): E3-02 write-catch masking folded from U2-E Shield.

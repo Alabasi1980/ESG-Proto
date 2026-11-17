@@ -120,7 +120,16 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
   ], true),
   ...group('gri', [
     'POST /gri/preview|P#authenticate-before-upload-parser',
-    'POST /gri/commit|P@T#explicit-target-plus-linked-serviceId-no-implicit-service-grant',
+    // TASK-PROTO-U4-2-FIX P3: service-scoped import (no client). Canonical
+    // /import/* paths + per-service template; the /gri/* aliases stay one
+    // release. The commit matrix moves P@T→P on BOTH the canonical row and
+    // the alias: the handler is catalog-only under the targetless
+    // platform.config context (audit IMPORT_CATALOG_COMMITTED, NULL tenant);
+    // no tenant is named, read, or written on this path.
+    'POST /import/preview|P#service-scoped-catalog-preview-no-client',
+    'POST /import/commit|P#service-scoped-catalog-commit-no-client',
+    'POST /gri/commit|P#service-scoped-catalog-commit-alias-no-client',
+    'GET /services/:id/import/template|P#per-service-import-template',
     'GET /gri/template|P#fetch-with-auth-tab-then-download',
     'GET /standards|P#catalog;W:L;C:L;E:L+D#content-metadata-remove-optional-auth',
     'GET /dashboard/stats|W:L+V;C:L+V#no-P-E-or-anonymous-global-dashboard',

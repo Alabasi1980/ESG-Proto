@@ -51,6 +51,47 @@ export interface GRIParseResult {
   };
   warnings: string[];
   errors: string[];
+  /**
+   * TASK-PROTO-U4-2-FIX P3 — column-mapping contract (UI-2 import UX needs):
+   * file headers that matched no known column and were NOT consumed by the
+   * caller-supplied columnMapping. Reported, never silently dropped.
+   * Always present (empty when every header mapped).
+   */
+  unmappedColumns: string[];
+  /**
+   * Row-level errors: `{ row, column, code, message }` with the 1-indexed
+   * spreadsheet row number (header is row 1). Rows carrying these errors are
+   * still returned (with parser defaults applied) so preview can show them;
+   * commit refuses the payload (400 + these errors) and writes nothing.
+   * Always present (empty when the sheet is clean).
+   */
+  rowErrors: ImportRowError[];
+}
+
+/** P3 row-level import error: row number + column + code + message. */
+export interface ImportRowError {
+  /** 1-indexed spreadsheet row number (header is row 1). */
+  row: number;
+  /** Canonical column key the error belongs to (e.g. 'requirement'). */
+  column: string;
+  /** Stable machine code (e.g. 'import.missing_requirement'). */
+  code: string;
+  /** Human message (includes the row number). */
+  message: string;
+}
+
+/**
+ * P3 caller-supplied column mapping: canonical column key -> source file
+ * header (both matched after the same normalization as built-in headers).
+ * Example: `{ requirement: 'My Req Col' }` reads the requirement text from
+ * the file column titled 'My Req Col'. Unknown mapping targets are ignored
+ * (the source header is then reported in `unmappedColumns`, never silent).
+ */
+export type ImportColumnMapping = Record<string, string>;
+
+/** Options for {@link parseGRIFile} (all optional, backward compatible). */
+export interface GRIParseOptions {
+  columnMapping?: ImportColumnMapping;
 }
 
 /**
@@ -101,11 +142,73 @@ function inferAnswerType(val?: string): 'text' | 'number' | 'boolean' | 'date' |
 }
 
 /**
- * Parses buffer or string containing .xlsx, .xls, or .csv into normalized GRI standards, disclosures and items.
+ * Every normalized header key the parser understands (built-in synonyms).
+ * A file header whose normalized form is absent here — and which is not
+ * consumed by the caller-supplied columnMapping — is reported in
+ * `unmappedColumns`, never silently dropped (P3 mapping contract).
  */
-export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRIParseResult {
+const KNOWN_HEADER_KEYS: ReadonlySet<string> = new Set([
+  'standardcode', 'standard', 'girstandard', 'gristandard', 'stdcode',
+  'standardtitle', 'standardname', 'stdname',
+  'category', 'standardcategory', 'pillar',
+  'disclosurecode', 'disclosure', 'gridisclosure', 'disc',
+  'disclosuretitle', 'disclosurename', 'disctitle',
+  'disclosuredescription', 'description', 'guidance',
+  'itemcode', 'code', 'requirementcode', 'subitem',
+  'requirement', 'requirementtext', 'item', 'text', 'question',
+  'version', 'weight', 'priority', 'esgclass', 'esg', 'answertype', 'type', 'hint',
+  'department', 'dept', 'ownerdepartment', 'responsibledepartment', 'departmentname',
+  'objective', 'goal', 'topic', 'theme', 'reference', 'ref', 'source', 'sourcereference',
+  'baselinenote', 'gapnote', 'ofgap', 'gappercent', 'gap', 'baselinegap', 'baselinegappercent',
+  'sortorder', 'order', 'sequence', 'roworder',
+]);
+
+/**
+ * Resolves the effective normalized key for each raw file header under an
+ * optional caller mapping (canonical -> source header). Returns the headers
+ * no known column consumes (original spelling, sheet order, deduped).
+ */
+export function resolveUnmappedColumns(
+  rawHeaders: string[],
+  columnMapping?: ImportColumnMapping,
+): string[] {
+  const reverse = new Map<string, string>();
+  if (columnMapping && typeof columnMapping === 'object') {
+    for (const [canonical, source] of Object.entries(columnMapping)) {
+      if (typeof canonical === 'string' && typeof source === 'string' && source.trim()) {
+        reverse.set(normalizeKey(source), normalizeKey(canonical));
+      }
+    }
+  }
+  const unmapped: string[] = [];
+  const seen = new Set<string>();
+  for (const header of rawHeaders) {
+    const effective = reverse.get(normalizeKey(header)) ?? normalizeKey(header);
+    if (!KNOWN_HEADER_KEYS.has(effective) && !seen.has(header)) {
+      seen.add(header);
+      unmapped.push(header);
+    }
+  }
+  return unmapped;
+}
+
+/**
+ * Parses buffer or string containing .xlsx, .xls, or .csv into normalized GRI standards, disclosures and items.
+ * Optional `options.columnMapping` (canonical -> file header) renames source
+ * columns before inference; unconsumed headers land in `unmappedColumns`.
+ */
+export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string, options?: GRIParseOptions): GRIParseResult {
   const warnings: string[] = [];
   const errors: string[] = [];
+  const rowErrors: ImportRowError[] = [];
+  const empty: GRIParseResult = {
+    standards: [],
+    summary: { totalStandards: 0, totalDisclosures: 0, totalItems: 0 },
+    warnings: [],
+    errors: [],
+    unmappedColumns: [],
+    rowErrors: [],
+  };
 
   let workbook: XLSX.WorkBook;
   try {
@@ -119,9 +222,7 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
     }
   } catch (err: any) {
     return {
-      standards: [],
-      summary: { totalStandards: 0, totalDisclosures: 0, totalItems: 0 },
-      warnings: [],
+      ...empty,
       errors: [`Failed to parse file: ${err.message || 'Corrupt spreadsheet or CSV'}`],
     };
   }
@@ -129,9 +230,7 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
     return {
-      standards: [],
-      summary: { totalStandards: 0, totalDisclosures: 0, totalItems: 0 },
-      warnings: [],
+      ...empty,
       errors: ['Spreadsheet contains no sheets'],
     };
   }
@@ -145,12 +244,24 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
 
   if (rawRows.length === 0) {
     return {
-      standards: [],
-      summary: { totalStandards: 0, totalDisclosures: 0, totalItems: 0 },
+      ...empty,
       warnings: ['Spreadsheet sheet is empty'],
-      errors: [],
     };
   }
+
+  // P3 mapping contract: report unconsumed headers, never silently drop.
+  // The mapping renames source headers to canonical keys before inference.
+  const mappingReverse = new Map<string, string>();
+  const mapping = options?.columnMapping;
+  if (mapping && typeof mapping === 'object' && !Array.isArray(mapping)) {
+    for (const [canonical, source] of Object.entries(mapping)) {
+      if (typeof canonical === 'string' && typeof source === 'string' && source.trim()) {
+        mappingReverse.set(normalizeKey(source), normalizeKey(canonical));
+      }
+    }
+  }
+  const rawHeaders = rawRows.length > 0 ? Object.keys(rawRows[0] as Record<string, unknown>) : [];
+  const unmappedColumns = resolveUnmappedColumns(rawHeaders, mapping);
 
   const standardsMap = new Map<string, ParsedGRIStandard>();
   const disclosuresMap = new Map<string, ParsedGRIDisclosure>();
@@ -159,7 +270,11 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
     const rowNum = idx + 2; // spreadsheet 1-indexed header is row 1
     const normalized: Record<string, string> = {};
     for (const [k, v] of Object.entries(row)) {
-      normalized[normalizeKey(k)] = String(v).trim();
+      const rawKey = normalizeKey(k);
+      const effectiveKey = mappingReverse.get(rawKey) ?? rawKey;
+      // A mapped source header renames to its canonical key; an unknown
+      // mapping target keeps its own key (surfaced via unmappedColumns).
+      normalized[effectiveKey] = String(v).trim();
     }
 
     // Identify standard code
@@ -206,11 +321,14 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
       '';
 
     // Identify item code & requirement
-    const itemCode =
+    const explicitItemCode =
       normalized['itemcode'] ||
       normalized['code'] ||
       normalized['requirementcode'] ||
       normalized['subitem'] ||
+      '';
+    const itemCode =
+      explicitItemCode ||
       (disclosureCode ? `${disclosureCode}-req-${idx + 1}` : `item-${idx + 1}`);
 
     const requirement =
@@ -220,6 +338,26 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
       normalized['text'] ||
       normalized['question'] ||
       '';
+
+    // P3 row-level errors (row number + column + code + message). The row is
+    // still parsed with defaults so preview can display it; commit refuses
+    // payloads carrying these errors and writes nothing.
+    if (!explicitItemCode) {
+      rowErrors.push({
+        row: rowNum,
+        column: 'itemCode',
+        code: 'import.missing_item_code',
+        message: `Row ${rowNum}: item code is missing (column 'Item Code'); a placeholder '${itemCode}' was assumed for preview only.`,
+      });
+    }
+    if (!requirement) {
+      rowErrors.push({
+        row: rowNum,
+        column: 'requirement',
+        code: 'import.missing_requirement',
+        message: `Row ${rowNum}: requirement text is missing (column 'Requirement').`,
+      });
+    }
 
     if (!standardCode && !disclosureCode && !requirement) {
       // blank row
@@ -359,5 +497,7 @@ export function parseGRIFile(bufferOrString: Buffer | ArrayBuffer | string): GRI
     },
     warnings,
     errors,
+    unmappedColumns,
+    rowErrors,
   };
 }

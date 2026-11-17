@@ -66,7 +66,12 @@ const EXPECTED: Record<string, string> = {
   'POST /items/bulk': 'P#catalog',
   'DELETE /services/:id': 'P#global-service-configuration',
   'POST /gri/preview': 'P#authenticate-before-upload-parser',
-  'POST /gri/commit': 'P@T#explicit-target-plus-linked-serviceId-no-implicit-service-grant',
+  // TASK-PROTO-U4-2-FIX P3: service-scoped import (no client); the commit
+  // matrix moves P@T→P on canonical and alias (targetless platform.config).
+  'POST /import/preview': 'P#service-scoped-catalog-preview-no-client',
+  'POST /import/commit': 'P#service-scoped-catalog-commit-no-client',
+  'POST /gri/commit': 'P#service-scoped-catalog-commit-alias-no-client',
+  'GET /services/:id/import/template': 'P#per-service-import-template',
   'GET /gri/template': 'P#fetch-with-auth-tab-then-download',
   'GET /standards': 'P#catalog;W:L;C:L;E:L+D#content-metadata-remove-optional-auth',
   'GET /dashboard/stats': 'W:L+V;C:L+V#no-P-E-or-anonymous-global-dashboard',
@@ -203,10 +208,10 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-F final activation split: 0 UNACTIVATED; exact 105 business flips + 8 system/session + 4 workspace', () => {
-  assert.equal(LEGACY_ROUTES.length, 113);
+test('U2-F final activation split: 0 UNACTIVATED; exact 108 business flips + 8 system/session + 4 workspace', () => {
+  assert.equal(LEGACY_ROUTES.length, 116);
   assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 0);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 113);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 116);
   assert.equal(WORKSPACE_ROUTES.length, 4);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
   // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F round-1 + 3
@@ -231,6 +236,10 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 105 business flips + 8 s
     'POST /items/:id/links', 'DELETE /items/:id/links', 'GET /items/:id/links',
     // TASK-PROTO-U4-2-FIX P2: the four P-only catalog rows (create/bulk + service removal).
     'POST /standards', 'POST /disclosures', 'POST /items/bulk', 'DELETE /services/:id',
+    // TASK-PROTO-U4-2-FIX P3: the three P-only service-scoped import rows
+    // (canonical preview/commit + per-service template; the /gri/* aliases
+    // were already flipped and stay flipped).
+    'POST /import/preview', 'POST /import/commit', 'GET /services/:id/import/template',
     'POST /gri/preview', 'POST /gri/commit', 'GET /gri/template',
     'GET /standards', 'GET /dashboard/stats',
     'GET /initiatives', 'POST /initiatives', 'PATCH /initiatives/:id',
@@ -271,7 +280,7 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 105 business flips + 8 s
     'DELETE /evidence/:entityType/:entityId/files/:fileId',
     'GET /initiatives/department', 'PATCH /initiatives/department/:id',
   ];
-  assert.equal(FLIPPED.length, 105);
+  assert.equal(FLIPPED.length, 108);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -323,7 +332,7 @@ test('U2-A mounted declarations are covered (routes.ts runs assertRegistryCovera
   await import('../server/routes.ts');
   // Reaching this line means assertRegistryCoverage passed against every real
   // Express router: mounted method/path set === ACCESS_REGISTRY, no duplicates.
-  assert.equal(ACCESS_REGISTRY.length, 117);
+  assert.equal(ACCESS_REGISTRY.length, 120);
 });
 
 // ---------------------------------------------------------------------------
