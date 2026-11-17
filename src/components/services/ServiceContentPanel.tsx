@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, Link2, Pencil, Plus, Save, Search, Unlink, Users, X } from 'lucide-react';
 import { useLanguage } from '../../i18n/LanguageContext.tsx';
 import type { ServiceRow, ServiceStandardRef } from './ServiceRail.tsx';
@@ -57,9 +57,9 @@ const inputCls = `w-full ${FIELD_CLS}`;
 const secondaryBtn =
   'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-surface-2 border border-border-strong text-text hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-focus-ring/30';
 const primaryBtn = 'px-3 py-2 rounded-xl text-[11px] font-bold bg-brand text-brand-ink hover:bg-brand-strong disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-focus-ring/40';
-const rowCls = 'flex items-start gap-2 p-2.5 rounded-xl bg-surface-3 border border-border';
 const rowBtn = 'min-w-0 flex-1 text-start rounded-lg focus:outline-none focus:ring-2 focus:ring-focus-ring/30';
 const codeChip = 'text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-surface-2 border border-border-strong text-muted';
+
 interface ContentPanelProps {
   service: ServiceRow;
   nodes: StandardNode[];
@@ -93,6 +93,8 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   const [standardToLink, setStandardToLink] = useState('');
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
   // The drill resets when the rail selects another service (no stale ids).
   useEffect(() => {
     setQuery(''); setOpenStandardId(null); setOpenDisclosureId(null); setSelectedItemId(null);
@@ -103,10 +105,8 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
   const disclosure = standard?.disclosures.find((node) => node.id === openDisclosureId) ?? null;
   const level: 'standards' | 'disclosures' | 'items' = disclosure ? 'items' : standard ? 'disclosures' : 'standards';
   const visibleStandards = useMemo(() => filterStandardNodes(nodes, level === 'standards' ? query : ''), [nodes, query, level]);
-  const visibleDisclosures = useMemo(
-    () => (standard ? standard.disclosures.filter((d) => matches(query, d.code, d.title)) : []), [standard, query]);
-  const visibleItems = useMemo(
-    () => (disclosure ? disclosure.items.filter((i) => matches(query, i.code, i.requirement)) : []), [disclosure, query]);
+  const visibleDisclosures = useMemo(() => (standard ? standard.disclosures.filter((d) => matches(query, d.code, d.title)) : []), [standard, query]);
+  const visibleItems = useMemo(() => (disclosure ? disclosure.items.filter((i) => matches(query, i.code, i.requirement)) : []), [disclosure, query]);
   const selectedItem = disclosure?.items.find((item) => item.id === selectedItemId) ?? null;
   const linkable = catalogue.filter((ref) => !service.standards.some((ref2) => ref2.id === ref.id));
   // The editor always starts from the persisted row (never a stale draft).
@@ -118,33 +118,49 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
     } : null);
   }, [selectedItemId, selectedItem]);
   const dirty = Boolean(selectedItem && draft && draftIsDirty(selectedItem, draft));
+  const panelMounted = Boolean(selectedItemId && selectedItem && draft);
   /** P2-07: leaving the editor with pending edits asks first; the draft never
    * disappears silently. */
   const leaveEditor = (): boolean => !dirty || window.confirm(s.discardDraft);
   const closePanel = () => { if (leaveEditor()) setSelectedItemId(null); };
   const openItem = (id: string) => {
     if (id === selectedItemId || !leaveEditor()) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
     setAddOpen(false); setSelectedItemId(id);
   };
   const goLevel = (apply: () => void) => { if (leaveEditor()) apply(); };
-  // P1-02: below xl the panel is a drawer — Escape must close it like a sheet.
+  // P1-02: below 2xl the panel is a modal dialog — focus moves in after the
+  // editor is actually committed, Tab is trapped, Escape closes, and focus
+  // returns to the row that opened it.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!selectedItemId) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closePanel(); };
+    if (!panelMounted) {
+      wasOpen.current = false;
+      if (!selectedItemId && triggerRef.current) { triggerRef.current.focus(); triggerRef.current = null; }
+      return;
+    }
+    const focusables = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>(
+      'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])') ?? []).filter((el) => !el.hasAttribute('disabled'));
+    if (!wasOpen.current) { wasOpen.current = true; focusables()[0]?.focus(); }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { closePanel(); return; }
+      if (event.key !== 'Tab' || !window.matchMedia('(max-width: 1535.98px)').matches) return;
+      const list = focusables(); if (!list.length) return;
+      const first = list[0]; const last = list[list.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
     window.addEventListener('keydown', onKey);
-    document.getElementById('svc-item-panel')?.focus();
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedItemId, dirty]);
+  }, [panelMounted, selectedItemId, dirty]);
   const run = async (action: () => Promise<boolean>) => {
     setNotice(null);
     const ok = await action();
     setNotice({ ok, text: ok ? t.common.success : s.actionFailed });
     return ok;
   };
-  const answerLabel = (value: string) =>
-    (ANSWER_TYPES as readonly string[]).includes(value) ? t.common[value as (typeof ANSWER_TYPES)[number]] : value;
-  const crumbCls = (active: boolean) =>
-    `px-2 py-1 rounded-lg font-bold ${active ? 'bg-surface-3 text-text' : 'text-muted hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-focus-ring/30'}`;
+  const answerLabel = (value: string) => (ANSWER_TYPES as readonly string[]).includes(value) ? t.common[value as (typeof ANSWER_TYPES)[number]] : value;
+  const crumbCls = (active: boolean) => `px-2 py-1 rounded-lg font-bold ${active ? 'bg-surface-3 text-text' : 'text-muted hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-focus-ring/30'}`;
   const levelTitle = level === 'standards' ? s.levelStandards : level === 'disclosures' ? s.levelDisclosures : s.levelItems;
   const levelCount = level === 'standards' ? nodes.length : level === 'disclosures' ? (standard?.disclosures.length ?? 0) : (disclosure?.items.length ?? 0);
   const emptyBox = (title: string, hint: string, action?: React.ReactNode, note?: string) => (
@@ -152,8 +168,7 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
       <p className="text-xs font-bold text-text">{title}</p>
       <p className="text-[11px] text-muted">{hint}</p>
       {note && <p className="text-[10px] text-muted">{note}</p>}
-      {action && <div className="flex justify-center">{action}</div>}
-    </div>
+      {action && <div className="flex justify-center">{action}</div>}</div>
   );
   const saveDraft = async () => {
     if (!selectedItemId || !draft) return;
@@ -163,20 +178,15 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
   const submitNewItem = async () => {
     if (!disclosure) return;
     if (!newItem.code.trim() || !newItem.requirement.trim()) { setNotice({ ok: false, text: s.fieldRequired }); return; }
-    if (await run(() => onCreateItem(disclosure.id, newItem))) {
-      setNewItem({ code: '', requirement: '', answerType: 'text', priority: 'mid' });
-      setAddOpen(false);
-    }
+    if (await run(() => onCreateItem(disclosure.id, newItem))) { setNewItem({ code: '', requirement: '', answerType: 'text', priority: 'mid' }); setAddOpen(false); }
   };
   const pickClient = async (clientId: string) => {
-    setAssignClientId(clientId);
-    setAssignDepartmentId('');
+    setAssignClientId(clientId); setAssignDepartmentId('');
     setDepartments(clientId ? await onLoadDepartments(clientId) : []);
   };
   const bulkAssign = async () => {
     if (!assignClientId || !assignDepartmentId || checked.length === 0) return;
-    const count = await onAssign(assignClientId, assignDepartmentId, checked);
-    setChecked([]);
+    const count = await onAssign(assignClientId, assignDepartmentId, checked); setChecked([]);
     setNotice(count > 0 ? { ok: true, text: s.bulkDone.replace('{n}', String(count)) } : { ok: false, text: s.actionFailed });
   };
   // P2-14: unlinking removes content scope from the service and asks first.
@@ -260,21 +270,17 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
           </div>
         </div>
       )}
-      <div className={`grid grid-cols-1 gap-3 items-start ${selectedItem ? 'xl:grid-cols-[minmax(0,1fr)_380px]' : ''}`}>
+      <div className={`grid grid-cols-1 gap-3 items-start ${selectedItem ? '2xl:grid-cols-[minmax(0,1fr)_380px]' : ''}`}>
         <div className="space-y-2">
           {level === 'standards' && visibleStandards.length === 0 &&
             emptyBox(query.trim() ? s.emptySearch : s.noStandards, s.noStandardsHint,
               !query.trim() && linkable.length > 0 ? <button type="button" className={primaryBtn} onClick={() => setLinkPickerOpen(true)}>{s.addStandard}</button> : undefined)}
           {level === 'standards' && visibleStandards.map((node) => (
-            <div key={node.id} className={rowCls}>
+            <div key={node.id} className="flex items-start gap-2 p-2.5 rounded-xl bg-surface-3 border border-border">
               <button type="button" onClick={() => { setOpenStandardId(node.id); setQuery(''); }} className={rowBtn}>
-                <span className="flex flex-wrap items-center gap-2">
-                  <span dir="ltr" className={codeChip}>{node.code}</span>
-                  <span className="text-xs font-bold text-text break-words">{node.title}</span>
-                </span>
+                <span className="flex flex-wrap items-center gap-2"><span dir="ltr" className={codeChip}>{node.code}</span><span className="text-xs font-bold text-text break-words">{node.title}</span></span>
                 <span className="block mt-1 text-[10px] text-muted">
-                  {s.levelDisclosures} <span dir="ltr">{node.disclosures.length}</span>{' · '}
-                  {s.levelItems} <span dir="ltr">{node.disclosures.reduce((sum, d) => sum + d.items.length, 0)}</span>
+                  {s.levelDisclosures} <span dir="ltr">{node.disclosures.length}</span>{' · '}{s.levelItems} <span dir="ltr">{node.disclosures.reduce((sum, d) => sum + d.items.length, 0)}</span>
                 </span>
               </button>
               <button type="button" title={t.services.unlinkButton} aria-label={`${t.services.unlinkButton}: ${node.code}`} onClick={() => void unlink(node.id, node.code)}
@@ -301,7 +307,7 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
           {level === 'items' && visibleItems.map((item) => {
             const open = item.id === selectedItemId;
             return (
-              <div key={item.id} className={`${rowCls} ${open ? 'border-brand bg-brand-soft' : ''}`}>
+              <div key={item.id} className={`flex items-start gap-2 p-2.5 rounded-xl border ${open ? 'border-brand bg-brand-soft' : 'border-border bg-surface-3'}`}>
                 <input type="checkbox" checked={checked.includes(item.id)} aria-label={item.code}
                   onChange={() => setChecked(checked.includes(item.id) ? checked.filter((id) => id !== item.id) : [...checked, item.id])}
                   className="mt-1 w-3.5 h-3.5 accent-brand focus:outline-none focus:ring-2 focus:ring-focus-ring/40" />
@@ -331,13 +337,11 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
               {clients.length === 0 ? <p className="text-[11px] text-muted">{s.bulkNoClients}</p> : (
                 <div className="flex flex-wrap items-end gap-2">
                   <select value={assignClientId} onChange={(e) => void pickClient(e.target.value)} aria-label={s.bulkClient} className={`${FIELD_CLS} flex-1 min-w-40`}>
-                    <option value="">{s.bulkClient}</option>
-                    {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                    <option value="">{s.bulkClient}</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
                   </select>
                   <select value={assignDepartmentId} onChange={(e) => setAssignDepartmentId(e.target.value)} aria-label={s.bulkDepartment}
                     disabled={!assignClientId} className={`${FIELD_CLS} flex-1 min-w-40 disabled:opacity-50`}>
-                    <option value="">{s.bulkDepartment}</option>
-                    {departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
+                    <option value="">{s.bulkDepartment}</option>{departments.map((dept) => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
                   </select>
                   <button type="button" disabled={!assignDepartmentId || busy} onClick={() => void bulkAssign()} className={primaryBtn}>{s.bulkAssign}</button>
                 </div>
@@ -347,24 +351,21 @@ export const ServiceContentPanel: React.FC<ContentPanelProps> = ({
         </div>
         {selectedItem && draft && (
           <>
-            <div className="xl:hidden fixed inset-0 z-40 bg-black/50" aria-hidden="true" onClick={closePanel} />
-            <aside id="svc-item-panel" tabIndex={-1} aria-label={s.itemDetail}
-              className="fixed inset-y-0 end-0 z-50 w-full max-w-md overflow-y-auto bg-surface-2 border-s border-border p-4 space-y-2 shadow-[var(--shadow)] focus:outline-none xl:static xl:z-auto xl:w-auto xl:max-w-none xl:overflow-visible xl:rounded-2xl xl:border xl:border-border xl:p-3 xl:sticky xl:top-0">
+            <div className="2xl:hidden fixed inset-0 z-40 bg-black/50" aria-hidden="true" onClick={closePanel} />
+            <aside id="svc-item-panel" ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`${s.itemDetail}: ${selectedItem.code}`}
+              className="fixed inset-y-0 end-0 z-50 w-full max-w-md overflow-y-auto bg-surface-2 border-s border-border p-4 space-y-2 shadow-[var(--shadow)] focus:outline-none 2xl:static 2xl:z-auto 2xl:w-auto 2xl:max-w-none 2xl:overflow-visible 2xl:rounded-2xl 2xl:border 2xl:border-border 2xl:p-3 2xl:sticky 2xl:top-0">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-text">{s.itemDetail}</h4>
-                  <p dir="ltr" className="text-[10px] font-extrabold text-info break-all">{selectedItem.code}</p>
-                </div>
+                <div className="min-w-0"><h4 className="text-xs font-bold text-text">{s.itemDetail}</h4>
+                  <p dir="ltr" className="text-[10px] font-extrabold text-info break-all">{selectedItem.code}</p></div>
                 <div className="flex items-center gap-2">
                   {dirty && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-warning-soft text-warning-text">{s.dirtyDraft}</span>}
-                  <button type="button" onClick={closePanel} aria-label={t.common.close}
-                    className="p-1 rounded-lg text-muted hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-focus-ring/30"><X className="w-3.5 h-3.5" /></button>
+                  <button type="button" onClick={closePanel} aria-label={t.common.close} className="p-1 rounded-lg text-muted hover:bg-surface-3 focus:outline-none focus:ring-2 focus:ring-focus-ring/30"><X className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
               <label className="block text-[10px] font-semibold text-text">{s.itemRequirement}
                 <textarea value={draft.requirement ?? ''} onChange={(e) => setDraft({ ...draft, requirement: e.target.value })} rows={5} dir="auto" className={`${inputCls} mt-1`} /></label>
               <label className="block text-[10px] font-semibold text-text">{s.itemHint}
-                <textarea value={draft.hint ?? ''} onChange={(e) => setDraft({ ...draft, hint: e.target.value })} rows={2} dir="auto" className={`${inputCls} mt-1`} /></label>
+                <textarea value={draft.hint ?? ''} onChange={(e) => setDraft({ ...draft, hint: e.target.value })} rows={3} dir="auto" className={`${inputCls} mt-1`} /></label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block text-[10px] font-semibold text-text">{s.itemAnswerType}
                   <select value={draft.answerType ?? 'text'} onChange={(e) => setDraft({ ...draft, answerType: e.target.value })} className={`${inputCls} mt-1`}>

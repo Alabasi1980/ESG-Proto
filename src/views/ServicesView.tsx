@@ -282,8 +282,8 @@ export const ServicesView: React.FC = () => {
           <h2 className="text-xs font-bold text-text">{s.definition}</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
             <div className="min-w-0"><dt className="text-muted font-semibold">{t.services.codeLabel}</dt><dd className="font-bold text-text break-all"><bdi dir="ltr">{service?.code}</bdi></dd></div>
-            <div className="min-w-0"><dt className="text-muted font-semibold">{t.services.nameLabel}</dt><dd className="font-bold text-text break-words" dir="auto">{service?.name}</dd></div>
-            <div className="sm:col-span-2 min-w-0"><dt className="text-muted font-semibold">{t.services.descLabel}</dt><dd className="text-text break-words" dir="auto">{service?.description || s.descriptionEmpty}</dd></div>
+            <div className="min-w-0"><dt className="text-muted font-semibold">{t.services.nameLabel}</dt><dd className="font-bold text-text break-words"><bdi dir="ltr">{service?.name}</bdi></dd></div>
+            <div className="sm:col-span-2 min-w-0"><dt className="text-muted font-semibold">{t.services.descLabel}</dt><dd className="text-text break-words"><bdi dir="ltr">{service?.description || s.descriptionEmpty}</bdi></dd></div>
             {service?.created_at && (
               <div className="min-w-0"><dt className="text-muted font-semibold">{s.created}</dt><dd className="text-text"><bdi dir="ltr">{new Date(service.created_at).toLocaleDateString()}</bdi></dd></div>
             )}

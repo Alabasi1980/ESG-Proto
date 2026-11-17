@@ -152,8 +152,11 @@ test('U4-2 R2 layout pins: sticky without a clipping ancestor, drawer panel, rea
   assert.match(view, /\$\{FIELD_CLS\} w-48/);
   assert.match(view, /\$\{FIELD_CLS\} w-32/);
   assert.match(view, /max-h-96/);
-  // P1-05: LTR values are isolated inside an RTL cell.
+  // P1-05: the value cell stays RTL; code/date isolate LTR, localized text is
+  // isolated by <bdi dir="ltr"> so a name can never flip the cell direction.
   assert.match(view, /<bdi dir="ltr">/);
+  assert.match(view, /<bdi dir="ltr">\{service\?\.name\}<\/bdi>/);
+  assert.doesNotMatch(view, /break-words" dir="auto">\{service\?\.name\}/);
   // Owner instruction: services management left Settings (single workspace).
   assert.doesNotMatch(source('src/views/SettingsView.tsx'), /ServicesManage/);
   // The P subtitle follows the service identity (Header micro-fix).
@@ -164,14 +167,21 @@ test('U4-2 R2 panel pins: drawer below xl, row highlight, dirty guard, confirm-b
   const panel = source('src/components/services/ServiceContentPanel.tsx');
   // P1-02: a real drawer with a backdrop below xl; inline column from xl up.
   assert.match(panel, /fixed inset-y-0 end-0 z-50/);
-  assert.match(panel, /xl:static/);
+  assert.match(panel, /2xl:static/);
+  assert.match(panel, /2xl:hidden fixed inset-0/);
   assert.match(panel, /bg-black\/50/);
+  assert.match(panel, /role="dialog" aria-modal="true"/);
+  assert.match(panel, /focusables\(\)\[0\]\?\.focus\(\)/);
+  assert.match(panel, /triggerRef\.current\.focus\(\)/);
+  assert.match(panel, /panelMounted = Boolean\(selectedItemId && selectedItem && draft\)/);
+  assert.match(panel, /2xl:grid-cols-\[minmax\(0,1fr\)_380px\]/);
   assert.match(panel, /addEventListener\('keydown', onKey\)/);
   // P1-02/P2-06: the open row is visibly selected and names its panel.
   assert.match(panel, /aria-controls=\{open \? 'svc-item-panel'/);
   assert.match(panel, /border-brand bg-brand-soft/);
   // P1-04: the requirement is fully readable (multi-row, auto direction).
   assert.match(panel, /rows=\{5\} dir="auto"/);
+  assert.match(panel, /rows=\{3\} dir="auto"/);
   // P2-07/P2-14/P2-15: dirty guard, unlink confirmation, pencil (not save) icon.
   assert.match(panel, /s\.discardDraft/);
   assert.match(panel, /s\.unlinkStandardConfirm\.replace\('\{code\}'/);
