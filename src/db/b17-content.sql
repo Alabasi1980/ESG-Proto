@@ -756,6 +756,18 @@ CREATE POLICY b17_selection_insert ON client_initiatives FOR INSERT WITH CHECK
 CREATE POLICY b17_selection_delete ON client_initiatives FOR DELETE USING
   (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'
    AND b17_content_fact('initiative',client_id,initiative_id));
+-- U4-1c-PROTECT round 3 (§21, owner decision §20 archive-flag): unselect and
+-- reselect archive in place via UPDATE, so the selection needs the same
+-- W-consultant scope for UPDATE that DELETE already has. WHY identical
+-- USING/WITH CHECK: the flag flip never retargets a row (client/initiative
+-- immutable here) and the check revalidates tenant/mode/linkage. Without
+-- this policy the archive UPDATE silently affects 0 rows (RLS default-deny),
+-- which is exactly the silent-failure class this unit eliminates.
+CREATE POLICY b17_selection_update ON client_initiatives FOR UPDATE USING
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'
+   AND b17_content_fact('initiative',client_id,initiative_id)) WITH CHECK
+  (b17_work_tenant(client_id) AND b17_setting('current_mode')='consultant'
+   AND b17_content_fact('initiative',client_id,initiative_id));
 
 DO $$ DECLARE t text; BEGIN
   FOREACH t IN ARRAY ARRAY['esg_profile','report_settings'] LOOP

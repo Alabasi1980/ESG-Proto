@@ -139,9 +139,11 @@ try {
   const second = await call('POST', `/api/services/${S}/documents?clientId=${A}`, pToken,
     { title: `E2E lock ${randomBytes(4).toString('hex')}` }, tabHeaders);
   assert.equal(second.status, 201, second.text);
+  // PROTECT fixture: versioned contract (0 = absent on first create).
   const submitted = await call('PATCH', `/api/requirements/${second.body.id}`, eToken,
-    { provided: true, note: 'evidence attached' });
+    { provided: true, note: 'evidence attached', expectedVersion: 0 });
   assert.equal(submitted.status, 200, `E submit: ${submitted.text}`);
+  assert.equal(submitted.body.version, 1, 'first versioned create stores revision 1');
   const countsBefore = (await oracle.query(`SELECT
     (SELECT count(*)::int FROM document_requirements) AS req,
     (SELECT count(*)::int FROM document_submissions) AS sub`)).rows[0];
@@ -173,7 +175,8 @@ try {
   assert.equal(eInit.status, 200, `E initiatives: ${eInit.text}`);
   const cList = await call('GET', `/api/requirements?clientId=${A}`, cToken);
   assert.equal(cList.status, 200, `C requirements: ${cList.text}`);
-  const cWrite = await call('PATCH', `/api/requirements/${second.body.id}`, cToken, { provided: false });
+  // PROTECT fixture: the C denial precedes version disclosure (matrix first).
+  const cWrite = await call('PATCH', `/api/requirements/${second.body.id}`, cToken, { provided: false, expectedVersion: 0 });
   assert.equal(cWrite.status, 403, `C write must be refused: ${cWrite.status} ${cWrite.text}`);
   const eForeign = await call('GET', `/api/requirements?clientId=12121212-1212-4212-8212-121212121212`, eToken);
   assert.equal(eForeign.status, 403, `E foreign tenant: ${eForeign.status} ${eForeign.text}`);

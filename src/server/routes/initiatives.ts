@@ -5,7 +5,7 @@ import { requireDomainAccess } from '../access.ts';
 import { resolveLinkedService, scopeId, scopeError } from '../scope.ts';
 import { initiativeNaturalKey } from '../../lib/initiatives.ts';
 import { requireFreshPassword, isFrozenScope } from './_shared.ts';
-import { domainTransaction, domainFailure, domainTenant, textFilter, validateDomainIds } from './initiativeScope.ts';
+import { domainTransaction, domainFailure, domainTenant, textFilter, u41cProtectLock, validateDomainIds } from './initiativeScope.ts';
 import { registerProfileRoutes } from './profileRoutes.ts';
 import type pg from 'pg';
 
@@ -65,7 +65,8 @@ router.get('/initiatives', authMiddleware, requireDomainAccess, async (req: Auth
       if (!platform && service) await resolveLinkedService(client, req.access!, service);
       const result = await client.query(`SELECT l.id,l.title,l.sector,l.department,l.esg_class,
         l.standards_ref,l.notes,l.sort_order,
-        EXISTS(SELECT 1 FROM client_initiatives ci WHERE ci.client_id=$1 AND ci.initiative_id=l.id) AS selected,
+        EXISTS(SELECT 1 FROM client_initiatives ci WHERE ci.client_id=$1 AND ci.initiative_id=l.id AND ci.archived_at IS NULL) AS selected,
+        EXISTS(SELECT 1 FROM client_initiatives ci WHERE ci.client_id=$1 AND ci.initiative_id=l.id AND ci.archived_at IS NOT NULL) AS archived,
         (SELECT ci.selected_at FROM client_initiatives ci WHERE ci.client_id=$1 AND ci.initiative_id=l.id) AS selected_at,
         ARRAY(SELECT m.service_id FROM service_initiatives m WHERE m.initiative_id=l.id ORDER BY m.service_id) AS service_ids
         FROM initiatives_library l WHERE
@@ -152,11 +153,26 @@ router.post('/initiatives/select', authMiddleware, requireFreshPassword, require
       if (service) await resolveLinkedService(client, req.access!, service);
       await eligible(client, tenant, id, service);
       if (await isFrozenScope(client, tenant)) throw scopeError(409, 'scope.frozen');
-      const link = await client.query(`INSERT INTO client_initiatives(client_id,initiative_id,selected_by)
-        VALUES($1,$2,$3) ON CONFLICT(client_id,initiative_id) DO NOTHING RETURNING id`, [tenant,id,req.access!.actorId]);
-      const alreadySelected = link.rowCount === 0;
+      // PROTECT round 3 (owner decision §20: archive-flag replaces deletion).
+      // The same canonical (tenant, library initiative) lock used by unselect/
+      // status/evidence, taken BEFORE the unique INSERT so two first-selects
+      // serialize. Revalidate after waiting (serial order, authorization and
+      // audit are preserved). An archived row is reactivated IN PLACE (same ID,
+      // history reconnects, no duplicate); only a truly absent row is INSERTed.
+      await u41cProtectLock(client, 'initiative', tenant, id);
+      await eligible(client, tenant, id, service);
+      if (await isFrozenScope(client, tenant)) throw scopeError(409, 'scope.frozen');
+      const reactivated = (await client.query(`UPDATE client_initiatives SET archived_at=NULL
+        WHERE client_id=$1 AND initiative_id=$2 AND archived_at IS NOT NULL RETURNING id`,
+      [tenant, id])).rows[0];
+      let alreadySelected = false;
+      if (!reactivated) {
+        const link = await client.query(`INSERT INTO client_initiatives(client_id,initiative_id,selected_by)
+          VALUES($1,$2,$3) ON CONFLICT(client_id,initiative_id) DO NOTHING RETURNING id`, [tenant,id,req.access!.actorId]);
+        alreadySelected = link.rowCount === 0;
+      }
       await recordAuditLog(client, { clientId:tenant,userId:req.access!.actorId,action:'INITIATIVE_SELECTED',entityType:'client_initiatives',
-        entityId:id,payload:{ initiativeId:id,targetTenant:tenant,alreadySelected } });
+        entityId:id,payload:{ initiativeId:id,targetTenant:tenant,alreadySelected,reactivated:!!reactivated } });
       return { selected:true,alreadySelected };
     });
     res.json(result);
@@ -173,13 +189,35 @@ router.delete('/initiatives/select/:id', authMiddleware, requireFreshPassword, r
       if (service) await resolveLinkedService(client, req.access!, service);
       await eligible(client, tenant, id, service);
       if (await isFrozenScope(client, tenant)) throw scopeError(409, 'scope.frozen');
-      if (!(await client.query('DELETE FROM client_initiatives WHERE client_id=$1 AND initiative_id=$2', [tenant,id])).rowCount)
-        throw scopeError(404, 'scope.not_found');
+      // PROTECT round 3 (owner decision §20): unselect ARCHIVES — it is always
+      // permitted for authorized W and never deletes. The flag preserves every
+      // status/evidence row linked to the SAME selection ID; the anchor (same
+      // key as POST select) still serializes select/unselect races and the
+      // reselect window; scope is revalidated after waiting. The RESTRICT FK
+      // refuses hard row deletion only when linked records exist (proven at
+      // SQL level in the scratch harness; the API never issues that DELETE).
+      await u41cProtectLock(client, 'initiative', tenant, id);
+      await eligible(client, tenant, id, service);
+      if (await isFrozenScope(client, tenant)) throw scopeError(409, 'scope.frozen');
+      const archived = (await client.query(`UPDATE client_initiatives SET archived_at=NOW()
+        WHERE client_id=$1 AND initiative_id=$2 AND archived_at IS NULL RETURNING id`,
+      [tenant, id])).rows[0];
+      if (!archived) {
+        const existing = (await client.query('SELECT id FROM client_initiatives WHERE client_id=$1 AND initiative_id=$2',
+          [tenant, id])).rows[0];
+        if (!existing) throw scopeError(404, 'scope.not_found');
+        // WHY no audit here: already archived is an idempotent repeat — no
+        // state changed, so there is nothing to record. The serial order
+        // (never-selected 404 vs archived 200) is preserved.
+        return;
+      }
       await recordAuditLog(client, { clientId:tenant,userId:req.access!.actorId,action:'INITIATIVE_UNSELECTED',entityType:'client_initiatives',
         entityId:id,payload:{ initiativeId:id,targetTenant:tenant } });
     });
     res.json({ selected:false });
-  } catch (err) { domainFailure(res, err, 'Failed to unselect initiative'); }
+  } catch (err: any) {
+    domainFailure(res, err, 'Failed to unselect initiative');
+  }
 });
 
 registerProfileRoutes(router);

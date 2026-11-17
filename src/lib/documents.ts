@@ -152,12 +152,34 @@ export interface SubmissionPatch {
   tag?: string | null;
 }
 
-/** PATCH /requirements/:id — provided/note/tag only (OD-12 §3). */
+/** PROTECT revision bound: PG-integer optimistic revisions, 0 = absent. */
+export const MAX_EXPECTED_VERSION = 2147483647;
+
+/** Shape-only check for the shared expectedVersion input (authoritative
+ * mismatch handling lives in the route, after the anchor + scoped reread). */
+export function validateExpectedVersionInput(raw: unknown): Accepted<number> | Refusal {
+  if (raw === undefined || raw === null || raw === '') {
+    return refuse('version.required', 'A version is required to save (optimistic locking). Reload the item and retry.');
+  }
+  const numeric = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > MAX_EXPECTED_VERSION) {
+    return refuse('version.required', 'A version is required to save (optimistic locking). Reload the item and retry.');
+  }
+  return { ok: true, value: numeric };
+}
+
+/** PATCH /requirements/:id — provided/note/tag only (OD-12 §3). `expectedVersion`
+ * is accepted as the optimistic-revision carrier (validated separately) and is
+ * never treated as a patch field. */
 export function validateSubmissionPatch(body: Record<string, any>): Accepted<SubmissionPatch> | Refusal {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return refuse('documents.invalid', 'A JSON object body is required.');
-  const allowed = new Set(['provided', 'note', 'tag']);
+  const allowed = new Set(['provided', 'note', 'tag', 'expectedVersion']);
   for (const key of Object.keys(body)) {
     if (!allowed.has(key)) return refuse('documents.field_refused', `Only provided, note and tag may be updated (refused: ${key}).`);
+  }
+  if (body.expectedVersion !== undefined) {
+    const checked = validateExpectedVersionInput(body.expectedVersion);
+    if (!checked.ok) return checked;
   }
   const value: SubmissionPatch = {};
   if (body.provided !== undefined) {

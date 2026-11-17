@@ -13,14 +13,32 @@ export interface InitiativeStatusPatch {
 
 export type InitiativeRefusal = { ok: false; status: 400; code: string; error: string };
 
-/** performed / note only — the department never edits the initiative itself. */
+/** PROTECT revision bound shared with documents (PG integer, 0 = absent). */
+export const MAX_INITIATIVE_EXPECTED_VERSION = 2147483647;
+
+const versionRefusal = (): InitiativeRefusal => ({
+  ok: false, status: 400, code: 'version.required',
+  error: 'A version is required to save (optimistic locking). Reload the item and retry.',
+});
+
+/** performed / note only — the department never edits the initiative itself.
+ * `expectedVersion` is the optimistic-revision carrier (shape-checked here;
+ * mismatch handling lives in the route after the anchor + scoped reread). */
 export function validateInitiativeStatusPatch(
   body: Record<string, any>,
 ): { ok: true; value: InitiativeStatusPatch } | InitiativeRefusal {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, status: 400, code: 'initiatives.invalid', error: 'A JSON object body is required.' };
   }
-  const allowed = new Set(['performed', 'note']);
+  const allowed = new Set(['performed', 'note', 'expectedVersion']);
+  if (body.expectedVersion !== undefined) {
+    const rawEv = body.expectedVersion;
+    if (rawEv === '') return versionRefusal();
+    const numeric = typeof rawEv === 'number' ? rawEv : typeof rawEv === 'string' ? Number(rawEv) : NaN;
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric > MAX_INITIATIVE_EXPECTED_VERSION) {
+      return versionRefusal();
+    }
+  }
   for (const key of Object.keys(body)) {
     if (!allowed.has(key)) {
       return { ok: false, status: 400, code: 'initiatives.field_refused',

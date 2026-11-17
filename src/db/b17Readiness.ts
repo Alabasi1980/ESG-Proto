@@ -38,8 +38,20 @@ export const B17_VERSION = 'B17_U1';
 // schema delta restores the round-1 md5 (c320ef6f… / 99455c0b…), the seven
 // round-2 policy texts restored to their round-1 form restore the schema-only
 // content md5, and re-applying them restores these values.
-export const PREDECESSOR_SHAPE = 'e75eb5f4e4754549849757daec7c478b';
-export const B17_SHAPE = 'f28b8352a1b6f68e01b3cc9d5b725546';
+// U4-1c-PROTECT round 3 (owner decision §20, FINAL: archive-flag replaces the
+// round-1/round-2 delete path). Recomputed on an own fresh PG18 scratch after
+// schema.sql added the nullable client_initiatives.archived_at marker (NULL =
+// active) and replaced the selection FK with the single named RESTRICT
+// (initiative_department_status_selection_restrict, link back to NOT NULL) —
+// the round-2 SET NULL name is dropped where present. No policy/text change,
+// so the content sha256 is unchanged; all three STRUCTURE fingerprints move
+// together. Falsifiability proved in scripts/u41c-protect-scratch.ts:
+// downgrading to the CURRENT committed shape (auto-named CASCADE, NOT NULL,
+// no version/archived columns) moves the fingerprint, seeding committed-shape
+// data and upgrading preserves every byte and restores the fresh fingerprint
+// exactly.
+export const PREDECESSOR_SHAPE = '5120cf742abffe61062d30e833efd4d7';
+export const B17_SHAPE = 'c9d5a9e24ec9bf9128d17822d9f1ed1a';
 export const B17_CONTENT_VERSION = 'B17_U2D';
 // G2 E1-04 (truthfulness note — comment-only, no logic change): 'B17_U2D' is
 // the CANONICAL content label. Tera ruling: renaming it would strand every
@@ -92,7 +104,11 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // with client_id = T). New content sha256: 4ff0f31c… (measured in the same
 // scratch run as the shape; the schema is untouched, so PREDECESSOR_SHAPE and
 // B17_SHAPE above do not move).
-export const B17_CONTENT_SHAPE = 'c927183564e59ce9777b92e854dfc40a';
+// U4-1c-PROTECT round 3: the content file carries the ONE §21-approved hunk
+// (b17_selection_update beside the delete policy, same scope) — new sha
+// 8c165c40… — and STRUCTURE_SQL fingerprints the added policy, so this shape
+// moves with the schema constants.
+export const B17_CONTENT_SHAPE = 'c1f87f043bffa8ad3c939c7993f2ab2e';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

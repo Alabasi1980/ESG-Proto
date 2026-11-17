@@ -141,6 +141,66 @@ export async function configurationService(client: pg.PoolClient, tenant: string
   return links[0]?.service_id ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// TASK-PROTO-U4-1c-PROTECT — one canonical server-derived advisory anchor.
+//
+// WHY a single helper: POST select has no selection row yet, DELETE/unselect,
+// status PATCH and initiative evidence all need the SAME lock. Locking by the
+// selection row ID cannot serialize the first select and changes identity
+// after delete/reselect (ABA). The anchor is therefore the domain tuple
+// (kind, server-bound tenant UUID, library/requirement resource UUID) — never
+// a selection row ID, service/user/department ID, or raw client input.
+//
+// Lock-key canonicalization only: both UUIDs must already be validated
+// (8-4-4-4-12 hex-and-hyphen), then lowercased before concatenation with
+// fixed separators/kinds. Full UUIDs + fixed kinds prevent aliasing; a 64-bit
+// hash collision only adds serialization, never authorization (advisory locks
+// are not row security — every path rechecks tenant/scope after waiting).
+// ---------------------------------------------------------------------------
+
+export type U41cProtectKind = 'initiative' | 'requirement';
+
+const U41C_PROTECT_PREFIX = 'u41c-protect:v1';
+
+export function u41cProtectKey(kind: U41cProtectKind, tenantId: string, resourceId: string): string {
+  if (kind !== 'initiative' && kind !== 'requirement') throw scopeError(403, 'scope.denied');
+  const tenant = scopeId(tenantId, true)!.toLowerCase();
+  const resource = scopeId(resourceId, true)!.toLowerCase();
+  return `${U41C_PROTECT_PREFIX}:${kind}:${tenant}:${resource}`;
+}
+
+/** Transaction-scoped exclusive lock on the canonical anchor, held to commit. */
+export async function u41cProtectLock(
+  client: pg.PoolClient, kind: U41cProtectKind, tenantId: string, resourceId: string,
+): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+    u41cProtectKey(kind, tenantId, resourceId),
+  ]);
+}
+
+/** Parse the optimistic-revision input shared by both status PATCH routes.
+ * 0 = caller observed no row, >=1 = observed revision. Missing/empty,
+ * non-integer, negative or out-of-range (PG integer) values fail closed with
+ * 400 version.required using the existing baseline message — no new wording. */
+export const U41C_MAX_VERSION = 2147483647;
+
+export function parseExpectedVersion(raw: unknown): { ok: true; value: number } | { ok: false; status: 400; code: string; error: string } {
+  if (raw === undefined || raw === null || raw === '') {
+    return {
+      ok: false, status: 400, code: 'version.required',
+      error: 'A version is required to save (optimistic locking). Reload the item and retry.',
+    };
+  }
+  const numeric = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > U41C_MAX_VERSION) {
+    return {
+      ok: false, status: 400, code: 'version.required',
+      error: 'A version is required to save (optimistic locking). Reload the item and retry.',
+    };
+  }
+  return { ok: true, value: numeric };
+}
+
 export function domainFailure(res: Response, err: any, fallback: string) {
   // SQL diagnostics/constraint names and reflected raw values are not API errors.
   const status = Number.isInteger(err?.statusCode) ? err.statusCode : 500;

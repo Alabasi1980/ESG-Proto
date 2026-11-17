@@ -1465,6 +1465,54 @@ CREATE TABLE IF NOT EXISTS initiative_department_status (
   UNIQUE(client_initiative_id, department_id)
 );
 
+-- U4-1c-PROTECT round 3 (owner decision §20, FINAL: archive-flag replaces the
+-- round-1/round-2 delete path). Unselect SETS client_initiatives.archived_at
+-- (NULL = active) instead of deleting the row; reselect clears it in place so
+-- the SAME selection ID reconnects every status/evidence row — no duplicates,
+-- no detached rows. Statuses stay FK-linked and readable through the archived
+-- selection; hard row deletion stays refused by RESTRICT only when linked rows
+-- exist. Additive only: no data edits, no rekey, existing rows stay active
+-- (NULL). WHY archived_at over a boolean: NULL = active is unambiguous and the
+-- stamp records when; WHY RESTRICT over SET NULL: the link is never nulled, so
+-- no orphan/detached state can exist. Fresh and upgrade paths converge: the
+-- CREATE above still declares the historical NOT NULL + CASCADE shape, then the
+-- DO-blocks below deterministically add the version columns + archived_at, drop
+-- whichever legacy FK guards the link (committed auto-named CASCADE, round-1
+-- RESTRICT name, or round-2 SET NULL name), enforce NOT NULL (fail-closed: a
+-- pre-existing nulled link aborts instead of silently orphaning) and install
+-- the single named RESTRICT FK — all paths end byte-identical.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'document_submissions' AND column_name = 'version') THEN
+    ALTER TABLE document_submissions ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'initiative_department_status' AND column_name = 'version') THEN
+    ALTER TABLE initiative_department_status ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'client_initiatives' AND column_name = 'archived_at') THEN
+    ALTER TABLE client_initiatives ADD COLUMN archived_at TIMESTAMP WITH TIME ZONE NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'initiative_department_status_client_initiative_id_fkey') THEN
+    ALTER TABLE initiative_department_status DROP CONSTRAINT initiative_department_status_client_initiative_id_fkey;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'initiative_department_status_selection_setnull') THEN
+    ALTER TABLE initiative_department_status DROP CONSTRAINT initiative_department_status_selection_setnull;
+  END IF;
+  ALTER TABLE initiative_department_status ALTER COLUMN client_initiative_id SET NOT NULL;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'initiative_department_status_selection_restrict') THEN
+    ALTER TABLE initiative_department_status ADD CONSTRAINT initiative_department_status_selection_restrict
+      FOREIGN KEY (client_initiative_id) REFERENCES client_initiatives(id) ON DELETE RESTRICT;
+  END IF;
+END $$;
+
 -- U4-1c-E. evidence_files: the unified proof store for document submissions and
 -- department initiative statuses (answer attachments stay in
 -- evidence_attachments untouched). entity_type is validated in the handler

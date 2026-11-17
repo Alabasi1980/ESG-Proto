@@ -20,7 +20,7 @@ import multer from 'multer';
 import { recordAuditLog } from '../../db/index.ts';
 import { authMiddleware, type AuthenticatedRequest } from '../auth.ts';
 import { requireDomainAccess } from '../access.ts';
-import { domainTransaction, deferredFailure, DeferredRefusal, domainTenant } from './initiativeScope.ts';
+import { domainTransaction, deferredFailure, DeferredRefusal, domainTenant, parseExpectedVersion, u41cProtectLock } from './initiativeScope.ts';
 import { platformConfigContext, readContext, requireFreshPassword, writeFailure } from './_shared.ts';
 import { ownDepartment, ownEmployeeDepartment, scopeError, scopeId } from '../scope.ts';
 import { MAX_ATTACHMENT_BYTES, validateAttachment } from '../../lib/approvalChain.ts';
@@ -213,13 +213,18 @@ router.get('/requirements', authMiddleware, requireDomainAccess, async (req: Aut
     // ROUND 3 (G-03/M-02): the department is resolved INSIDE the transaction and
     // only for a work mode — a platform caller has no department, and
     // ownDepartment() (which asserts a work scope) must never run for P.
-    const rows = await domainTransaction(req, async (client) => (await client.query(
+    // PROTECT: each submission carries its id + revision; employees also get
+    // the scalar ownVersion (own department revision or 0). W/C/P rows carry
+    // their revision but never another department's ownVersion.
+    const rows = await domainTransaction(req, async (client) => {
+      const own = req.access!.mode === 'platform' ? null : ownDepartment(req.access!);
+      return (await client.query(
       `SELECT r.id, r.service_id, r.department_id, r.title, r.description, r.required,
               r.sort_order, r.tags, r.created_at,
               coalesce((SELECT json_agg(json_build_object(
-                  'departmentId', s.department_id, 'departmentName', dp.name,
+                  'id', s.id, 'departmentId', s.department_id, 'departmentName', dp.name,
                   'provided', s.provided, 'note', s.note, 'tag', s.tag,
-                  'submittedAt', s.submitted_at,
+                  'submittedAt', s.submitted_at, 'version', s.version,
                   'files', coalesce((SELECT json_agg(json_build_object(
                       'id', f.id, 'filename', f.filename, 'mime', f.mime,
                       'sizeBytes', f.size_bytes, 'uploadedBy', f.uploaded_by,
@@ -230,13 +235,16 @@ router.get('/requirements', authMiddleware, requireDomainAccess, async (req: Aut
                 ORDER BY dp.name, s.id)
               FROM document_submissions s JOIN departments dp ON dp.id = s.department_id
               WHERE s.requirement_id = r.id AND s.client_id = $1
-                AND ($2::uuid IS NULL OR s.department_id = $2)), '[]'::json) AS submissions
+                AND ($2::uuid IS NULL OR s.department_id = $2)), '[]'::json) AS submissions,
+              CASE WHEN $2::uuid IS NULL THEN NULL ELSE
+                coalesce((SELECT s.version FROM document_submissions s
+                  WHERE s.requirement_id = r.id AND s.client_id = $1 AND s.department_id = $2), 0) END AS "ownVersion"
          FROM document_requirements r
         WHERE r.client_id = $1
           AND b17_content_fact('service', $1, r.service_id)
           AND ($2::uuid IS NULL OR r.department_id IS NULL OR r.department_id = $2)
         ORDER BY r.sort_order ASC, r.title ASC, r.id ASC`,
-      [tenant, req.access!.mode === 'platform' ? null : ownDepartment(req.access!)])).rows, (live) =>
+      [tenant, own])).rows; }, (live) =>
       live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live));
     res.json(rows);
   } catch (err: any) {
@@ -251,12 +259,41 @@ router.patch('/requirements/:id', authMiddleware, requireFreshPassword, requireD
     const parsed = validateSubmissionPatch(req.body ?? {});
     if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
     const patch = parsed.value;
+    // PROTECT: missing/non-integer/negative/overflow versions use the existing
+    // baseline 400 (evaluations wording); no new visible message.
+    const versioned = parseExpectedVersion((req.body ?? {}).expectedVersion);
+    if (!versioned.ok) return res.status(versioned.status).json({
+      error: versioned.error, code: versioned.code,
+      conflict: { expectedVersion: null, providedVersion: null },
+    });
+    const expectedVersion = versioned.value;
+    const stale = (current: number | null): never => {
+      throw new DeferredRefusal(409, {
+        error: 'تغيّرت البيانات منذ فتحها. يرجى تحديثها ومراجعة التعديلات قبل الحفظ.',
+        code: 'version.conflict',
+        conflict: { expectedVersion: current, providedVersion: expectedVersion },
+      });
+    };
     const result = await domainTransaction(req, async (client) => {
       const access = req.access!;
       const own = ownEmployeeDepartment(access); // W/C/P refused, zero writes
+      // Pre-lock scoped read: the requirement must belong to the caller's own
+      // tenant before the anchor can be derived from it.
+      const pre = (await client.query(
+        'SELECT id, service_id, department_id, title FROM document_requirements WHERE id = $1 AND client_id = $2',
+        [requirementId, access.tenantId])).rows[0];
+      if (!pre) throw scopeError(404, 'scope.not_found');
+      if (pre.department_id && pre.department_id !== own)
+        throw scopeError(403, 'scope.department_mismatch');
+      // One canonical anchor (server tenant + requirement ID). Serializes the
+      // two first-inserts (both expect 0) and every same-version update, plus
+      // the submit/delete ordering against evidence on the same requirement.
+      await u41cProtectLock(client, 'requirement', access.tenantId!, requirementId);
+      // Post-wait scoped revalidation: same requirement, tenant and
+      // department binding must still hold before touching the submission.
       const requirement = (await client.query(
-        'SELECT id, service_id, department_id, title FROM document_requirements WHERE id = $1',
-        [requirementId])).rows[0];
+        'SELECT id, service_id, department_id, title FROM document_requirements WHERE id = $1 AND client_id = $2',
+        [requirementId, access.tenantId])).rows[0];
       if (!requirement) throw scopeError(404, 'scope.not_found');
       if (requirement.department_id && requirement.department_id !== own)
         throw scopeError(403, 'scope.department_mismatch');
@@ -264,6 +301,8 @@ router.patch('/requirements/:id', authMiddleware, requireFreshPassword, requireD
         `SELECT * FROM document_submissions
           WHERE client_id = $1 AND department_id = $2 AND requirement_id = $3`,
         [access.tenantId, own, requirementId])).rows[0];
+      const current = existing ? Number(existing.version ?? 1) : 0;
+      if (current !== expectedVersion) stale(existing ? current : 0);
       // Once submitted, the row is a record: provided may not be reset and the
       // proof files are locked (append-only, mirror U4-1b).
       if (existing?.submitted_at && patch.provided === false) {
@@ -276,25 +315,33 @@ router.patch('/requirements/:id', authMiddleware, requireFreshPassword, requireD
       const note = patch.note !== undefined ? patch.note : existing?.note ?? null;
       const tag = patch.tag !== undefined ? patch.tag : existing?.tag ?? null;
       const firstSubmit = provided === true && !existing?.submitted_at;
-      const row = existing
-        ? (await client.query(
+      let row;
+      if (existing) {
+        // Conditional single-row update: first same-version writer wins; the
+        // loser sees zero rows and conflicts (no silent retry/merge).
+        row = (await client.query(
           `UPDATE document_submissions SET provided = $1, note = $2, tag = $3,
-             submitted_by = $4, submitted_at = $5 WHERE id = $6 RETURNING *`,
+             submitted_by = $4, submitted_at = $5, version = version + 1
+            WHERE id = $6 AND version = $7 RETURNING *`,
           [provided, note, tag, firstSubmit ? access.actorId : existing.submitted_by,
-            firstSubmit ? new Date() : existing.submitted_at, existing.id])).rows[0]
-        : (await client.query(
+            firstSubmit ? new Date() : existing.submitted_at, existing.id, expectedVersion])).rows[0];
+        if (!row) stale(Number(existing.version ?? 1));
+      } else {
+        row = (await client.query(
           `INSERT INTO document_submissions (client_id, department_id, requirement_id, provided,
-             note, tag, submitted_by, submitted_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+             note, tag, submitted_by, submitted_at, version)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1) RETURNING *`,
           [access.tenantId, own, requirementId, provided, note, tag,
             firstSubmit ? access.actorId : null, firstSubmit ? new Date() : null])).rows[0];
+      }
       await recordAuditLog(client, { clientId: access.tenantId, userId: access.actorId,
         action: firstSubmit ? 'DOCUMENT_SUBMITTED' : 'DOCUMENT_UPDATED',
         entityType: 'document_submissions', entityId: row.id,
         payload: { requirementId, serviceId: requirement.service_id, departmentId: own,
-          provided, fields: Object.keys(patch) } });
+          provided, fields: Object.keys(patch), expectedVersion, version: row.version } });
       return { id: row.id, requirementId, departmentId: own, provided: row.provided,
-        note: row.note, tag: row.tag, submittedAt: row.submitted_at, submittedBy: row.submitted_by };
+        note: row.note, tag: row.tag, submittedAt: row.submitted_at, submittedBy: row.submitted_by,
+        version: row.version };
     });
     res.json(result);
   } catch (err: any) {
@@ -307,14 +354,42 @@ router.patch('/requirements/:id', authMiddleware, requireFreshPassword, requireD
 // Evidence files (unified parent surface).
 // ----------------------------------------------------------------------
 
-/** The parent row of one evidence entity, in the caller's scope. */
+/** The parent row of one evidence entity, in the caller's scope. Tenant-bound:
+ * a foreign or orphan parent is indistinguishable from absent (404), and no
+ * foreign row is ever returned. For initiative statuses the tenant is proven
+ * through the selection + department join, not the status row alone.
+ * PROTECT round 4 (M-01, fail-closed): the selection join binds ACTIVE only,
+ * so an archived selection resolves as absent and upload/delete reuse the
+ * existing evidence.not_found 404 — no new user-visible text. */
 async function loadEvidenceParent(client: any, access: any, entityType: string, entityId: string) {
   if (entityType === 'document_submission') {
     return (await client.query('SELECT * FROM document_submissions WHERE id = $1 AND client_id = $2',
       [entityId, access.tenantId])).rows[0];
   }
-  const row = (await client.query('SELECT * FROM initiative_department_status WHERE id = $1', [entityId])).rows[0];
-  return row;
+  return (await client.query(
+    `SELECT st.* FROM initiative_department_status st
+       JOIN client_initiatives ci ON ci.id = st.client_initiative_id AND ci.client_id = $2
+         AND ci.archived_at IS NULL
+       JOIN departments d ON d.id = st.department_id AND d.client_id = $2
+      WHERE st.id = $1`,
+    [entityId, access.tenantId])).rows[0];
+}
+
+/** Resolve the canonical anchor resource for an evidence parent. Returns the
+ * (kind, resourceId) tuple; throws 404 when linkage is ambiguous/orphaned. */
+async function evidenceAnchor(client: any, access: any, entityType: string, parent: any) {
+  if (entityType === 'document_submission') {
+    const req = (await client.query(
+      'SELECT id FROM document_requirements WHERE id = $1 AND client_id = $2',
+      [parent.requirement_id, access.tenantId])).rows[0];
+    if (!req) throw scopeError(404, 'evidence.not_found');
+    return { kind: 'requirement' as const, resourceId: String(req.id) };
+  }
+  const sel = (await client.query(
+    'SELECT ci.id, ci.initiative_id FROM client_initiatives ci WHERE ci.id = $1 AND ci.client_id = $2',
+    [parent.client_initiative_id, access.tenantId])).rows[0];
+  if (!sel) throw scopeError(404, 'evidence.not_found');
+  return { kind: 'initiative' as const, resourceId: String(sel.initiative_id), selectionId: String(sel.id) };
 }
 
 router.post('/evidence/:entityType/:entityId/files', authMiddleware, requireFreshPassword, requireDomainAccess, (req: AuthenticatedRequest, res: Response) => {
@@ -349,9 +424,25 @@ router.post('/evidence/:entityType/:entityId/files', authMiddleware, requireFres
       const created = await domainTransaction(req, async (client) => {
         const access = req.access!;
         const own = ownEmployeeDepartment(access);
+        const pre = await loadEvidenceParent(client, access, entityType, entityId);
+        if (!pre) throw scopeError(404, 'evidence.not_found');
+        if (pre.department_id !== own) throw scopeError(403, 'scope.department_mismatch');
+        // PROTECT: same anchor as the parent status/submission writer, then
+        // reread the SAME scoped parent before acting (no redirect to a
+        // replacement row, no inferred missing parent).
+        const anchor = await evidenceAnchor(client, access, entityType, pre);
+        await u41cProtectLock(client, anchor.kind, access.tenantId!, anchor.resourceId);
         const parent = await loadEvidenceParent(client, access, entityType, entityId);
-        if (!parent) throw scopeError(404, 'evidence.not_found');
-        if (parent.department_id !== own) throw scopeError(403, 'scope.department_mismatch');
+        if (!parent || parent.department_id !== own) throw scopeError(404, 'evidence.not_found');
+        if (entityType === 'initiative_status') {
+          const reselected = await evidenceAnchor(client, access, entityType, parent);
+          if (reselected.resourceId !== anchor.resourceId
+            || (anchor as any).selectionId !== (reselected as any).selectionId) {
+            throw scopeError(404, 'evidence.not_found');
+          }
+        } else if (String(parent.requirement_id) !== anchor.resourceId) {
+          throw scopeError(404, 'evidence.not_found');
+        }
         const row = (await client.query(
           `INSERT INTO evidence_files (client_id, department_id, entity_type, entity_id,
              filename, mime, size_bytes, content, uploaded_by)
@@ -421,9 +512,24 @@ router.delete('/evidence/:entityType/:entityId/files/:fileId', authMiddleware, r
     await domainTransaction(req, async (client) => {
       const access = req.access!;
       const own = ownEmployeeDepartment(access);
+      const pre = await loadEvidenceParent(client, access, entityType, entityId);
+      if (!pre) throw scopeError(404, 'evidence.not_found');
+      if (pre.department_id !== own) throw scopeError(403, 'scope.department_mismatch');
+      // PROTECT: same anchor as the submit writer; delete commits first only
+      // when the submit has not yet stamped the parent. Re-read after waiting.
+      const anchor = await evidenceAnchor(client, access, entityType, pre);
+      await u41cProtectLock(client, anchor.kind, access.tenantId!, anchor.resourceId);
       const parent = await loadEvidenceParent(client, access, entityType, entityId);
-      if (!parent) throw scopeError(404, 'evidence.not_found');
-      if (parent.department_id !== own) throw scopeError(403, 'scope.department_mismatch');
+      if (!parent || parent.department_id !== own) throw scopeError(404, 'evidence.not_found');
+      if (entityType === 'initiative_status') {
+        const reselected = await evidenceAnchor(client, access, entityType, parent);
+        if (reselected.resourceId !== anchor.resourceId
+          || (anchor as any).selectionId !== (reselected as any).selectionId) {
+          throw scopeError(404, 'evidence.not_found');
+        }
+      } else if (String(parent.requirement_id) !== anchor.resourceId) {
+        throw scopeError(404, 'evidence.not_found');
+      }
       // U4-1b evidence lock: once the parent is submitted its proof is part of
       // the record — DELETE is refused with zero writes (append stays allowed).
       if (parent.submitted_at) {

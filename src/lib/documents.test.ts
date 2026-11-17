@@ -7,10 +7,12 @@ import { readFileSync } from 'node:fs';
 import {
   MAX_DOCUMENT_TAGS,
   MAX_TAG_LENGTH,
+  MAX_EXPECTED_VERSION,
   EVIDENCE_ENTITY_TYPES,
   isEvidenceEntityType,
   normalizeIndicatorCode,
   normalizeTags,
+  validateExpectedVersionInput,
   validateRequirementInput,
   validateSubmissionPatch,
 } from './documents.ts';
@@ -171,4 +173,100 @@ test('U4-1c round-2 pins: FK RESTRICT on submissions, no RLS-blind count guard',
     assert.ok(src.includes("live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live)"),
       `${file}: the P path uses platformConfigContext(T)`);
   }
+});
+
+test('U4-1c-PROTECT pins: shared anchor, optimistic revision, tenant-bound evidence', () => {
+  // Shape of the version carrier: 0 = absent, >=1 = current; missing/empty,
+  // non-integer, negative and overflow fail closed with the existing baseline.
+  assert.deepEqual(validateExpectedVersionInput(0), { ok: true, value: 0 });
+  assert.deepEqual(validateExpectedVersionInput(3), { ok: true, value: 3 });
+  assert.deepEqual(validateExpectedVersionInput('2'), { ok: true, value: 2 });
+  for (const bad of [undefined, null, '', 'x', 1.5, -1, MAX_EXPECTED_VERSION + 1, NaN, {}, []]) {
+    const res = validateExpectedVersionInput(bad as any);
+    assert.equal(res.ok, false, JSON.stringify(bad));
+    if (!res.ok) assert.equal(res.code, 'version.required');
+  }
+  // The carrier is accepted but never becomes a patch field; unknown fields
+  // are still refused without widening the write.
+  assert.deepEqual(validateSubmissionPatch({ provided: true, expectedVersion: 0 }),
+    { ok: true, value: { provided: true } });
+  assert.equal(validateSubmissionPatch({ expectedVersion: 0 }).ok, false);
+  assert.equal(validateSubmissionPatch({ provided: true, hacked: 1 } as any).ok, false);
+  const schema = readFileSync('src/db/schema.sql', 'utf8');
+  assert.match(schema, /ADD COLUMN version INTEGER NOT NULL DEFAULT 1/);
+  // PROTECT round 3 (owner decision §20, FINAL): the selection link is never
+  // deleted and never nulled — unselect archives the selection row in place
+  // (same ID, history reconnects on reselect) and RESTRICT refuses a hard row
+  // deletion only when linked records exist.
+  assert.ok(schema.includes('initiative_department_status_selection_restrict'),
+    'the selection FK is a single named RESTRICT backstop');
+  assert.ok(schema.includes('REFERENCES client_initiatives(id) ON DELETE RESTRICT'),
+    'hard deletion is refused only when linked statuses exist; unselect archives instead');
+  assert.ok(schema.includes('ALTER TABLE initiative_department_status ALTER COLUMN client_initiative_id SET NOT NULL'),
+    'the link stays NOT NULL (fail-closed: a nulled link aborts instead of orphaning)');
+  assert.ok(!/ADD CONSTRAINT initiative_department_status_selection_setnull/.test(schema),
+    'the round-2 SET NULL preserver is gone');
+  assert.ok(schema.includes('DROP CONSTRAINT initiative_department_status_selection_setnull'),
+    'the round-2 uncommitted SET NULL name is cleaned when present; fresh and upgrade converge');
+  assert.ok(schema.includes('DROP CONSTRAINT initiative_department_status_client_initiative_id_fkey'),
+    'the historical auto-named CASCADE is deterministically dropped before RESTRICT is added');
+  assert.match(schema, /ADD COLUMN archived_at TIMESTAMP WITH TIME ZONE NULL/,
+    'the selection carries a nullable archived marker (NULL = active, additive, no data edits)');
+  assert.ok(schema.includes('REFERENCES document_requirements(id) ON DELETE RESTRICT'),
+    'the documents requirement link keeps its RESTRICT backstop (unchanged)');
+    const scope = readFileSync('src/server/routes/initiativeScope.ts', 'utf8');
+  assert.ok(scope.includes('u41c-protect:v1'), 'canonical domain-separated anchor prefix');  assert.ok(scope.includes("pg_advisory_xact_lock(hashtextextended($1, 0))"),
+    'single transaction-scoped advisory lock, no session lock');
+  assert.ok(scope.includes('A version is required to save (optimistic locking). Reload the item and retry.'),
+    'missing-version uses the existing evaluations baseline, never a new message');
+  // PROTECT round 3 (§21, the ONE approved content change): the archive
+  // UPDATE needs its own FOR UPDATE policy — without it RLS silently matches
+  // 0 rows. Scoped identically to the delete policy, WITH CHECK identical.
+  const policies = readFileSync('src/db/b17-content.sql', 'utf8');
+  assert.ok(policies.includes('CREATE POLICY b17_selection_update ON client_initiatives FOR UPDATE USING'),
+    'the approved archive UPDATE policy exists beside the delete policy');
+  assert.match(policies, /CREATE POLICY b17_selection_update[\s\S]{0,600}WITH CHECK/,
+    'its WITH CHECK mirrors the delete scope (no new grant, no retarget)');
+  const docs = readFileSync('src/server/routes/documents.ts', 'utf8');
+  assert.ok(docs.includes("u41cProtectLock(client, 'requirement'"),
+    'requirement PATCH serializes on the requirement anchor');
+  assert.ok(docs.includes('WHERE id = $6 AND version = $7 RETURNING *'),
+    'document update is a conditional single-row write');
+  assert.ok(docs.includes('"ownVersion"'), 'requirement list exposes the own revision');
+  assert.ok(docs.includes("'version', s.version"), 'submission rows carry their revision');
+  assert.ok(docs.includes('تغيّرت البيانات منذ فتحها. يرجى تحديثها ومراجعة التعديلات قبل الحفظ.'),
+    'stale document edits use the owner-approved Arabic message');
+  assert.ok(docs.includes('JOIN departments d ON d.id = st.department_id AND d.client_id = $2'),
+    'initiative evidence parent is tenant-bound through selection + department');
+  // PROTECT round 4 (M-01, fail-closed): evidence upload/delete resolve through
+  // an ACTIVE selection only — an archived link reuses the existing
+  // evidence.not_found 404, no new user-visible text.
+  assert.ok(docs.includes('AND ci.archived_at IS NULL'),
+    'archived selections resolve as absent on evidence writes (fail-closed 404)');
+  assert.ok(docs.includes("u41cProtectLock(client, anchor.kind,"),
+    'evidence upload/delete share the parent anchor with scoped revalidation');
+  const init = readFileSync('src/server/routes/initiatives.ts', 'utf8');
+  assert.ok(init.includes("u41cProtectLock(client, 'initiative', tenant, id)"),
+    'select + unselect share the canonical natural-key anchor');
+  // PROTECT round 3 (owner decision §20): unselect archives in place (same row
+  // ID, always permitted for authorized W); reselect clears the flag instead
+  // of INSERTing a duplicate. Tenant/eligibility/freeze + audit stay on the
+  // path; no dependency refusal, no new user-visible text or code.
+  assert.ok(init.includes('SET archived_at=NOW()'),
+    'unselect sets the archived flag; the row (and its history) is never deleted');
+  assert.ok(init.includes('SET archived_at=NULL'),
+    'reselect clears the flag in place and reconnects history instead of duplicating');
+  assert.ok(!/DELETE FROM client_initiatives/.test(init),
+    'no selection-row DELETE remains on the API path (hard delete is refused by RESTRICT, proven at SQL level)');
+  assert.ok(init.includes('AS archived'),
+    'the selection list re-lists archived rows with their flag');
+  assert.ok(!init.includes('لا يمكن إلغاء اختيار المبادرة لوجود بيانات أو مرفقات مرتبطة بها.'),
+    'the superseded refuse-unselect message is gone from the unselect path');
+  assert.ok(!init.includes("code: 'initiatives.dependency'"),
+    'no dependency refusal code on the unselect path');
+  assert.ok(!init.includes('23001'), 'no SQLSTATE mapping remains on the unselect path');
+  assert.ok(init.includes('isFrozenScope(client, tenant)'), 'freeze stays on the select/unselect path');
+  assert.ok(!init.includes("code: 'initiatives.unselected'") && !init.includes('لم يعد اختيارها سارياً'),
+    'the round-2 notice flow is replaced by archive/refresh (no new text)');
+  assert.ok(init.includes("action:'INITIATIVE_UNSELECTED'"), 'unselect still writes its audit');
 });

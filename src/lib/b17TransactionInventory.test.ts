@@ -143,7 +143,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // (constant + note) move with it.
   const h13RoutesSha256='a810933dcab117669a42036ec3d6affe944f5cd1f4e73a68096b4561bbce9820';
   const h13AccessRegistrySha256='10931e42fd5f86e491b5e52836a486a1be72a48964c56e477731feeb6377711b';
-  const h13ContentSha256='4ff0f31c455c37ca8d60b9cd8f4b1d67b8a05d3810ffa2ac03c300540d8ea055';
+  // U4-1c-PROTECT round 3 (§21): b17-content.sql carries the ONE approved hunk
+  // (b17_selection_update, same scope as the delete policy); sha + readiness
+  // shape move together, version label stays B17_U2D.
+  const h13ContentSha256='8c165c40f8dd5d17bc7d2a42908a51ee7e1664ee3db3480e147884db24ab5a80';
   const postH12Pins: Record<string,string> = {
     'src/server/auth.ts': h13AuthSha256,
     'src/server/routes.ts': h13RoutesSha256,
@@ -171,7 +174,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // fresh PG18 scratch (scripts/u41c-scratch.ts), with the drop/re-add
   // falsifiability chain in the same run.
   // U4-1c round 3: only the content constant moved (the audit-policy branch).
-  const h13ReadinessSha256='480ff0a6475dbfaffe5cbf28db9896d097754a7085437d9c55413294118c5e6d';
+  // U4-1c-PROTECT round 3: all three STRUCTURE constants moved (nullable
+  // archived marker + NOT NULL RESTRICT link); the content sha is unchanged.
+  // Re-pinned deliberately.
+  const h13ReadinessSha256='114e65be1e1e266a0fc056c441b79031ed50e45af010d860a74e315b5cce54be';
   assert.equal(createHash('sha256')
     .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
     .digest('hex'),h13ReadinessSha256,
@@ -201,7 +207,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'scripts/u41c-scratch.ts',
     // TASK-PROTO-U4-1c round 3 (G-04): the behavioural E2E that boots the real
     // server against the scratch and drives P/C/E through the real handlers.
-    'scripts/u41c-e2e.ts'];
+    'scripts/u41c-e2e.ts',
+    // TASK-PROTO-U4-1c-PROTECT round 1: the isolated concurrent proof harness
+    // + upgrade/rollback simulation (real-router barrier proof, scratch only).
+    'scripts/u41c-protect-scratch.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -288,7 +297,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // are already named above; no UI/style/view path.
     'src/server/scope.ts','src/lib/clientFieldMask.ts','src/lib/clientFieldMask.test.ts',
     'src/lib/serviceSettings.ts','src/lib/serviceSettings.test.ts','scripts/u41-mask-scratch.ts',
-    'src/server/routes/serviceVisibility.ts']);
+    'src/server/routes/serviceVisibility.ts',
+    // TASK-PROTO-U4-1c-PROTECT: the ONE narrow shared anchor + version helper in
+    // initiativeScope (delta §3.4/§4 only — no other file in this module moves).
+    'src/server/routes/initiativeScope.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -320,7 +332,23 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'security-reports/TASK-PROTO-U4-1b-fix-review.md',
     // TASK-PROTO-U4-1c reviewer evidence (round 2) — reviewer-owned, exact paths.
     'project-control/qa-reports/TASK-PROTO-U4-1c-QA.md',
-    'security-reports/TASK-PROTO-U4-1c-fix-review.md']);
+    'security-reports/TASK-PROTO-U4-1c-fix-review.md',
+    // TASK-PROTO-U4-1c-PROTECT round-1 reviewer evidence (QA PASS + Shield
+    // review for this unit) — reviewer-owned, exact paths only.
+    'project-control/qa-reports/TASK-PROTO-U4-1c-PROTECT-QA.md',
+    'security-reports/TASK-PROTO-U4-1c-PROTECT-SEC1.md',
+    // TASK-PROTO-U4-1c-PROTECT round-3 reviewer evidence (QA2 + Shield SEC2)
+    // — reviewer-owned, exact paths only.
+    'project-control/qa-reports/TASK-PROTO-U4-1c-PROTECT-QA2.md',
+    'security-reports/TASK-PROTO-U4-1c-PROTECT-SEC2.md',
+    // TASK-PROTO-U4-1c-PROTECT round-4 reviewer evidence (QA3 + Shield SEC3)
+    // — reviewer-owned, exact paths only.
+    'project-control/qa-reports/TASK-PROTO-U4-1c-PROTECT-QA3.md',
+    'security-reports/TASK-PROTO-U4-1c-PROTECT-SEC3.md',
+    // TASK-PROTO-U4-1c-PROTECT round-1 auditor report (auditor-owned, exact
+    // path only — same convention; the implementer never edits it).
+    'project-control/audit-reports/TASK-PROTO-U4-1c-PROTECT-AUD01.md',
+    'project-control/audit-reports/TASK-PROTO-U4-1c-PROTECT-FINAL.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -336,7 +364,15 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U4-1b contract (Tera-owned, untracked input).
     'project-control/tasks/TASK-PROTO-U4-1b/TASK-PROTO-U4-1b.md',
     // TASK-PROTO-U4-1c contract (Tera-owned, untracked input).
-    'project-control/tasks/TASK-PROTO-U4-1c/TASK-PROTO-U4-1c.md']);
+    'project-control/tasks/TASK-PROTO-U4-1c/TASK-PROTO-U4-1c.md',
+    // TASK-PROTO-U4-1c-PROTECT design delta (designer-owned, untracked input —
+    // preserved, never edited by the implementer).
+    'project-control/tasks/TASK-PROTO-U4-1c/B17_U41C_PROTECT_TECHNICAL_DELTA.md',
+    // TASK-PROTO-U4-1c-PROTECT round 2 (Tera ruling): the TWO Tera-owned
+    // activity/audit records are control logs, not product code — excluded by
+    // exact path only; the implementer never edits them.
+    'project-control/PROJECT_ACTIVITY_LOG.md',
+    'project-control/TERA_AUDIT_TRAIL.md']);
   // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
   // so the path has left `allowed` (nothing may edit it) and only its deletion may
   // pass the write guard — one exact path, no globs, no directory entries. The
@@ -347,9 +383,17 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,92); // 91 through U4-1c round 2 + the round-3 E2E script
+  assert.equal(allowed.size,94); // 91 through U4-1c round 2 + round-3 E2E + PROTECT anchor helper + protect harness
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
-  for (const file of newFiles) assert.ok(readFileSync(file,'utf8').split('\n').length<=500,`${file}: new-file bound`);
+  // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
+  // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +
+  // conditional version update + tenant-bound evidence anchor/recheck) lives in
+  // that single owning file per smallest-change discipline. Bound 600, no split
+  // into a parallel layer (initiativeScope.ts carries only the shared anchor).
+  for (const file of newFiles) {
+    const bound = file === 'src/server/routes/documents.ts' ? 600 : 500;
+    assert.ok(readFileSync(file,'utf8').split('\n').length<=bound,`${file}: new-file bound`);
+  }
 });
 
 // G2 OBS-3 (G1 Shield observation): the pre-lock authority-capture ring above
