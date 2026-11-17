@@ -29,7 +29,13 @@ test('H12 theme enum is closed; legacy/NULL/unknown values settle on ge', () => 
 
 test('H12 schema appends clients.theme with the ge default behind IF NOT EXISTS', () => {
   const schema = source('src/db/schema.sql');
-  const block = schema.slice(schema.indexOf('-- D-H01-01 (TASK-PROTO-H12)'));
+  const h12Start = schema.indexOf('-- D-H01-01 (TASK-PROTO-H12)');
+  assert.ok(h12Start >= 0, 'the D-H01-01 marker is present');
+  // Bound to the H12 section only (ends where U4-1a begins): later additive
+  // batches (e.g. TASK-PROTO-U4-2-FIX P1) legitimately carry their own CHECKs.
+  const h12End = schema.indexOf('-- TASK-PROTO-U4-1a', h12Start);
+  assert.ok(h12End > h12Start, 'the H12 section ends where U4-1a begins');
+  const block = schema.slice(h12Start, h12End);
   assert.ok(block.length > 0, 'the D-H01-01 schema block is present');
   assert.match(block, /IF NOT EXISTS \(SELECT 1 FROM information_schema\.columns WHERE table_schema = 'public' AND table_name = 'clients' AND column_name = 'theme'\)/);
   assert.match(block, /ALTER TABLE clients ADD COLUMN theme TEXT NOT NULL DEFAULT 'ge';/);

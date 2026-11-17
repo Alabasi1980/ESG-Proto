@@ -146,7 +146,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // U4-1c-PROTECT round 3 (§21): b17-content.sql carries the ONE approved hunk
   // (b17_selection_update, same scope as the delete policy); sha + readiness
   // shape move together, version label stays B17_U2D.
-  const h13ContentSha256='8c165c40f8dd5d17bc7d2a42908a51ee7e1664ee3db3480e147884db24ab5a80';
+  const h13ContentSha256='781b8afe736c38c1eb0685b567dece1838de8e760723bff37c4a795257cdeac3';
   const postH12Pins: Record<string,string> = {
     'src/server/auth.ts': h13AuthSha256,
     'src/server/routes.ts': h13RoutesSha256,
@@ -177,7 +177,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // U4-1c-PROTECT round 3: all three STRUCTURE constants moved (nullable
   // archived marker + NOT NULL RESTRICT link); the content sha is unchanged.
   // Re-pinned deliberately.
-  const h13ReadinessSha256='114e65be1e1e266a0fc056c441b79031ed50e45af010d860a74e315b5cce54be';
+  const h13ReadinessSha256='a8e729551b8d8b3f560adbd75e579e849cb3c522f1edbb3d97f2a73e1a5b44b6';
   assert.equal(createHash('sha256')
     .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
     .digest('hex'),h13ReadinessSha256,
@@ -213,6 +213,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'scripts/u41c-protect-scratch.ts',
     // TASK-PROTO-U4-2: the services workspace files are bounded (view ≤500,
     // each presentational component <400) so the screen cannot grow unchecked.
+    // TASK-PROTO-U4-2-FIX P1: isolated DB migration rehearsal (forward +
+    // rerun + rollback, own PG18 harness only, never the shared DB).
+    'scripts/u42fix-p1-rehearse.ts',
     'src/views/ServicesView.tsx','src/components/services/ServiceRail.tsx',
     'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
@@ -393,7 +396,15 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'project-control/tasks/TASK-PROTO-U4-1c/PROTECT_LIVE_MIGRATION.md',
     'project-control/tasks/TASK-PROTO-U4-1c/PROTECT_LIVE_MIGRATION.sql',
     'project-control/PROJECT_ACTIVITY_LOG.md',
-    'project-control/TERA_AUDIT_TRAIL.md']);
+    'project-control/TERA_AUDIT_TRAIL.md',
+    // TASK-PROTO-U4-2-FIX round 2 (Tera-authorized): the registry's U4-1c/U4-2/FIX
+    // control record is a Tera-owned write — same exclusion as the activity/audit logs.
+    'project-control/TASK_REGISTRY.md',
+    // TASK-PROTO-U4-2-FIX round 2 (Tera-authorized): the FIX contract + the
+    // designer technical specification arrive as Tera-owned inputs (same
+    // pattern as the U4-2 contract above) — exact paths only, never edited here.
+    'project-control/tasks/TASK-PROTO-U4-2-FIX/TASK-PROTO-U4-2-FIX.md',
+    'project-control/task-engineering-reviews/TASK-PROTO-U4-2-FIX_TECHNICAL_SPECIFICATION.md']);
   // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
   // so the path has left `allowed` (nothing may edit it) and only its deletion may
   // pass the write guard — one exact path, no globs, no directory entries. The
@@ -404,7 +415,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,98); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths
+  assert.equal(allowed.size,99); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

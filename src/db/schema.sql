@@ -1548,3 +1548,115 @@ ALTER TABLE document_requirements FORCE ROW LEVEL SECURITY;
 ALTER TABLE document_submissions FORCE ROW LEVEL SECURITY;
 ALTER TABLE initiative_department_status FORCE ROW LEVEL SECURITY;
 ALTER TABLE evidence_files FORCE ROW LEVEL SECURITY;
+
+--------------------------------------------------------------------------------
+-- TASK-PROTO-U4-2-FIX P1 (DB §§DB-1…DB-6) — additive catalog-history +
+-- approved-copy substrate. Same idempotency contract as every FIX BATCH above:
+-- this file is re-applied wholesale by the explicit empty-install initializer,
+-- so every statement is a DO-block guarded by a catalogue check or
+-- CREATE ... IF NOT EXISTS. Additive only — no existing column, row, policy,
+-- grant or FK is changed; the four new items columns carry defaults so zero
+-- existing rows are rewritten (ADD COLUMN with a constant DEFAULT is
+-- metadata-only on PG11+); no NOT VALID is needed because every new rule is
+-- satisfied by the defaults it ships with. GROUP-bucket ensure stays lazy
+-- (handler-owned, P2/P5) — no backfill writes here.
+--
+-- RLS row-scope policies for the new tables + the audit whitelist additions
+-- live in b17-content.sql (B17 U2D): b17.sql's activation block replaces EVERY
+-- predecessor policy, so a policy defined only here would not survive a fresh
+-- install (the H13 app_settings precedent).
+--------------------------------------------------------------------------------
+
+-- P1-A. items: optimistic-locking version + archive state (OD-13 G-3/G-4).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'version') THEN
+    ALTER TABLE items ADD COLUMN version INT NOT NULL DEFAULT 1;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'status') THEN
+    ALTER TABLE items ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'archived_at') THEN
+    ALTER TABLE items ADD COLUMN archived_at TIMESTAMP WITH TIME ZONE NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'items' AND column_name = 'archive_reason') THEN
+    ALTER TABLE items ADD COLUMN archive_reason TEXT NULL;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'items_status_valid') THEN
+    ALTER TABLE items ADD CONSTRAINT items_status_valid CHECK (status IN ('active', 'archived'));
+  END IF;
+END $$;
+
+-- P1-B. item_versions: edit-history snapshots (OD-13 G-3). Handler-written
+-- (actor + reason live in the row, never a trigger). ON DELETE RESTRICT keeps
+-- history when a hard delete is attempted — the delete handler archives
+-- instead (P2); hard delete stays possible only when zero versions exist.
+CREATE TABLE IF NOT EXISTS item_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_id UUID NOT NULL REFERENCES items(id) ON DELETE RESTRICT,
+  version INT NOT NULL CHECK (version > 0),
+  snapshot JSONB NOT NULL,
+  changed_by UUID,
+  changed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  reason TEXT,
+  UNIQUE(item_id, version)
+);
+
+-- P1-C. approved_service_copies + approved_copy_files: GE-final frozen deep
+-- copies (OD-13 G-5). Self-contained: the ONLY tenant FK is client_id CASCADE
+-- (a copy dies with its tenant, never with its service); service_id carries
+-- NO FK into the catalog so the copy survives full source-service removal
+-- (INV-APPROVED-IMMUNE). Attachment bytes are duplicated (OD-06 demo-scale,
+-- 5 MB cap mirrored from evidence_attachments).
+CREATE TABLE IF NOT EXISTS approved_service_copies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  service_id UUID NULL,
+  service_code TEXT NOT NULL,
+  sealed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  sealed_by UUID,
+  content_hash TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'sealed'
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'approved_service_copies_status_valid') THEN
+    ALTER TABLE approved_service_copies ADD CONSTRAINT approved_service_copies_status_valid CHECK (status IN ('sealed'));
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS approved_copy_files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  copy_id UUID NOT NULL REFERENCES approved_service_copies(id) ON DELETE CASCADE,
+  answer_ref TEXT,
+  file_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size_bytes INT NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+  data BYTEA NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_item_versions_item ON item_versions(item_id);
+CREATE INDEX IF NOT EXISTS ix_approved_service_copies_client ON approved_service_copies(client_id);
+CREATE INDEX IF NOT EXISTS ix_approved_copy_files_copy ON approved_copy_files(copy_id);
+
+-- P1-D. RLS posture (policies: b17-content.sql). Enable AND force here so the
+-- new tables are never accidentally open before the content substrate lands.
+ALTER TABLE item_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE approved_service_copies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE approved_copy_files ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE item_versions FORCE ROW LEVEL SECURITY;
+ALTER TABLE approved_service_copies FORCE ROW LEVEL SECURITY;
+ALTER TABLE approved_copy_files FORCE ROW LEVEL SECURITY;

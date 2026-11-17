@@ -491,20 +491,31 @@ CREATE POLICY b17_audit_insert ON audit_log FOR INSERT WITH CHECK (
     -- the GRI commit's target-T row, only when the explicit server-set target
     -- equals the audited tenant and only for the import action/entity. The
     -- actor identity clause above binds both branches.
-    OR ((b17_platform_scope() OR b17_platform_config()) AND client_id IS NULL
-      AND action IN ('CREATE_SERVICE','UPDATE_SERVICE','DUPLICATE_SERVICE','LINK_SERVICE_STANDARD',
+      OR ((b17_platform_scope() OR b17_platform_config()) AND client_id IS NULL
+        AND action IN ('CREATE_SERVICE','UPDATE_SERVICE','DUPLICATE_SERVICE','LINK_SERVICE_STANDARD',
         'UNLINK_SERVICE_STANDARD','UPDATE_STANDARD','DELETE_STANDARD','UPDATE_DISCLOSURE',
         'DELETE_DISCLOSURE','CREATE_ITEM','UPDATE_ITEM','DELETE_ITEM','LINK_ITEMS','UNLINK_ITEMS',
         'INITIATIVE_UPSERTED','INITIATIVE_UPDATED',
         -- TASK-PROTO-U4-1c: the P-managed document requirement CRUD rows (the
         -- requirements are service-catalog objects, so their audit rows are
         -- NULL-tenant platform configuration rows like the catalog writes above).
-        'DOCUMENT_REQUIREMENT_CREATED','DOCUMENT_REQUIREMENT_UPDATED','DOCUMENT_REQUIREMENT_DELETED'))
+        'DOCUMENT_REQUIREMENT_CREATED','DOCUMENT_REQUIREMENT_UPDATED','DOCUMENT_REQUIREMENT_DELETED',
+        -- TASK-PROTO-U4-2-FIX P1 (SHIELD-P1-04): the platform catalog/history
+        -- writes below are audited NULL-tenant exactly like CREATE_ITEM/
+        -- UPDATE_ITEM above (P2 handlers record them in the same platform
+        -- configuration context). APPROVED_COPY_SEALED is deliberately NOT
+        -- here: a seal is a per-client write, audited target-bound only.
+        'CREATE_STANDARD','CREATE_DISCLOSURE','ARCHIVE_ITEM','REOPEN_ITEM_SCOPE',
+        'SERVICE_DELETED','IMPORT_CATALOG_COMMITTED'))
     OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
       AND client_id::text=b17_setting('target_id')
       AND ((action='IMPORT_GRI_DISCLOSURES' AND entity_type='standards')
         OR (action='ESG_PROFILE_IMPORTED' AND entity_type='esg_profile')
-        OR (action='REPORT_SETTINGS_SAVED' AND entity_type='report_settings')))
+        OR (action='REPORT_SETTINGS_SAVED' AND entity_type='report_settings')
+        -- TASK-PROTO-U4-2-FIX P1 (SHIELD-P1-04): the GE-final seal is a
+        -- per-client write — the target-bound branch below is the ONLY
+        -- admitted branch for APPROVED_COPY_SEALED seals (entity pinned).
+        OR (action='APPROVED_COPY_SEALED' AND entity_type='approved_service_copies')))
     -- SHIELD-U2F-01 (task §3(1)): the §3.4 admin configuration audit rows.
     -- Targetless branch = tenant creation + the explicit bulk link + a
     -- bulk link — both with a NULL target; target-
@@ -1307,4 +1318,82 @@ CREATE POLICY app_settings_update ON app_settings
   FOR UPDATE
   USING (nullif(current_setting('app.current_purpose', true), '') = 'platform.config')
   WITH CHECK (nullif(current_setting('app.current_purpose', true), '') = 'platform.config');
+
+-- ===========================================================================
+-- TASK-PROTO-U4-2-FIX P1 (DB §§DB-4…DB-6) — RLS row scope for the P1 tables.
+-- Tables/columns/indexes live in schema.sql; their policies MUST live here
+-- because b17.sql's activation block replaces every predecessor policy (the
+-- H13 app_settings precedent directly above).
+--
+-- item_versions: catalog history — P contexts unchanged; work reads follow the
+-- API-5 matrix (SHIELD-P1-02, mirrored from b17_evaluations): W keeps the
+-- own-tenant linked read, C additionally needs the gap fact on the item, E is
+-- limited to rows whose evaluation it proves as its own department (the
+-- 'evaluation' fact already encodes exactly-one-answer + retained assignment).
+-- Writes are P-catalog INSERT only (SHIELD-P1-01 append-only, INV-HISTORY).
+-- approved_service_copies / approved_copy_files: GE-final sealed copies —
+-- ge_admin sees all, same-tenant W/C read, E is denied entirely (spec
+-- API §API-5); inserts admit the W GE-final freeze context (mirror
+-- b17_review_snapshots_insert) and the P@T configuration context; there is
+-- NO UPDATE/DELETE policy — sealed copies are immutable (tenant CASCADE is
+-- the only removal path). Handler-owned rules stay out of SQL: version
+-- lockstep, content_hash computation, 5 MB/mime checks, DG-02 preconditions.
+-- ===========================================================================
+
+-- Idempotent re-application (same contract as the schema.sql batch above):
+-- the whole content file is re-applied wholesale by the offline initializer,
+-- so every policy here is dropped first (a policy dropped with its table on
+-- rollback is simply re-created).
+DROP POLICY IF EXISTS b17_item_versions_read ON item_versions;
+DROP POLICY IF EXISTS b17_item_versions_insert ON item_versions;
+DROP POLICY IF EXISTS b17_item_versions_update ON item_versions;
+DROP POLICY IF EXISTS b17_item_versions_delete ON item_versions;
+DROP POLICY IF EXISTS b17_approved_copies_read ON approved_service_copies;
+DROP POLICY IF EXISTS b17_approved_copies_insert ON approved_service_copies;
+DROP POLICY IF EXISTS b17_approved_copy_files_read ON approved_copy_files;
+DROP POLICY IF EXISTS b17_approved_copy_files_insert ON approved_copy_files;
+
+CREATE POLICY b17_item_versions_read ON item_versions FOR SELECT USING (
+  b17_platform_scope() OR b17_platform_config()
+  OR (b17_work_tenant(nullif(b17_setting('current_tenant_id'),'')::uuid)
+    AND b17_item_visible(nullif(b17_setting('current_tenant_id'),'')::uuid, item_id)
+    AND (b17_setting('current_mode')<>'employee'
+      OR EXISTS (SELECT 1 FROM evaluations e WHERE e.client_id::text=b17_setting('current_tenant_id')
+        AND e.item_id=item_versions.item_id AND b17_content_fact('evaluation', e.client_id, e.id)))
+    AND (b17_setting('current_mode')<>'client'
+      OR b17_content_fact('gap', nullif(b17_setting('current_tenant_id'),'')::uuid, item_id))));
+CREATE POLICY b17_item_versions_insert ON item_versions FOR INSERT
+  WITH CHECK (b17_platform_scope() OR b17_platform_config());
+-- SHIELD-P1-01: NO UPDATE/DELETE policy — item_versions is append-only
+-- (INV-HISTORY), mirroring the review_snapshots/sealed-copy immutability.
+-- RLS default-deny makes version rows immutable; ON DELETE RESTRICT on
+-- item_id independently blocks hard deletes of referenced items. The two
+-- DROP POLICY IF EXISTS lines above are retained so re-application stays
+-- idempotent on databases that carry the pre-SHIELD eight-policy set.
+
+CREATE POLICY b17_approved_copies_read ON approved_service_copies FOR SELECT USING (
+  b17_platform_scope() OR b17_platform_config()
+  OR (b17_work_tenant(client_id) AND b17_setting('current_mode') <> 'employee'));
+CREATE POLICY b17_approved_copies_insert ON approved_service_copies FOR INSERT WITH CHECK (
+  (b17_work_tenant(client_id) AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND sealed_by::text = b17_setting('current_actor_id'))
+  OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+    AND client_id::text = b17_setting('target_id')));
+
+CREATE POLICY b17_approved_copy_files_read ON approved_copy_files FOR SELECT USING (
+  EXISTS (SELECT 1 FROM approved_service_copies c WHERE c.id = approved_copy_files.copy_id
+    AND (b17_platform_scope() OR b17_platform_config()
+      OR (b17_work_tenant(c.client_id) AND b17_setting('current_mode') <> 'employee'))));
+-- SHIELD-P1-03: the W-consultant branch is actor-bound through the sealed
+-- parent (c.sealed_by = actor), mirroring the sealed_by=actor pin in
+-- b17_approved_copies_insert and the uploaded_by=actor pin in
+-- b17_attachments_insert: only the sealer extends their own sealed copy.
+CREATE POLICY b17_approved_copy_files_insert ON approved_copy_files FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM approved_service_copies c WHERE c.id = approved_copy_files.copy_id
+    AND ((b17_work_tenant(c.client_id) AND b17_setting('current_mode') = 'consultant'
+      AND b17_setting('current_user_role') = 'ge_admin'
+      AND c.sealed_by::text = b17_setting('current_actor_id'))
+      OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
+        AND c.client_id::text = b17_setting('target_id')))));
 
