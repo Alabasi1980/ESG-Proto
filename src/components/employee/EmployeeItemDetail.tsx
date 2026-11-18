@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
-  CheckCircle2,
   Download,
   History,
   Paperclip,
-  PencilLine,
   RefreshCw,
   Save,
   Send,
@@ -17,7 +15,7 @@ import { apiFetch } from '../../lib/api.ts';
 import { friendlyError, isFrozenRefusal } from '../../views/ServicesView.tsx';
 import type { QueueItem } from '../../views/EvaluationPanel.tsx';
 import type { ItemHistory } from '../services/ServiceContentPanel.tsx';
-import { submitBlockReason, type ItemMeta } from './employeeWorkspace.ts';
+import { queueStatusLabel, submitBlockReason, type ItemMeta } from './employeeWorkspace.ts';
 
 interface DetailAnswer {
   id: string;
@@ -30,7 +28,6 @@ interface DetailAnswer {
 
 interface DetailEvaluation {
   id: string;
-  evaluator_id: string | null;
   version: number | null;
 }
 
@@ -63,10 +60,7 @@ interface EmployeeItemDetailProps {
   notify: (kind: 'ok' | 'err', text: string) => void;
 }
 
-type EvalMode = 'score' | 'notEvaluated' | 'notApplicable';
-
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const NA_REASON_KEYS = ['not-applicable', 'legal-prohibitions', 'confidentiality-constraints', 'information-unavailable-incomplete'];
 const SUBMITTED_STATES = new Set(['submitted', 'approved', 'client_approved']);
 
 function fmtBytes(n: number): string {
@@ -90,7 +84,7 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
   notify,
 }) => {
   const { t } = useLanguage();
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const s = t.employeeServices;
 
   const [detail, setDetail] = useState<{ evaluation: DetailEvaluation | null; answers: DetailAnswer[]; history: HistoryEntry[] } | null>(null);
@@ -99,9 +93,6 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [value, setValue] = useState('');
-  const [mode, setMode] = useState<EvalMode>('score');
-  const [score, setScore] = useState(100);
-  const [naReason, setNaReason] = useState('not-applicable');
   const [baseline, setBaseline] = useState('');
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -114,15 +105,8 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [inputKey, setInputKey] = useState(0);
 
-  const [correctReason, setCorrectReason] = useState('');
-  const [correctOutcome, setCorrectOutcome] = useState('keep');
-  const [correctNaReason, setCorrectNaReason] = useState('not-applicable');
-  const [correcting, setCorrecting] = useState(false);
-  const [correctMsg, setCorrectMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-
   const answerType = meta?.answer_type ?? 'text';
   const attachmentRequired = meta?.attachment_required === true;
-  const snapshot = (v: string, m: EvalMode, sc: number, na: string) => `${m}|${sc}|${na}|${v}`;
 
   const loadDetail = useCallback(async (): Promise<{ evaluation: DetailEvaluation | null; answers: DetailAnswer[] } | null> => {
     setLoading(true);
@@ -145,10 +129,7 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
       if (histRes.ok) setItemHistory(await histRes.json());
       const current = typeof answers[0]?.value === 'string' ? (answers[0].value as string) : '';
       setValue(current);
-      setBaseline(snapshot(current, 'score', 100, 'not-applicable'));
-      setMode('score');
-      setScore(100);
-      setNaReason('not-applicable');
+      setBaseline(current);
       return { evaluation: data.evaluation ?? null, answers };
     } catch (err) {
       setLoadError(friendlyError(err, s.detailLoadFailed));
@@ -169,10 +150,8 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
   const isDecided = isPostSubmit || answerStatus === 'returned';
   const canEdit = !isPostSubmit && !isDecided;
   const isDraft = !answerStatus || answerStatus === 'draft' || answerStatus === 'returned';
-  const isAuthor = !!user && !!detail?.evaluation && user.id === detail.evaluation.evaluator_id;
-  const canCorrect = isPostSubmit && (isAuthor || user?.role === 'ge_admin');
 
-  const dirty = canEdit && snapshot(value, mode, score, naReason) !== baseline && baseline !== '';
+  const dirty = canEdit && value !== baseline && baseline !== '';
   useEffect(() => {
     onDirtyChange('item', dirty);
     return () => onDirtyChange('item', false);
@@ -205,14 +184,14 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
+  // Owner ruling (U4-3a round 3): the employee files the typed answer only.
+  // The draft carries a neutral no-rating mode (nothing evaluative is filed
+  // from this surface); rating lives on the consultant side. The server still
+  // requires exactly one mode, so this neutral carrier keeps the answer /
+  // submit / attachment flows intact without fabricating an evaluation.
   const buildDraftBody = (pairVersion: number | null) => {
     const body: Record<string, unknown> = { itemId: item.item_id, evidenceNote: answerType === 'file' ? '' : value };
-    if (mode === 'score') body.score = score;
-    else if (mode === 'notEvaluated') body.notEvaluated = true;
-    else {
-      body.notApplicable = true;
-      body.naReason = naReason;
-    }
+    body.notEvaluated = true;
     if (pairVersion !== null) body.version = pairVersion;
     return body;
   };
@@ -234,7 +213,7 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
         if ((data as { code?: string }).code === 'version.conflict') setConflict(true);
         throw new Error((data as { error?: string }).error || s.actionFailed);
       }
-      setBaseline(snapshot(answerType === 'file' ? '' : value, mode, score, naReason));
+      setBaseline(answerType === 'file' ? '' : value);
       notify('ok', t.common.success);
       await loadDetail();
       if (answerId) await fetchAttachments(answerId);
@@ -281,45 +260,6 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
       notify('err', message);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const applyCorrection = async () => {
-    const evalId = detail?.evaluation?.id;
-    if (!evalId) return;
-    setCorrecting(true);
-    setCorrectMsg(null);
-    try {
-      const body: Record<string, unknown> = { reason: correctReason.trim() };
-      if (correctOutcome === 'notEvaluated') body.notEvaluated = true;
-      else if (correctOutcome === 'notApplicable') {
-        body.notApplicable = true;
-        body.naReason = correctNaReason;
-      } else if (correctOutcome !== 'keep') body.newScore = Number(correctOutcome);
-      else body.newScore = item.score ?? 100;
-      const pairVersion = detail?.evaluation?.version ?? answer?.version ?? null;
-      if (pairVersion !== null) body.version = pairVersion;
-      const res = await apiFetch(`/api/evaluations/${encodeURIComponent(evalId)}/correct`, {
-        method: 'PUT',
-        headers: authHeaders,
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (isFrozenRefusal(data)) onFrozen();
-        throw new Error((data as { error?: string }).error || s.actionFailed);
-      }
-      setCorrectMsg({ kind: 'ok', text: t.common.success });
-      notify('ok', t.common.success);
-      setCorrectReason('');
-      await loadDetail();
-      onChanged();
-    } catch (err) {
-      const message = friendlyError(err, s.actionFailed);
-      setCorrectMsg({ kind: 'err', text: message });
-      notify('err', message);
-    } finally {
-      setCorrecting(false);
     }
   };
 
@@ -406,11 +346,13 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
   };
 
   const provided = answerType === 'file' ? false : value.trim() !== '';
+  // The employee surface never files N/A (consultant-only); the answer
+  // requirement is the typed value, the attachment rule stays independent.
   const block = submitBlockReason({
     answerType,
     attachmentRequired,
     attachmentCount: attachments.length,
-    notApplicable: mode === 'notApplicable',
+    notApplicable: false,
     provided,
   });
 
@@ -537,73 +479,10 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
             {renderTypedInput()}
           </div>
 
-          <div>
-            <h4 className="text-sm font-bold text-text mb-2">{s.outcomeSection}</h4>
-            <div className="space-y-2">
-              {[
-                { v: 0 as number, label: t.gapAnalysis.score0 },
-                { v: 50 as number, label: t.gapAnalysis.score50 },
-                { v: 100 as number, label: t.gapAnalysis.score100 },
-              ].map((opt) => (
-                <label
-                  key={opt.v}
-                  className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors ${
-                    mode === 'score' && score === opt.v ? 'border-brand bg-brand-soft' : 'border-border hover:bg-surface-3'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={`outcome-${item.item_id}`}
-                    checked={mode === 'score' && score === opt.v}
-                    onChange={() => {
-                      setMode('score');
-                      setScore(opt.v);
-                    }}
-                    className="accent-brand"
-                  />
-                  <span className="font-bold text-text">
-                    {s.outcomeScore}: <bdi dir="ltr">{opt.v}</bdi> — {opt.label}
-                  </span>
-                </label>
-              ))}
-              <label
-                className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors ${
-                  mode === 'notEvaluated' ? 'border-focus-ring bg-brand-soft' : 'border-border hover:bg-surface-3'
-                }`}
-              >
-                <input type="radio" name={`outcome-${item.item_id}`} checked={mode === 'notEvaluated'} onChange={() => setMode('notEvaluated')} className="accent-brand" />
-                <span className="font-bold text-text">{s.outcomeNotEvaluated}</span>
-              </label>
-              <div className={`p-2.5 rounded-xl border transition-colors ${mode === 'notApplicable' ? 'border-focus-ring bg-brand-soft' : 'border-border'}`}>
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs">
-                  <input type="radio" name={`outcome-${item.item_id}`} checked={mode === 'notApplicable'} onChange={() => setMode('notApplicable')} className="accent-brand" />
-                  <span className="font-bold text-text">{s.outcomeNA}</span>
-                </label>
-                {mode === 'notApplicable' && (
-                  <div className="mt-2 ms-6">
-                    <label className="block text-[11px] font-semibold text-muted mb-1">{s.naReasonLabel}</label>
-                    <select
-                      value={naReason}
-                      onChange={(e) => setNaReason(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text"
-                    >
-                      {NA_REASON_KEYS.map((k) => (
-                        <option key={k} value={k}>
-                          {t.gapAnalysis.naReasonOptions[k] || k}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
           {block === 'attachment' && (
             <div role="alert" className="p-3 rounded-xl bg-warning-soft border border-warning text-[11px]">
               <div className="font-bold text-warning-text mb-0.5">{s.attachmentRequiredTitle}</div>
               <p className="text-warning-text">{s.attachmentRequiredDesc}</p>
-              {mode === 'notApplicable' && <p className="text-warning-text mt-0.5">{s.attachmentRequiredNa}</p>}
             </div>
           )}
 
@@ -650,7 +529,7 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
           ) : (
             <p className="text-[11px] text-muted">{answerType === 'file' ? s.fileAnswerNote : s.noAnswerYet}</p>
           )}
-          <p className="text-[11px] font-semibold text-muted mt-2">{answerStatus ?? '—'}</p>
+          <p className="text-[11px] font-semibold text-muted mt-2">{queueStatusLabel(answerStatus ?? '', t)}</p>
         </div>
       )}
 
@@ -721,71 +600,6 @@ export const EmployeeItemDetail: React.FC<EmployeeItemDetailProps> = ({
           </>
         )}
       </div>
-
-      {canCorrect && (
-        <div className="p-4 bg-surface-2 rounded-2xl border border-warning shadow-xs">
-          <div className="flex items-center gap-2 mb-1">
-            <PencilLine className="w-4 h-4 text-warning-text" />
-            <h4 className="text-sm font-bold text-text">{t.gapAnalysis.correctionTitle}</h4>
-          </div>
-          <p className="text-[11px] text-muted mb-3">{t.gapAnalysis.correctionDesc}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-            <label className="block text-[11px] font-semibold text-muted">
-              {s.outcomeSection}
-              <select
-                value={correctOutcome}
-                onChange={(e) => setCorrectOutcome(e.target.value)}
-                className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text"
-              >
-                <option value="keep">{t.gapAnalysis.scoreLabel}: {item.score ?? '—'}</option>
-                <option value="0">{s.outcomeScore}: 0</option>
-                <option value="50">{s.outcomeScore}: 50</option>
-                <option value="100">{s.outcomeScore}: 100</option>
-                <option value="notEvaluated">{s.outcomeNotEvaluated}</option>
-                <option value="notApplicable">{s.outcomeNA}</option>
-              </select>
-            </label>
-            {correctOutcome === 'notApplicable' && (
-              <label className="block text-[11px] font-semibold text-muted">
-                {s.naReasonLabel}
-                <select
-                  value={correctNaReason}
-                  onChange={(e) => setCorrectNaReason(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text"
-                >
-                  {NA_REASON_KEYS.map((k) => (
-                    <option key={k} value={k}>
-                      {t.gapAnalysis.naReasonOptions[k] || k}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          <label className="block text-[11px] font-semibold text-muted mb-1">{t.gapAnalysis.correctionReasonLabel}</label>
-          <textarea
-            value={correctReason}
-            onChange={(e) => setCorrectReason(e.target.value)}
-            placeholder={t.gapAnalysis.correctionReasonPh}
-            rows={2}
-            className="w-full px-3 py-2 rounded-lg border border-border-strong bg-surface-3 text-xs text-text placeholder-muted"
-          />
-          {correctMsg && (
-            <div role={correctMsg.kind === 'err' ? 'alert' : 'status'} className={`mt-2 p-2.5 rounded-lg text-xs ${correctMsg.kind === 'ok' ? 'bg-success-soft text-success-text' : 'bg-danger-soft text-danger'}`}>
-              {correctMsg.text}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => void applyCorrection()}
-            disabled={correcting || !correctReason.trim()}
-            className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand text-brand-ink text-xs font-bold hover:bg-brand-strong disabled:opacity-50"
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>{t.gapAnalysis.applyCorrection}</span>
-          </button>
-        </div>
-      )}
 
       <div className="p-4 bg-surface-2 rounded-2xl border border-border shadow-xs">
         <div className="flex items-center gap-2 mb-3">

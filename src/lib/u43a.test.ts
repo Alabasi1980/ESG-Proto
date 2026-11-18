@@ -211,6 +211,36 @@ test('U4-3a composition guards: UI over existing APIs only — no pickers, no as
   assert.doesNotMatch(docs + inits, /\/api\/(evaluations|answers|assignments|staff-lists|services|items|queue)/, 'tab-scoped reads/writes only');
 });
 
+test('U4-3a round 3 (owner ruling): no evaluation content renders on the employee surface', () => {
+  const view = readFileSync('src/views/EmployeeServicesView.tsx', 'utf8');
+  const detail = readFileSync('src/components/employee/EmployeeItemDetail.tsx', 'utf8');
+  const docs = readFileSync('src/components/employee/EmployeeDocumentsTab.tsx', 'utf8');
+  const inits = readFileSync('src/components/employee/EmployeeInitiativesTab.tsx', 'utf8');
+  const helper = readFileSync('src/components/employee/employeeWorkspace.ts', 'utf8');
+  const surface = view + detail + docs + inits + helper;
+  // Score rubric / evaluation-outcome UI keys are never referenced.
+  for (const token of ['outcomeSection', 'outcomeScore', 'outcomeNotEvaluated', 'outcomeNA',
+    'score0', 'score50', 'score100', 'scoreLabel']) {
+    assert.doesNotMatch(surface, new RegExp(token), `no rubric: ${token}`);
+  }
+  // N/A filing control (state, reason list, payload) is gone; correction
+  // (outcome editing) is gone; no evaluator identity is read.
+  for (const token of ['naReason', 'NA_REASON', 'setMode', 'setScore', 'setNaReason',
+    'correctionTitle', 'correctionDesc', 'correctionReason', 'applyCorrection',
+    'correctOutcome', 'correctNaReason', 'newScore', 'evaluator', 'item.score']) {
+    assert.doesNotMatch(surface, new RegExp(token), `no evaluation control: ${token}`);
+  }
+  // No score word anywhere on the surface (case-insensitive, whole word).
+  assert.doesNotMatch(surface, /\bscore\b/i, 'no score word renders');
+  // Flows unchanged: draft + submit-for-approval + attachments + status words.
+  assert.match(detail, /\/api\/evaluations'/, 'draft endpoint kept');
+  assert.match(detail, /\/evaluations\/\$\{encodeURIComponent\(evalId\)\}\/submit/, 'submit endpoint kept');
+  assert.match(detail, /\/attachments/, 'attachments kept');
+  assert.match(detail, /saveDraft/, 'save-draft kept');
+  assert.match(detail, /submitForApproval/, 'submit-for-approval kept');
+  assert.match(detail + view, /queueStatusLabel/, 'plain status words kept');
+});
+
 test('U4-3a mount: employee landing mounts the workspace; nav matrix untouched', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
   assert.match(app, /EmployeeServicesView/, 'workspace mounted');
