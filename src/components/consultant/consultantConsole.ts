@@ -22,7 +22,10 @@
 
 import type { QueueItem } from '../../views/EvaluationPanel.tsx';
 import type { ServiceRow } from '../services/ServiceRail.tsx';
-import { STAFF_NA_REASONS } from '../../lib/b11b.ts';
+// NOTE (U4-3c2 boot fix): do NOT import from '../../lib/b11b.ts' here — that
+// module pulls 'crypto' (node builtin, externalized in the browser) and blanks
+// the whole app at load since App statically imports this console. The N/A
+// vocabulary is inlined (must stay identical to STAFF_NA_REASONS server-side).
 import { CLIENT_FIELD_MASK_VALUES } from '../../lib/clientFieldMask.ts';
 import { headers as workspaceTabHeaders } from '../../lib/workspaceClient.ts';
 
@@ -55,8 +58,14 @@ export interface DeptMapping {
   clientDeptId: string;
 }
 
-/** G2 closed N/A reason list (mandatory; same vocabulary the server enforces). */
-export const NA_REASONS: readonly string[] = STAFF_NA_REASONS;
+/** G2 closed N/A reason list (mandatory; same vocabulary the server enforces
+ * in STAFF_NA_REASONS — kept inline so the browser bundle never pulls 'crypto'). */
+export const NA_REASONS: readonly string[] = [
+  'not-applicable',
+  'legal-prohibitions',
+  'confidentiality-constraints',
+  'information-unavailable-incomplete',
+];
 
 /** G6 mask vocabulary incl. the three new operational columns. */
 export const MASK_FIELDS: readonly string[] = CLIENT_FIELD_MASK_VALUES;
