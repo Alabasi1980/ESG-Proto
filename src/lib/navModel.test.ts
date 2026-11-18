@@ -42,7 +42,7 @@ const EXPECTED: Record<NavContext, readonly Row[]> = {
     ['gap-analysis', 4, true, 'تحليل الفجوات', 'Gap Analysis'],
     ['actions', 5, true, 'الإجراءات التصحيحية', 'Corrective Actions'],
     ['initiatives', 6, true, 'المبادرات المسندة', 'Assigned Initiatives'],
-    ['staff-lists', 9, true, 'قوائم الموظفين', 'Staff Lists'],
+    // TASK-PROTO-U4-3d round 2: W `staff-lists` hidden — console Staff tab covers it.
     ['audit-log', 10, true, 'سجل التدقيق', 'Audit Log'],
     ['notifications', 11, true, 'الإشعارات', 'Notifications'],
   ],
@@ -329,10 +329,14 @@ test('U3-B1 nav model never exceeds the approved server page sets (default capab
       const aliasShaped = (context === 'consultant' && id === 'client-dashboard')
         || (context === 'client' && id === 'dashboard');
       const clientHiddenStaff = context === 'client' && id === 'staff-lists';
-      assert.ok(aliasShaped || id === 'esg-profile' || id === 'reports' || clientHiddenStaff, `${context}: unexpected withheld page ${id}`);
+      // TASK-PROTO-U4-3d round 2: W additionally withholds `staff-lists` (hidden
+      // nav row — console Staff tab covers it; P keeps the page read-only).
+      const consultantHiddenStaff = context === 'consultant' && id === 'staff-lists';
+      assert.ok(aliasShaped || id === 'esg-profile' || id === 'reports' || clientHiddenStaff || consultantHiddenStaff, `${context}: unexpected withheld page ${id}`);
     }
     assert.ok(withheld.includes('esg-profile') && withheld.includes('reports'), `${context}: conditionals withheld`);
     if (context === 'client') assert.ok(withheld.includes('staff-lists'), 'C withholds the hidden staff-lists row');
+    if (context === 'consultant') assert.ok(withheld.includes('staff-lists'), 'W withholds the hidden staff-lists row');
   }
 });
 

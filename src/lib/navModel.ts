@@ -135,7 +135,8 @@ const PAGES: Record<NavContext, readonly MatrixEntry[]> = {
     { id: 'initiatives', order: 6, menu: true },
     { id: 'esg-profile', order: 7, menu: true, conditional: true },
     { id: 'reports', order: 8, menu: true, conditional: true },
-    { id: 'staff-lists', order: 9, menu: true },
+    // TASK-PROTO-U4-3d round 2: W `staff-lists` nav row hidden — the consultant
+    // console Staff tab is the W staff surface; P keeps the page read-only.
     { id: 'audit-log', order: 10, menu: true },
     { id: 'notifications', order: 11, menu: true },
   ],

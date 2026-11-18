@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Plus, Trash2, KeyRound } from 'lucide-react';
+import { RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiFetch } from '../lib/api.ts';
@@ -30,11 +30,6 @@ interface Dept {
   client_id: string;
 }
 
-interface OtpAccount {
-  email: string;
-  oneTimePassword: string;
-}
-
 export const StaffListsView: React.FC = () => {
   const { t } = useLanguage();
   const { user, token } = useAuth();
@@ -44,8 +39,6 @@ export const StaffListsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<StaffRow[]>([{ email: '', name: '', departmentId: '', role: 'employee' }]);
   const [creating, setCreating] = useState(false);
-  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
-  const [lastOtps, setLastOtps] = useState<{ listId: string; accounts: OtpAccount[] } | null>(null);
 
   const headers = useCallback((): Record<string, string> => {
     const h: Record<string, string> = {};
@@ -118,39 +111,6 @@ export const StaffListsView: React.FC = () => {
     }
   };
 
-  const handleApprove = async (id: string) => {
-    if (!window.confirm('Approve and provision accounts? OTPs show ONCE.')) return;
-    try {
-      const res = await apiFetch(`/api/staff-lists/${id}/approve`, { method: 'POST', headers: jsonHeaders() });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setLastOtps({ listId: id, accounts: data.accounts ?? [] });
-      await fetchAll();
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    const reason = (rejectReason[id] || '').trim();
-    if (!reason) {
-      setError('A rejection reason is required.');
-      return;
-    }
-    try {
-      const res = await apiFetch(`/api/staff-lists/${id}/reject`, {
-        method: 'POST',
-        headers: jsonHeaders(),
-        body: JSON.stringify({ reason }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      await fetchAll();
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
   if (loading) return <p className="text-xs text-muted">{t.common.loading}</p>;
 
   return (
@@ -166,26 +126,6 @@ export const StaffListsView: React.FC = () => {
       </div>
 
       {error && <div className="p-3 rounded-xl bg-danger-soft border border-danger text-danger text-xs">{error}</div>}
-
-      {lastOtps && (
-        <div className="p-5 rounded-2xl bg-warning-soft border border-warning text-xs">
-          <div className="flex items-center gap-2 font-bold text-warning-text mb-1">
-            <KeyRound className="w-4 h-4" />
-            <span>{t.staffLists.otpTitle}</span>
-          </div>
-          <p className="text-warning-text mb-3">{t.staffLists.otpWarning}</p>
-          <ul className="space-y-1 font-mono" dir="ltr">
-            {lastOtps.accounts.map((a) => (
-              <li key={a.email}>
-                {a.email} — {a.oneTimePassword}
-              </li>
-            ))}
-          </ul>
-          <button onClick={() => setLastOtps(null)} className="mt-3 px-4 py-1.5 rounded-lg bg-brand text-brand-ink font-bold">
-            {t.common.close}
-          </button>
-        </div>
-      )}
 
       {(user?.role === 'client_admin' || user?.role === 'ge_admin') && (
         <form onSubmit={handleCreate} className="p-5 bg-surface-2 rounded-2xl border border-border space-y-3">
@@ -267,28 +207,12 @@ export const StaffListsView: React.FC = () => {
                       {t.common.submit}
                     </button>
                   )}
-                  {user?.role === 'ge_admin' && l.status === 'submitted' && (
-                    <>
-                      <button onClick={() => handleApprove(l.id)} className="px-3 py-1.5 rounded-lg bg-brand text-brand-ink text-xs font-bold">
-                        {t.staffLists.approveBtn}
-                      </button>
-                      <input
-                        value={rejectReason[l.id] || ''}
-                        onChange={(e) => setRejectReason({ ...rejectReason, [l.id]: e.target.value })}
-                        placeholder={t.staffLists.rejectReasonPh}
-                        className="px-3 py-1.5 rounded-lg text-xs bg-surface-3 border border-border-strong text-text placeholder-muted"
-                      />
-                      <button onClick={() => handleReject(l.id)} className="px-3 py-1.5 rounded-lg border border-danger bg-surface-3 text-danger text-xs font-bold">
-                        {t.staffLists.rejectBtn}
-                      </button>
-                    </>
-                  )}
                 </div>
               </div>
               <ul className="mt-2 text-[11px] text-muted space-y-0.5">
                 {l.rows.map((r) => (
                   <li key={r.id}>
-                    {r.email} · {r.name} · {r.department_resolved || r.department_name || '—'} · {r.role}
+                    <span dir="ltr">{r.email}</span> · {r.name} · {r.department_resolved || r.department_name || '—'} · {r.role}
                   </li>
                 ))}
               </ul>

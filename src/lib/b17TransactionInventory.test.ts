@@ -414,7 +414,11 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/components/consultant/ConsultantScopeTab.tsx',
     'src/components/consultant/ConsultantMasksTab.tsx',
     'src/components/consultant/ConsultantStaffTab.tsx',
-    'src/lib/u43c2.test.ts']);
+    'src/lib/u43c2.test.ts',
+    // TASK-PROTO-U4-3d (P UI removal, UI-only): the no-DB behavioral pins for
+    // the read-only staff-list directory (no provisioning affordances) — same
+    // bound, no server/db/style path.
+    'src/lib/u43d.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -498,7 +502,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'project-control/prototypes/task-proto-u4-2/u43b-client-console-en.png',
     // TASK-PROTO-U4-3C2 round 2 (Tera-authorized): the U4-3c2 QA report exact
     // path (reviewer-owned input, filed by QA; bytes untouched) — same pattern.
-    'project-control/qa-reports/TASK-PROTO-U4-3C2-QA.md']);
+    'project-control/qa-reports/TASK-PROTO-U4-3C2-QA.md',
+    // TASK-PROTO-U4-3d pre-step (Tera-authorized): the Tera-owned c2 live
+    // console screenshot exact path, bytes untouched — same pattern as above.
+    'project-control/prototypes/task-proto-u4-2/u43c-console-en.png']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -557,7 +564,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,135); // 127 through U4-3C widened mounts + the 8 U4-3C2 console paths (view + helper + 5 tabs + no-DB test, block above)
+  assert.equal(allowed.size,136); // 127 through U4-3C widened mounts + the 8 U4-3C2 console paths (view + helper + 5 tabs + no-DB test, block above) + the 1 U4-3d no-DB pin
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

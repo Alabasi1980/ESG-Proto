@@ -89,3 +89,10 @@ Evidence: u43b 12/12 · 471/472 (sole red = approved W-P5-01) · design APPROVE 
 فهمي: الموظف يرى خدمات قسمه ويجيب ويرفق؛ المدير يؤكد ويملأ القوائم؛ المستشار يطبّق الخدمة ويتحكم بالمرئي ويدبّر الحسابات؛ المنصة تخرج من التدبير.
 الافتراضات المفتوحة: لا شيء — G1–G7 محسومة بموافقتك.
 ما سيكشفه الاعتماد: بناء (a) فوراً؛ (c) و(d) بعده بالترتيب.
+
+## U4-3d Pre-Execution Gate Result (2026-11-19)
+Smallest safe unit PASS (P UI removal only: StaffListsView approve/reject/provision/OTP surface removed; read-only directory + audit trail stay; routes untouched per G3) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (P sees no provisioning affordances; W/C flows unaffected; QA + design review) · pre-step: allowlist Tera-owned c2 live-evidence paths exact (u43c-console-en.png) in guard.
+Gate Status: PASS → delegate (d) (ui-designer).
+
+## U4-3d Result: ACCEPTED 2026-11-19 (3 rounds, cap respected)
+Evidence: u43d 4/4 · 503/504 (sole red = approved W-P5-01) · lint/build clean · design APPROVE WITH NOTES (both fixed r3: copy + dead keys pruned) · QA PARTIAL zero-fail, closed live by Tera on disposable preview: P Staff Lists = read-only directory, zero approve/reject/OTP affordances, new copy verified in DOM + screenshot · W console (5 tabs) renders + Masks tab writes to DB + FULL W API chain live (link-conflict/N-A set+lift/approve+OTP-once/email-400/reveal/complete-password/mask-write). Boundary (honest): W Staff-tab UI render + in-browser approve click not exercised live (workspace-enter harness friction after P5D2 reboot); covered by unit pins + design review + identical act() pattern to the C-confirm already proven live. No live shared contact. P5D-class node import scan: consultantConsole fixed; no other client-bundled node: imports (grep).
