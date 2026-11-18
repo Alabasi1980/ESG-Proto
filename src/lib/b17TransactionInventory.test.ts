@@ -361,7 +361,15 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // its two presentational components and the no-DB behavioural test.
     // App/navModel/translations are already named above; no server/db/style path.
     'src/views/ServicesView.tsx','src/components/services/ServiceRail.tsx',
-    'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts']);
+    'src/components/services/ServiceContentPanel.tsx','src/lib/services.test.ts',
+    // TASK-PROTO-U4-3 unit (a): the employee services workspace — the view,
+    // its four presentational components/helpers and the no-DB behavioural
+    // test. App/translations are already named above (standing authority);
+    // no server/db/style/nav path.
+    'src/views/EmployeeServicesView.tsx','src/components/employee/employeeWorkspace.ts',
+    'src/components/employee/ConfirmDialog.tsx','src/components/employee/EmployeeItemDetail.tsx',
+    'src/components/employee/EmployeeDocumentsTab.tsx','src/components/employee/EmployeeInitiativesTab.tsx',
+    'src/lib/u43a.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -422,9 +430,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U4-2-FIX P5 round 2 (Tera-authorized): the P4 QA report exact
     // path (Tera-owned reviewer input; bytes untouched) — same pattern.
     'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P4-QA.md',
-    // TASK-PROTO-U4-2-FIX P5 round 3: the P5 QA report exact path
-    // (Tera-owned reviewer input; bytes untouched) — same pattern.
-    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P5-QA.md']);
+    // TASK-PROTO-U4-3 unit (a) (Tera-authorized): the U4-3a QA report exact
+    // path (Tera-owned reviewer input; bytes untouched) — same pattern.
+    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P5-QA.md',
+    'project-control/qa-reports/TASK-PROTO-U4-3A-QA.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -462,7 +471,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // designer technical specification arrive as Tera-owned inputs (same
     // pattern as the U4-2 contract above) — exact paths only, never edited here.
     'project-control/tasks/TASK-PROTO-U4-2-FIX/TASK-PROTO-U4-2-FIX.md',
-    'project-control/task-engineering-reviews/TASK-PROTO-U4-2-FIX_TECHNICAL_SPECIFICATION.md']);
+    'project-control/task-engineering-reviews/TASK-PROTO-U4-2-FIX_TECHNICAL_SPECIFICATION.md',
+    // TASK-PROTO-U4-3 unit (a) (Tera-authorized): the program contract + the
+    // designer technical specification arrive as Tera-owned inputs (same
+    // pattern as the U4-2-FIX inputs above) — exact paths only, never edited here.
+    'project-control/tasks/TASK-PROTO-U4-3/TASK-PROTO-U4-3.md',
+    'project-control/task-engineering-reviews/TASK-PROTO-U4-3_TECHNICAL_SPECIFICATION.md']);
   // OD-11 §1: the shared banner component is REMOVED by the product-posture task,
   // so the path has left `allowed` (nothing may edit it) and only its deletion may
   // pass the write guard — one exact path, no globs, no directory entries. The
@@ -473,7 +487,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,109); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split + the P3S seed-migration no-DB test + the P5S server-whitelist no-DB test (via the ...newFiles spread)
+  assert.equal(allowed.size,116); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split + the P3S seed-migration no-DB test + the P5S server-whitelist no-DB test (via the ...newFiles spread)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

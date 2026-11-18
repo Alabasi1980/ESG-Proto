@@ -761,6 +761,71 @@ export interface Translations {
     bulkRowOk: string;
   };
 
+  // TASK-PROTO-U4-3 unit (a) — employee services workspace (own-dept only).
+  // Key names are workspace-specific so no existing block's counter can be disturbed.
+  employeeServices: {
+    title: string;
+    subtitle: string;
+    railTitle: string;
+    railSearchLabel: string;
+    railSearchPh: string;
+    railEmpty: string;
+    railEmptyHint: string;
+    emptySearch: string;
+    countsAssigned: string;
+    countsSubmitted: string;
+    countsPending: string;
+    tabItems: string;
+    tabDocuments: string;
+    tabInitiatives: string;
+    actionFailed: string;
+    loadFailed: string;
+    searchItemsPh: string;
+    itemsEmpty: string;
+    itemsEmptyHint: string;
+    selectItemHint: string;
+    answerSection: string;
+    answerTypeLabel: string;
+    fileAnswerNote: string;
+    outcomeSection: string;
+    outcomeScore: string;
+    outcomeNotEvaluated: string;
+    outcomeNA: string;
+    naReasonLabel: string;
+    saveDraft: string;
+    saving: string;
+    submitAnswer: string;
+    submitting: string;
+    attachmentRequiredTitle: string;
+    attachmentRequiredDesc: string;
+    attachmentRequiredNa: string;
+    attachmentLockedNote: string;
+    noAnswerYet: string;
+    unsavedChanges: string;
+    unsavedTitle: string;
+    detailLoadFailed: string;
+    docsTitle: string;
+    docsEmpty: string;
+    docsEmptyHint: string;
+    docRequired: string;
+    docProvided: string;
+    markProvided: string;
+    noteLabel: string;
+    notePh: string;
+    tagLabel: string;
+    tagPh: string;
+    saveChanges: string;
+    savingChanges: string;
+    submittedAtLabel: string;
+    proofFilesTitle: string;
+    initsTitle: string;
+    initsEmpty: string;
+    initsEmptyHint: string;
+    performedLabel: string;
+    notPerformedLabel: string;
+    versionConflict: string;
+  };
+
   taxonomy: {
     manageTitle: string;
     manageSubtitle: string;
@@ -834,6 +899,8 @@ export interface Translations {
     checking: string;
     connected: string;
     disconnected: string;
+    yes: string;
+    no: string;
   };
 
   geOverview: Record<string, string>;
@@ -1272,6 +1339,8 @@ export const translations: Record<Language, Translations> = {
         checking: 'Checking',
         connected: 'Connected',
         disconnected: 'Disconnected',
+        yes: 'Yes',
+        no: 'No',
       },
 
     actions: {
@@ -1689,6 +1758,69 @@ export const translations: Record<Language, Translations> = {
       bulkEditApply: 'Apply bulk edit',
       bulkEditHint: 'Only answer type, priority, classification and attachment flag. Department changes stay single-item.',
       bulkRowOk: 'Updated',
+    },
+
+    employeeServices: {
+      title: 'My department services',
+      subtitle: 'Answer assigned items, attach evidence, and track documents and initiatives — own department only.',
+      railTitle: 'Linked services',
+      railSearchLabel: 'Search services',
+      railSearchPh: 'Name or code',
+      railEmpty: 'No services assigned to your department',
+      railEmptyHint: 'Contact your administrator if you expect work here.',
+      emptySearch: 'No matching services.',
+      countsAssigned: 'Assigned',
+      countsSubmitted: 'Submitted',
+      countsPending: 'Pending',
+      tabItems: 'Items',
+      tabDocuments: 'Documents',
+      tabInitiatives: 'Initiatives',
+      actionFailed: 'The action could not be completed.',
+      loadFailed: 'The employee workspace could not be loaded.',
+      searchItemsPh: 'Search by code or requirement',
+      itemsEmpty: 'No items in this service',
+      itemsEmptyHint: 'Items assigned to your department will appear here.',
+      selectItemHint: 'Select an item to view and answer it.',
+      answerSection: 'Answer',
+      answerTypeLabel: 'Answer type',
+      fileAnswerNote: 'The attachment IS the answer for this item — no text is accepted. Save a draft first, then attach the file.',
+      outcomeSection: 'Evaluation outcome',
+      outcomeScore: 'Score',
+      outcomeNotEvaluated: 'Not evaluated',
+      outcomeNA: 'Not applicable',
+      naReasonLabel: 'N/A reason (mandatory)',
+      saveDraft: 'Save draft',
+      saving: 'Saving…',
+      submitAnswer: 'Submit for approval',
+      submitting: 'Submitting…',
+      attachmentRequiredTitle: 'Attachment required',
+      attachmentRequiredDesc: 'This item requires at least one attachment before it can be submitted.',
+      attachmentRequiredNa: 'A not-applicable outcome does not waive the attachment requirement.',
+      attachmentLockedNote: 'Attachments are locked after submit — draft only.',
+      noAnswerYet: 'No answer saved yet.',
+      unsavedChanges: 'Unsaved changes — save or discard before leaving.',
+      unsavedTitle: 'Leave without saving?',
+      detailLoadFailed: 'The item detail could not be loaded.',
+      docsTitle: 'Department documents',
+      docsEmpty: 'No document requirements for your department',
+      docsEmptyHint: 'Requirements linked to your department will appear here.',
+      docRequired: 'Required',
+      docProvided: 'Submitted',
+      markProvided: 'Mark as provided',
+      noteLabel: 'Note',
+      notePh: 'Add a note (optional)',
+      tagLabel: 'Tag',
+      tagPh: 'Single tag (optional)',
+      saveChanges: 'Save changes',
+      savingChanges: 'Saving…',
+      submittedAtLabel: 'Submitted at',
+      proofFilesTitle: 'Proof files',
+      initsTitle: 'Assigned initiatives',
+      initsEmpty: 'No initiatives assigned to your department',
+      initsEmptyHint: 'Initiatives selected for your department will appear here.',
+      performedLabel: 'Performed',
+      notPerformedLabel: 'Not performed',
+      versionConflict: 'Someone else saved first. Reload and retry — your draft is kept.',
     },
 
     taxonomy: {
@@ -2268,6 +2400,8 @@ export const translations: Record<Language, Translations> = {
         checking: 'جارٍ التحقق',
         connected: 'متصل',
         disconnected: 'غير متصل',
+        yes: 'نعم',
+        no: 'لا',
       },
 
     actions: {
@@ -2685,6 +2819,69 @@ export const translations: Record<Language, Translations> = {
       bulkEditApply: 'تطبيق التحرير الجماعي',
       bulkEditHint: 'نوع الإجابة والأولوية والتصنيف وحالة المرفق فقط. تغيير القسم يبقى مفرداً.',
       bulkRowOk: 'حُدِّث',
+    },
+
+    employeeServices: {
+      title: 'خدمات قسمي',
+      subtitle: 'أجب عن البنود المسندة وأرفق الأدلة وتابع المستندات والمبادرات — قسمك فقط.',
+      railTitle: 'الخدمات المرتبطة',
+      railSearchLabel: 'البحث في الخدمات',
+      railSearchPh: 'الاسم أو الرمز',
+      railEmpty: 'لا توجد خدمات مسندة لقسمك',
+      railEmptyHint: 'تواصل مع مديرك إذا كنت تتوقع عملاً هنا.',
+      emptySearch: 'لا خدمات مطابقة.',
+      countsAssigned: 'مسندة',
+      countsSubmitted: 'مُقدَّمة',
+      countsPending: 'معلّقة',
+      tabItems: 'البنود',
+      tabDocuments: 'المستندات',
+      tabInitiatives: 'المبادرات',
+      actionFailed: 'تعذّر إتمام الإجراء.',
+      loadFailed: 'تعذّر تحميل مساحة عمل الموظف.',
+      searchItemsPh: 'بحث بالرمز أو المتطلب',
+      itemsEmpty: 'لا بنود في هذه الخدمة',
+      itemsEmptyHint: 'البنود المسندة لقسمك ستظهر هنا.',
+      selectItemHint: 'اختر بنداً لعرضه والإجابة عنه.',
+      answerSection: 'الإجابة',
+      answerTypeLabel: 'نوع الإجابة',
+      fileAnswerNote: 'المرفق هو الإجابة لهذا البند — لا يُقبل نص. احفظ مسودة أولاً ثم أرفق الملف.',
+      outcomeSection: 'نتيجة التقييم',
+      outcomeScore: 'الدرجة',
+      outcomeNotEvaluated: 'غير مُقيَّم',
+      outcomeNA: 'لا ينطبق',
+      naReasonLabel: 'سبب عدم الانطباق (إلزامي)',
+      saveDraft: 'حفظ مسودة',
+      saving: 'جارٍ الحفظ…',
+      submitAnswer: 'تقديم للاعتماد',
+      submitting: 'جارٍ التقديم…',
+      attachmentRequiredTitle: 'مرفق مطلوب',
+      attachmentRequiredDesc: 'هذا البند يتطلب مرفقاً واحداً على الأقل قبل التقديم.',
+      attachmentRequiredNa: 'نتيجة عدم الانطباق لا تُسقط شرط المرفق.',
+      attachmentLockedNote: 'المرفقات تُقفل بعد التقديم — المسودة فقط.',
+      noAnswerYet: 'لا إجابة محفوظة بعد.',
+      unsavedChanges: 'تغييرات غير محفوظة — احفظ أو تجاهل قبل المغادرة.',
+      unsavedTitle: 'مغادرة دون حفظ؟',
+      detailLoadFailed: 'تعذّر تحميل تفاصيل البند.',
+      docsTitle: 'مستندات القسم',
+      docsEmpty: 'لا متطلبات مستندات لقسمك',
+      docsEmptyHint: 'المتطلبات المرتبطة بقسمك ستظهر هنا.',
+      docRequired: 'مطلوب',
+      docProvided: 'مُقدَّم',
+      markProvided: 'وضع كمُقدَّم',
+      noteLabel: 'ملاحظة',
+      notePh: 'أضف ملاحظة (اختياري)',
+      tagLabel: 'وسم',
+      tagPh: 'وسم واحد (اختياري)',
+      saveChanges: 'حفظ التغييرات',
+      savingChanges: 'جارٍ الحفظ…',
+      submittedAtLabel: 'قُدِّم في',
+      proofFilesTitle: 'ملفات الإثبات',
+      initsTitle: 'المبادرات المسندة',
+      initsEmpty: 'لا مبادرات مسندة لقسمك',
+      initsEmptyHint: 'المبادرات المختارة لقسمك ستظهر هنا.',
+      performedLabel: 'نُفِّذت',
+      notPerformedLabel: 'لم تُنفَّذ',
+      versionConflict: 'سبقك شخص آخر بالحفظ. أعد التحميل وحاول — مسودتك محفوظة.',
     },
 
     taxonomy: {

@@ -10,6 +10,7 @@ import { DashboardView } from './views/DashboardView.tsx';
 import { StandardsView } from './views/StandardsView.tsx';
 import { ServicesView } from './views/ServicesView.tsx';
 import { GapAnalysisView } from './views/GapAnalysisView.tsx';
+import { EmployeeServicesView } from './views/EmployeeServicesView.tsx';
 import { ActionsView } from './views/ActionsView.tsx';
 import { InitiativesView } from './views/InitiativesView.tsx';
 import { EsgProfileView } from './views/EsgProfileView.tsx';
@@ -266,7 +267,10 @@ const MainApp: React.FC = () => {
         // services workspace; W/C keep the GRI catalogue page unchanged.
         return context === 'platform' ? <ServicesView /> : <StandardsView setActiveTab={setActiveTab} />;
       case 'gap-analysis':
-        return <GapAnalysisView setActiveTab={setActiveTab} />;
+        // TASK-PROTO-U4-3 unit (a): the employee landing mounts the services
+        // workspace (own-dept services → items + documents + initiatives).
+        // No nav-matrix change: the page id and its E label are untouched.
+        return user?.role === 'employee' ? <EmployeeServicesView /> : <GapAnalysisView setActiveTab={setActiveTab} />;
       case 'actions':
         return <ActionsView />;
       case 'initiatives':
