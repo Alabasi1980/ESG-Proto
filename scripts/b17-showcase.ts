@@ -301,9 +301,12 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
   log(`catalog before GRI commit: ${before.raw.standards} standards / ${before.raw.disclosures} disclosures / ${before.raw.items} items`);
   if (before.general.standards) log(`excluding ${before.general.standards} general bucket(s) from the CSV comparison (${before.catalog.standards}/${before.catalog.disclosures}/${before.catalog.items} comparable)`);
 
-  const commit = await api.ok('POST', '/api/gri/commit',
-    { standards: parsed.standards, clientId: TENANT_ID, serviceId: griService.id }, true, [200]);
-  log(`GRI commit -> 200: standards=${commit.json.standardsCount} disclosures=${commit.json.disclosuresCount} items=${commit.json.itemsCount} inserted=${commit.json.inserted} updated=${commit.json.updated} departments=${commit.json.departmentsUpserted} assignments=${commit.json.assignmentsCreated} (updated>0 proves the HTTP upsert overwrote the bootstrap marker rows)`);
+  // TASK-PROTO-U4-2-FIX P3S: catalog-only import — NO clientId on this path
+  // (400 import.client_forbidden). Tenant provisioning is explicit below.
+  const commit = await api.ok('POST', '/api/import/commit',
+    { standards: parsed.standards, serviceId: griService.id, importBatchId: GRI_BATCH }, true, [200]);
+  log(`GRI commit -> 200 (catalog-only): standards=${commit.json.standardsCount} disclosures=${commit.json.disclosuresCount} items=${commit.json.itemsCount} inserted=${commit.json.inserted} updated=${commit.json.updated} skipped=${commit.json.skipped} mapped=${commit.json.mappedStandards} unmapped=${commit.json.unmappedStandards} (updated>0 proves the HTTP upsert overwrote the bootstrap marker rows)`);
+  if (commit.json.setupNotice) log(`import setup notice: ${commit.json.setupNotice}`);
 
   const after = await standardsSum();
   log(`catalog after GRI commit: ${after.raw.standards} standards / ${after.raw.disclosures} disclosures / ${after.raw.items} items`);
@@ -312,9 +315,46 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
     || after.catalog.disclosures !== parsed.summary.totalDisclosures)
     die(`catalog counts mismatch the CSV: got ${after.raw.standards}/${after.raw.disclosures}/${after.raw.items} raw (${after.catalog.standards}/${after.catalog.disclosures}/${after.catalog.items} excluding ${after.general.standards} general bucket(s)), CSV ${parsed.summary.totalStandards}/${parsed.summary.totalDisclosures}/${parsed.summary.totalItems}`);
 
+  // TASK-PROTO-U4-2-FIX P3S: explicit tenant provisioning (INV-IMPORT-SAFE).
+  // There is NO POST /departments route (admin.ts mounts GET + PATCH head
+  // only), so departments are upserted by seed-script SQL under the explicit
+  // platform.config(T) target — the same (client_id, code) upsert the removed
+  // import auto-provisioning performed. Assignments DO have an explicit
+  // route (POST /api/assignments) and go through it below, after mapping.
+  const normalizeSeedDeptCode = (name: string): string => {
+    const code = name.trim().toLowerCase().replace(/\s+/g, '-')
+      .replace(/[^\p{L}\p{N}\-_]/gu, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return code || 'dept';
+  };
+  const deptNameByCode = new Map<string, string>();
+  for (const std of parsed.standards) {
+    for (const disc of std.disclosures) {
+      for (const item of disc.items) {
+        const deptName = (item.department || '').trim();
+        if (!deptName) continue;
+        const code = normalizeSeedDeptCode(deptName);
+        if (!deptNameByCode.has(code)) deptNameByCode.set(code, deptName);
+      }
+    }
+  }
+  const deptIdByCode = new Map<string, string>();
+  // The RLS configuration gate (b17_platform_config) needs purpose +
+  // ge_admin role + a real actor: the just-logged-in platform admin.
+  await withTenantContext({ role: 'ge_admin', mode: 'platform', purpose: 'platform.config',
+    tenantId: TENANT_ID, targetId: TENANT_ID, userId: ge.id }, async c => {
+    for (const [code, name] of deptNameByCode) {
+      const r = await c.query(
+        `INSERT INTO departments (client_id, code, name) VALUES ($1, $2, $3)
+         ON CONFLICT (client_id, code) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+        [TENANT_ID, code, name]);
+      deptIdByCode.set(code, r.rows[0].id);
+    }
+  });
+  log(`departments seeded (explicit SQL, no route): ${deptIdByCode.size}`);
+
   const depts = await api.ok('GET', `/api/departments?clientId=${TENANT_ID}`, undefined, true, [200]);
   const deptRows = depts.json as any[];
-  if (!deptRows.length) die('GRI import provisioned no departments');
+  if (!deptRows.length) die('seed departments missing after explicit provisioning');
   const legal = deptRows.find(d => String(d.name).toLowerCase() === 'legal') ?? deptRows[0];
   log(`departments provisioned: ${deptRows.length} (${deptRows.map((d: any) => d.name).join(', ')}); employee department = ${legal.name}`);
 
@@ -352,6 +392,38 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
     if (r.json.existed) alreadyMapped++; else mapped++;
   }
   log(`service<->standards mapping: ${mapped} linked, ${alreadyMapped} already linked`);
+
+  // TASK-PROTO-U4-2-FIX P3S: explicit assignment provisioning through the
+  // same POST /api/assignments route the app uses (P@T; the item must belong
+  // to the linked+mapped service — hence after the mapping pass above).
+  const catalogItems = (await api.ok('GET', '/api/items', undefined, true, [200])).json as any[];
+  const itemIdByKey = new Map<string, string>();
+  for (const row of catalogItems) itemIdByKey.set(`${row.disclosure_code}::${row.code}`, row.id);
+  const seenPairs = new Set<string>();
+  const pairQueue: Array<{ itemId: string; departmentId: string }> = [];
+  for (const std of parsed.standards) {
+    for (const disc of std.disclosures) {
+      for (const item of disc.items) {
+        const deptName = (item.department || '').trim();
+        if (!deptName) continue;
+        const deptId = deptIdByCode.get(normalizeSeedDeptCode(deptName));
+        const itemId = itemIdByKey.get(`${disc.code}::${item.code}`);
+        if (!deptId || !itemId) die(`seed pair unresolvable: item ${disc.code}/${item.code} dept '${deptName}'`);
+        const key = `${itemId}::${deptId}`;
+        if (seenPairs.has(key)) continue;
+        seenPairs.add(key);
+        pairQueue.push({ itemId: itemId!, departmentId: deptId! });
+      }
+    }
+  }
+  let assignCreated = 0, assignExisted = 0;
+  for (let i = 0; i < pairQueue.length; i += 8) {
+    const chunk = pairQueue.slice(i, i + 8);
+    const results = await Promise.all(chunk.map(p =>
+      api.ok('POST', '/api/assignments', { clientId: TENANT_ID, itemId: p.itemId, departmentId: p.departmentId }, true, [200, 201])));
+    for (const r of results) { if (r.status === 201) assignCreated++; else assignExisted++; }
+  }
+  log(`tenant assignments -> route-provisioned: ${assignCreated} created, ${assignExisted} already existed (${pairQueue.length} pairs)`);
 
   const esgBook = XLSX.read(readFileSync(ESG_CSV, 'utf8').replace(/^\uFEFF/, ''), { type: 'string', raw: true });
   const esgRows = XLSX.utils.sheet_to_json<Record<string, any>>(esgBook.Sheets[esgBook.SheetNames[0]], { defval: '' });
@@ -403,7 +475,7 @@ async function seed(base: string, creds: ReturnType<typeof requireEnv>): Promise
   if (home.status !== 200 || !(await home.text()).includes('<!doctype html'))
     die(`GET / -> ${home.status}, expected SPA HTML`);
   log('GET / -> 200 (SPA HTML)');
-  log(`SUMMARY items=${after.catalog.items} standards=${after.catalog.standards} disclosures=${after.catalog.disclosures} departments=${deptRows.length} esgRows=${profile.json.rows.length}`);
+  log(`SUMMARY items=${after.catalog.items} standards=${after.catalog.standards} disclosures=${after.catalog.disclosures} departments=${deptRows.length} assignments=${assignCreated + assignExisted} esgRows=${profile.json.rows.length}`);
 }
 
 // ---- PERSISTENT shared-DB mode (owner-approved permanent on-machine DB) ----

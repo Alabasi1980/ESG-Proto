@@ -199,8 +199,14 @@ test('P2 shape: new actions are audited in-txn; the closed error-code set holds'
   for (const code of ['item.version_conflict', 'item.archived', 'service.delete_blocked']) {
     assert.ok(src.includes(`'${code}'`), `${code} wired`);
   }
-  assert.ok(!src.includes('service.settings_unknown'),
-    'no settings whitelist yet (C3) — the branch stays byte-identical');
+  // TASK-PROTO-U4-2-FIX P5S (Tera round-2 ruling, FINAL): the C3-era
+  // "no whitelist yet" pin is SUPERSEDED by design — the server now
+  // enforces the closed named-key set (unknown → 400
+  // service.settings_unknown; wrong shape → 400 service.settings_invalid).
+  assert.ok(src.includes('service.settings_unknown'),
+    'P5S whitelist exists: unknown key refused before any write');
+  assert.ok(src.includes('checkServiceSettingsKeys(body.settings)'),
+    'P5S whitelist check runs on the PATCH /services/:id settings branch');
   // TASK-PROTO-U4-2-FIX P4 (Tera round-2 ruling A): the C1 guard has served
   // its purpose — P4 implements the full reopen leg (version gate + snapshot
   // + answers→reopened + REOPEN_ITEM_SCOPE, one txn, behind the P-config

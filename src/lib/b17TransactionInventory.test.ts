@@ -252,7 +252,16 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // the settings-tab split — identity + named settings move verbatim into
     // ServiceSettingsPanel (pure move, view keeps state/handlers). Under the
     // 500-line new-file bound.
-    'src/components/services/ServiceSettingsPanel.tsx'];
+    'src/components/services/ServiceSettingsPanel.tsx',
+    // TASK-PROTO-U4-2-FIX P3S (seed migration, Tera-authorized): the no-DB
+    // seed-flow pins for the catalog-only import + explicit provisioning.
+    // Under the 500-line new-file bound; no server/db/style path moves.
+    'src/lib/u42fix-p3s.test.ts',
+    // TASK-PROTO-U4-2-FIX P5S (server whitelist, Tera-authorized): the no-DB
+    // pins for the closed settings key set + value shapes (unknown →
+    // service.settings_unknown, bad shape → service.settings_invalid).
+    // Under the 500-line new-file bound; settings branch only, audit untouched.
+    'src/lib/u42fix-p5s.test.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -464,7 +473,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,107); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split (via the ...newFiles spread)
+  assert.equal(allowed.size,109); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split + the P3S seed-migration no-DB test + the P5S server-whitelist no-DB test (via the ...newFiles spread)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

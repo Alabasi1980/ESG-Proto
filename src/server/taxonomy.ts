@@ -8,7 +8,7 @@ import { requireDomainAccess } from './access.ts';
 import { readContext, requireFreshPassword, platformConfigContext, isFrozenScope, frozenWriteError } from './routes/_shared.ts';
 import { maskedItemFields, scopeId, scopeError, ownTenant, ownDepartment, assertOwnDepartmentRows, LINKED_ITEM_SQL, SCOPED_ITEM_SQL } from './scope.ts';
 import { EMPTY_CLIENT_FIELD_MASK, stripMaskedFields } from '../lib/clientFieldMask.ts';
-import { parseServiceSettings } from '../lib/serviceSettings.ts';
+import { checkServiceSettingsKeys, parseServiceSettings } from '../lib/serviceSettings.ts';
 // TASK-PROTO-U4-1c (OD-12 §5–§7): item classification + the per-service
 // general bucket (created/ensured in the service create/duplicate transactions).
 import { ensureGeneralBucket, generalStandardCode } from '../lib/generalBucket.ts';
@@ -336,6 +336,25 @@ router.patch('/services/:id', authMiddleware, requireFreshPassword, requireDomai
       if (!parsed.ok) {
         return res.status(400).json({
           error: 'settings must be a JSON object of at most 8 KB.',
+          code: 'service.settings_invalid',
+        });
+      }
+      // P5S (OD-13 API-2 CHANGE): closed named-key whitelist + value shapes,
+      // refused BEFORE any write — UI-only enforcement is bypassable by
+      // direct API calls. Unknown key → service.settings_unknown; wrong
+      // value shape → service.settings_invalid (established shape code).
+      const keysCheck = checkServiceSettingsKeys(body.settings);
+      if (!keysCheck.ok) {
+        // E3-02: literal codes only in the refusal bodies below (the
+        // routeGates guard forbids a computed member there).
+        if (keysCheck.code === 'service.settings_unknown') {
+          return res.status(400).json({
+            error: `Unknown settings key: '${keysCheck.key}'.`,
+            code: 'service.settings_unknown',
+          });
+        }
+        return res.status(400).json({
+          error: `Invalid value for settings key: '${keysCheck.key}'.`,
           code: 'service.settings_invalid',
         });
       }
