@@ -192,11 +192,20 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /assignments|P@T#item-belong-to-linked-service-same-T-department-freeze-checks',
     'DELETE /assignments|P@T#existing-answer-evaluation-blockers-freeze-no-delete-data-workaround',
     'POST /assignments/na|W:R+L#existing-GE-N/A-shortcut-guards-P-denied-creates-evaluation',
+    // TASK-PROTO-U4-3C (G2): scope-aware N/A (item|disclosure) + W-only lift
+    // (reasoned, lands unevaluated). Matrix W-only unchanged; scope lives in
+    // the handler + RLS-d.
+    'POST /assignments/na/lift|W:R+L#bound-A-reasoned-lift-lands-unevaluated-never-scored',
     'GET /staff-lists|P@T#target-provisioning;W#bound-A;C#own-company',
     'POST /staff-lists|C#own-company;W#bound-A-draft-authority-no-provisioning',
     'POST /staff-lists/:id/submit|C:R;W:R#draft-nonempty-tenant-gates-no-provisioning',
-    'POST /staff-lists/:id/approve|P@T#provisioning-exception-explicit-T-checked-all-or-nothing-OTP-once-W-denied',
+    // TASK-PROTO-U4-3C (owner delta G-13, G3 UI-removal-only): the actor is W
+    // bound-A; the P leg is denied (403 provision.actor_forbidden, branch kept
+    // in the handler beside this matrix). OTP-once, all-or-nothing, WF-01.
+    'POST /staff-lists/:id/approve|W#bound-A-approve-provisions-all-or-nothing-OTP-once-P-denied-403',
     'POST /staff-lists/:id/reject|P@T#explicit-T;W:R#bound-A-reason-submitted-list-gates-no-provisioning',
+    // TASK-PROTO-U4-3C: W-only credential-delivery metadata (reveal-only now).
+    'POST /staff-lists/:id/deliver|W:R#bound-A-delivery-metadata-only-no-secrets-reveal-only',
     'GET /client/dashboard|W:L+V;C:L+V#E-P-denied',
     // TASK-PROTO-U4-1a (OD-11): W controls which item columns the CLIENT sees
     // for the service linked to A. Exact body {clientFieldMask} only.
@@ -214,8 +223,8 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'GET /clients/:id/services', 'POST /clients/:id/services',
     'PATCH /clients/:id/services/:serviceId', 'DELETE /clients/:id/services/:serviceId',
     'POST /services/link-all', 'GET /assignments', 'POST /assignments', 'DELETE /assignments',
-    'POST /assignments/na', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
-    'POST /staff-lists/:id/approve', 'POST /staff-lists/:id/reject', 'GET /client/dashboard',
+    'POST /assignments/na', 'POST /assignments/na/lift', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
+    'POST /staff-lists/:id/approve', 'POST /staff-lists/:id/reject', 'POST /staff-lists/:id/deliver', 'GET /client/dashboard',
     // U4-1a: the W-only client-visibility writer.
     'PATCH /workspace/services/:serviceId/visibility',
   ]),
@@ -301,6 +310,14 @@ export const WORKSPACE_ROUTES = group('workspace', [
   'GET /workspace|GE#tab-handle-reconcile-authoritative-envelope-no-broad-data',
   'POST /workspace/enter|P@T#platform-handle-plus-explicit-clientId-validated-atomically-P-to-W',
   'POST /workspace/exit|P;W#idempotent-from-platform-consultant-exits-to-platform-audited',
+  // TASK-PROTO-U4-3C (unit c1): consultant application writes — W bound-A
+  // only (handler re-asserts mode/role beside this matrix; tenant is the
+  // server's own bound A, request values never trusted).
+  'POST /workspace/client-services|W#bound-A-link-service-to-own-tenant-audited',
+  'DELETE /workspace/client-services/:serviceId|W#bound-A-unlink-live-work-refused-409',
+  'PUT /workspace/participating-departments|W#bound-A-replace-membership-removal-with-work-409',
+  'PUT /workspace/dept-matching|W#bound-A-override-table-participating-gated-audited',
+  'POST /workspace/staff/:userId/complete-password|W#bound-A-hash-only-must-change-preserved',
 ], true);
 export const ACCESS_REGISTRY = [...LEGACY_ROUTES, ...WORKSPACE_ROUTES];
 

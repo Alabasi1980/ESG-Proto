@@ -130,8 +130,11 @@ const EXPECTED: Record<string, string> = {
   'POST /staff-lists': 'C#own-company;W#bound-A-draft-authority-no-provisioning',
   'POST /staff-lists/:id/submit': 'C:R;W:R#draft-nonempty-tenant-gates-no-provisioning',
   'POST /staff-lists/:id/approve':
-    'P@T#provisioning-exception-explicit-T-checked-all-or-nothing-OTP-once-W-denied',
+    'W#bound-A-approve-provisions-all-or-nothing-OTP-once-P-denied-403',
   'POST /staff-lists/:id/reject': 'P@T#explicit-T;W:R#bound-A-reason-submitted-list-gates-no-provisioning',
+  // TASK-PROTO-U4-3C: N/A lift + credential-delivery metadata rows.
+  'POST /assignments/na/lift': 'W:R+L#bound-A-reasoned-lift-lands-unevaluated-never-scored',
+  'POST /staff-lists/:id/deliver': 'W:R#bound-A-delivery-metadata-only-no-secrets-reveal-only',
   'GET /client/dashboard': 'W:L+V;C:L+V#E-P-denied',
   // TASK-PROTO-U4-1a (OD-11): W-only client field-mask writer, exact body.
   'PATCH /workspace/services/:serviceId/visibility':
@@ -193,11 +196,17 @@ const EXPECTED: Record<string, string> = {
   'DELETE /evidence/:entityType/:entityId/files/:fileId': 'E:L+D#own-upload-own-department-locked-once-parent-submitted',
   'GET /initiatives/department': 'P@T#read-only-target;W:L;C:L;E:L+D#own-department-status-and-proof-metadata',
   'PATCH /initiatives/department/:id': 'E:L+D#performed-note-own-department-only',
-  // §4 workspace lifecycle (4)
+  // §4 workspace lifecycle (4) + TASK-PROTO-U4-3C consultant application
+  // writes (5, W bound-A only — tenant is the server's own bound A).
   'POST /workspace/tab': 'GE#fresh-GE-session-no-client-input-creates-P-row-generation-1',
   'GET /workspace': 'GE#tab-handle-reconcile-authoritative-envelope-no-broad-data',
   'POST /workspace/enter': 'P@T#platform-handle-plus-explicit-clientId-validated-atomically-P-to-W',
   'POST /workspace/exit': 'P;W#idempotent-from-platform-consultant-exits-to-platform-audited',
+  'POST /workspace/client-services': 'W#bound-A-link-service-to-own-tenant-audited',
+  'DELETE /workspace/client-services/:serviceId': 'W#bound-A-unlink-live-work-refused-409',
+  'PUT /workspace/participating-departments': 'W#bound-A-replace-membership-removal-with-work-409',
+  'PUT /workspace/dept-matching': 'W#bound-A-override-table-participating-gated-audited',
+  'POST /workspace/staff/:userId/complete-password': 'W#bound-A-hash-only-must-change-preserved',
 };
 
 const key = (route: { method: string; path: string }) => `${route.method} ${route.path}`;
@@ -214,11 +223,11 @@ test('U2-A matrix oracle: every registry declaration matches its exact §3/§4 r
   }
 });
 
-test('U2-F final activation split: 0 UNACTIVATED; exact 111 business flips + 8 system/session + 4 workspace', () => {
-  assert.equal(LEGACY_ROUTES.length, 119);
+test('U2-F final activation split: 0 UNACTIVATED; exact 113 business flips + 8 system/session + 9 workspace', () => {
+  assert.equal(LEGACY_ROUTES.length, 121);
   assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'UNACTIVATED').length, 0);
-  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 119);
-  assert.equal(WORKSPACE_ROUTES.length, 4);
+  assert.equal(LEGACY_ROUTES.filter((r) => r.activation === 'U1').length, 121);
+  assert.equal(WORKSPACE_ROUTES.length, 9);
   assert.ok(WORKSPACE_ROUTES.every((r) => r.activation === 'U1'));
   // Exactly the 13 U2-B + 23 U2-C + 11 U2-D + 15 U2-E + 22 U2-F round-1 + 3
   // U2-F round-2 rows are flipped, and nothing else moved: the eight
@@ -268,8 +277,8 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 111 business flips + 8 s
     'GET /clients/:id/services', 'POST /clients/:id/services',
     'PATCH /clients/:id/services/:serviceId', 'DELETE /clients/:id/services/:serviceId',
     'POST /services/link-all', 'GET /assignments', 'POST /assignments', 'DELETE /assignments',
-    'POST /assignments/na', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
-    'POST /staff-lists/:id/reject', 'GET /client/dashboard',
+    'POST /assignments/na', 'POST /assignments/na/lift', 'GET /staff-lists', 'POST /staff-lists', 'POST /staff-lists/:id/submit',
+    'POST /staff-lists/:id/reject', 'POST /staff-lists/:id/deliver', 'GET /client/dashboard',
     // U2-F round 2 (final): the provisioning triple behind the R2-A substrate
     // (platformConfigContext + users INSERT/UPDATE + provisioning audit) and
     // the §3(2) lock-order proof (parent §15).
@@ -288,7 +297,7 @@ test('U2-F final activation split: 0 UNACTIVATED; exact 111 business flips + 8 s
     'DELETE /evidence/:entityType/:entityId/files/:fileId',
     'GET /initiatives/department', 'PATCH /initiatives/department/:id',
   ];
-  assert.equal(FLIPPED.length, 111);
+  assert.equal(FLIPPED.length, 113);
   assert.deepEqual(
     LEGACY_ROUTES.filter((r) => r.activation === 'U1').map((r) => `${r.method} ${r.path}`).sort(),
     [
@@ -340,7 +349,7 @@ test('U2-A mounted declarations are covered (routes.ts runs assertRegistryCovera
   await import('../server/routes.ts');
   // Reaching this line means assertRegistryCoverage passed against every real
   // Express router: mounted method/path set === ACCESS_REGISTRY, no duplicates.
-  assert.equal(ACCESS_REGISTRY.length, 123);
+  assert.equal(ACCESS_REGISTRY.length, 130);
 });
 
 // ---------------------------------------------------------------------------

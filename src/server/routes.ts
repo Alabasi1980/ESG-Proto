@@ -16,6 +16,7 @@ import auditRouter from './routes/audit.ts';
 import notificationsRouter from './routes/notifications.ts';
 import settingsRouter from './routes/settings.ts';
 import serviceVisibilityRouter from './routes/serviceVisibility.ts';
+import workspaceAppRouter from './routes/workspace.ts';
 import documentsRouter from './routes/documents.ts';
 import departmentInitiativesRouter from './routes/departmentInitiatives.ts';
 import { apiNotFoundHandler, globalJsonErrorHandler } from './errorHandler.ts';
@@ -28,7 +29,7 @@ const router = express.Router();
 assertRegistryCoverage([taxonomyRouter, systemRouter, sessionRouter, griRouter, evaluationsRouter,
   actionsRouter, initiativesRouter, reportsRouter, storageRouter, adminRouter, auditRouter,
   notificationsRouter, settingsRouter, serviceVisibilityRouter, documentsRouter,
-  departmentInitiativesRouter, workspaceRouter]);
+  departmentInitiativesRouter, workspaceRouter, workspaceAppRouter]);
 router.use(accessDispatcher);
 router.use(workspaceRouter);
 
@@ -51,6 +52,9 @@ router.use(notificationsRouter);
 router.use(settingsRouter);
 // TASK-PROTO-U4-1a: W-only client field-mask writer (one declaration).
 router.use(serviceVisibilityRouter);
+// TASK-PROTO-U4-3C (unit c1): consultant application writes (W bound-A only,
+// five declarations in routes/workspace.ts).
+router.use(workspaceAppRouter);
 // TASK-PROTO-U4-1c (OD-12 §3–§8): department document requirements + the
 // unified evidence-file surface (9 declarations) and the department initiative
 // status pair (2 declarations). All eleven rows are explicit U1 flips in

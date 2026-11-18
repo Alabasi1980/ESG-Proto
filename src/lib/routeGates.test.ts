@@ -435,7 +435,7 @@ test('U2-F R2: provisioning revalidates and holds the live session/tab through m
   assert.ok(src.includes('return withWorkspace(req, route.capability,'));
   assert.ok(src.includes('assertRouteContext(route, access)'));
   assert.ok(src.includes('await setTenantContext(client, platformConfigContext(req, target))'));
-  assert.equal((src.match(/await configurationTransaction\(req, target,/g) ?? []).length, 3);
+  assert.equal((src.match(/await configurationTransaction\(req, target,/g) ?? []).length, 2);
   assert.ok(!src.includes('withTenantContext('), 'no detached purpose-only transaction on provisioning rows');
   assert.ok(src.includes('client_id = $2 FOR UPDATE'), 'approve serializes on the list before checking status/issuing OTP');
 });

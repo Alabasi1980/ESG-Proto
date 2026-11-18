@@ -31,18 +31,21 @@ import {
   readContext,
   writeFailure,
 } from './_shared.ts';
-import { ownTenant, scopeId } from '../scope.ts';
+import { ownTenant, scopeError, scopeId } from '../scope.ts';
 import { adminTenantContext, platformTarget } from './adminCommon.ts';
 
 const SUBMITTED_STATUSES = ['submitted', 'approved', 'client_approved'];
 
-/** §3.4 row 20 — P@T target; W bound A; C own company (E refused by the matrix). */
+/** §3.4 row 20 — P@T target; W bound A; C own company (E refused by the matrix).
+ * Delivery columns are additive + nullable (STORE-f); lists without delivery
+ * state read NULLs (undelivered). Never embeds OTPs (not stored). */
 export async function listStaffLists(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const rows = await domainTransaction(req, async (client) => {
       const { tenant } = adminTenantContext(req, req.query.clientId);
       const lists = await client.query(
         `SELECT sl.id, sl.client_id, sl.status, sl.note, sl.reject_reason, sl.created_at, sl.decided_at,
+                sl.delivery_channel, sl.delivery_status, sl.revealed_by, sl.revealed_at, sl.reveal_acked_at,
                 c.code AS client_code, c.name AS client_name,
                 sb.name AS submitted_by_name, db.name AS decided_by_name,
                 (SELECT COUNT(*)::int FROM staff_list_rows r WHERE r.list_id = sl.id) AS row_count
@@ -249,6 +252,98 @@ export async function rejectStaffList(req: AuthenticatedRequest, res: Response):
     res.json(result);
   } catch (err: any) {
     writeFailure(res, err, 'Failed to reject staff list');
+  }
+}
+
+/** TASK-PROTO-U4-3C round 3 (Shield F1): deliver-guard helper, mirroring the
+ * workspace.ts sibling pattern exactly (assertTenantActive + frozen first,
+ * before any list read/write). Suspended tenant → 403; frozen scope → 409. */
+async function assertDeliverTenant(client: { query: (t: string, p?: any[]) => Promise<any> }, tenant: string): Promise<void> {
+  const row = (await client.query('SELECT suspended FROM clients WHERE id = $1', [tenant])).rows[0];
+  if (!row) throw Object.assign(new Error('Target tenant not found.'), { statusCode: 404 });
+  if (row.suspended === true)
+    throw Object.assign(new Error('This tenant is suspended.'), { statusCode: 403, code: 'tenant.suspended' });
+}
+
+/** TASK-PROTO-U4-3C (G1 reveal-only now) — POST /staff-lists/:id/deliver (NEW).
+ * W bound-A only (matrix; P/C/E denied before this handler). Delivery runs in
+ * a SEPARATE txn AFTER provisioning (approve commits accounts first); failures
+ * here never roll accounts back — this branch writes ONLY the five delivery
+ * columns (single-column guard, same discipline as serviceVisibility.ts;
+ * enforced by the b17_consultant_staff_deliver_update WITH CHECK domain pins).
+ * Metadata ONLY in request/response/audit — no secret bytes anywhere (the OTPs
+ * left the API exactly once in the approve response; this endpoint can never
+ * reproduce them). `{channel:'reveal-ack'}`: first call marks revealed, the
+ * acknowledge call marks acked (idempotent replays return the same status);
+ * `{channel:'email'}` → 400 `delivery.email_unavailable` (reveal-only now,
+ * per-recipient email table deferred — G1). List must be approved first. */
+export async function deliverStaffList(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const listId = scopeId(req.params.id, true)!;
+    const channel = req.body?.channel;
+    if (channel !== 'reveal-ack' && channel !== 'email') {
+      res.status(400).json({ error: "channel must be 'reveal-ack' (email is unavailable).", code: 'delivery.failed' });
+      return;
+    }
+    if (channel === 'email') {
+      res.status(400).json({ error: 'Email delivery is unavailable (reveal-only mode).', code: 'delivery.email_unavailable' });
+      return;
+    }
+    const result = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (access.mode !== 'consultant' || access.role !== 'ge_admin')
+        throw scopeError(403, 'workspace.mode_mismatch');
+      const tenant = ownTenant(access, req.body?.clientId ?? req.query.clientId);
+      await assertDeliverTenant(client, tenant);
+      if (await isFrozenScope(client, tenant, null)) throw frozenWriteError();
+      const cur = await client.query(
+        `SELECT id, client_id, status, delivery_channel, delivery_status
+           FROM staff_lists WHERE id = $1 AND client_id = $2 FOR UPDATE`,
+        [listId, tenant]
+      );
+      const list = cur.rows[0];
+      if (!list) throw Object.assign(new Error('Staff list not found.'), { statusCode: 404 });
+      if (list.status !== 'approved') {
+        throw Object.assign(
+          new Error('Only approved lists can be delivered (provision first).'),
+          { statusCode: 409, code: 'delivery.failed' }
+        );
+      }
+      // Idempotent ack machine: NULL/undelivered → revealed (first call) →
+      // acked (acknowledge call) → acked (replays). No secret in any state.
+      let status: string;
+      if (list.delivery_status === 'acked') {
+        status = 'acked';
+      } else if (list.delivery_status === 'revealed') {
+        status = 'acked';
+        await client.query(
+          `UPDATE staff_lists SET delivery_channel = 'reveal', delivery_status = 'acked',
+             reveal_acked_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [listId]
+        );
+      } else {
+        status = 'revealed';
+        await client.query(
+          `UPDATE staff_lists SET delivery_channel = 'reveal', delivery_status = 'revealed',
+             revealed_by = $2, revealed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [listId, access.actorId]
+        );
+      }
+      const delivered = status === 'acked' ? 0 : 1;
+      await recordAuditLog(client, {
+        clientId: list.client_id,
+        userId: access.actorId,
+        action: 'CREDENTIAL_DELIVERED',
+        entityType: 'staff_lists',
+        entityId: listId,
+        // Metadata only: counts + channel — never OTPs, hashes or passwords.
+        payload: { targetTenant: list.client_id, channel: 'reveal', status, delivered },
+      });
+      return { delivered: true, channel: 'reveal', status };
+    }, readContext);
+    res.json(result);
+  } catch (err: any) {
+    writeFailure(res, err, 'Failed to deliver staff list');
   }
 }
 

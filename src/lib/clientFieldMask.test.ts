@@ -30,7 +30,7 @@ const visibilityRoute = readFileSync('src/server/routes/serviceVisibility.ts', '
 
 test('U4-1a mask whitelist is exact and attachment_required is NOT maskable', () => {
   assert.deepEqual([...CLIENT_FIELD_MASK_VALUES].sort(),
-    ['esg_class', 'hint', 'objective', 'priority', 'reference', 'sort_order', 'topic', 'weight']);
+    ['documents', 'esg_class', 'hint', 'initiatives', 'na_status', 'objective', 'priority', 'reference', 'sort_order', 'topic', 'weight']);
   assert.ok(!(CLIENT_FIELD_MASK_VALUES as readonly string[]).includes('attachment_required'),
     'attachment_required is a work requirement, never an internal scoring column (§2 decision)');
 });

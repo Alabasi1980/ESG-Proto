@@ -44,6 +44,33 @@ Gate Status: PASS → delegate (a).
 Smallest safe unit PASS (client console UI only: services read-only + confirm preliminary + staff draft/submit; no new endpoints — use existing ClientReview/staff routes; if a needed endpoint is missing → STOP, do not invent) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (C-flows live on disposable + QA + design review) · pre-step: allowlist the 2 Tera-owned (a) live screenshots exact paths in guard.
 Gate Status: PASS → delegate (b).
 
+## U4-3b Result: ACCEPTED 2026-11-18 (3 rounds, cap respected)
+Evidence: u43b 12/12 · 471/472 (sole red = approved W-P5-01) · design APPROVE WITH NOTES (NOTE-1 fixed r2) · QA PARTIAL zero-fail, closed live by Tera on disposable preview: services read-only (zero answer inputs) · 2-1-3 head-preliminary→C-confirm→`client_approved` via UI · staff draft→submit (status `submitted`) · AR full-RTL + screenshots. Old C nav Staff Lists hidden r3 (console tab is the C surface; old view stays for P until (d)). No live shared contact. Follow-up: sibling screenshot allowlists ride pre-steps as established.
+
+## U4-3c split + Pre-Execution Gate Result (2026-11-18)
+(c) splits into **c1 API** (new W-bound routes + matrix deltas per spec API-2/5, zero-DDL) then **c2 UI console** (depends on c1; separate delegation after c1 Accepted). Smallest safe unit PASS (c1: backend only, no UI; explicit route list from spec) · one objective PASS · no secrets PASS · rollback PASS (code revert; no DDL) · acceptance testable PASS (matrix denials + N/A scope + delivery-metadata + QA harness) · SDA spec APPROVED_FOR_GATE.
+Gate Status: PASS → delegate c1 (engineering-agent-typescript; SecurityAgent + Auditor + QA after).
+
+## U4-3c1 STOP (2026-11-18) — zero-DDL infeasible, targets narrow
+Executor read-only STOP (no writes): (1) 7 files needed beyond targets (routes.ts, admin.ts, adminProvisioning.ts, adminAssignments.ts, clientFieldMask.ts, domainAccess/capabilities tests) — mechanical, authorizable; (2) REAL gaps: W link/unlink, W approve/provision, complete-password, N/A lift each need narrow RLS branches (src/db); dept-matching override + delivery metadata + participating-departments PUT need persistable stores (no table exists). Spec DB-3 anticipated narrow-policy addition — now required.
+Tera rulings: **Security Disposition HIGH confirmed** (profile §9 standing rule). **A:** targets widened in the c1 re-delegation below. **B:** separate SDA mini-design first (c-delta): exact RLS branch set + matching/delivery/participation store design (migration if needed), with SecurityAgent re-audit in the loop. No code until the delta spec is APPROVED_FOR_GATE.
+
+## U4-3c-delta: APPROVED_FOR_GATE 2026-11-18
+- Designer closed gaps (a)–(g) with exact predicates/shapes; Shield re-audit PASS on F1/F2/F3 (no weakening; N-13 covers C-lift via old branch).
+- Owner approvals: DG-D1 temporary+must_change · DG-D2 visible-by-default · DG-D3 W-ack=revealed/completed-at-rotation · **DDL design APPROVED (Tera recommendation: no clean alternative; additive-only; live apply needs separate execution approval + backup)**.
+- Delta spec: `task-engineering-reviews/TASK-PROTO-U4-3C-DELTA_TECHNICAL_SPECIFICATION.md` (+ round-2 F1/F2/F3 closure).
+
+## U4-3c1 re-delegation (widened targets + delta spec)
+Allowed: workspace.ts (new) · routes.ts + admin.ts (mount only) · adminAssignments.ts (N/A lift + match check) · adminProvisioning.ts (approve shift) · adminStaff.ts · serviceVisibility.ts + clientFieldMask.ts (vocab) · accessRegistry.ts · b17-content.sql (delta branches ONLY) · schema.sql (2 tables + 5 columns ONLY) · b17Readiness.ts (pins only) · scripts/u43c1-rehearse.ts (scratch proof, NEVER live) · u43c1.test.ts (new) + guard/capability/domain pins (enumerated).
+Forbidden: UI · FIX behavior change · live/shared DB · secrets · commits.
+Migration: construct + rehearse on scratch ONLY (no live apply — separate owner execution approval later, FIX pattern).
+
+## U4-3c1 Result: ACCEPTED 2026-11-18 (3 rounds, cap respected)
+Evidence: 10/10 new tests · 481/482 (sole red = approved W-P5-01) · lint/build clean · rehearsal green (forward/idempotent/link/participation/matching/approve/deliver/na-lift/rollback, zero loss) · Shield PASS (F1 fixed r3: frozen+suspended guards on deliver; F2 email-reserve documented as intentional until G1-i; suspension-on-approve: no pattern anywhere → no invented rule, recorded observation) · Auditor CONDITIONAL satisfied (Shield re-audit done here; QA run done; no live contact evidenced) · QA PARTIAL zero-fail (C7 live-server paths → c2 live proof; report filed by Tera — agent tool gap).
+F2 recorded: RLS-deliver email value stays reserved until the G1-i email table lands; handler 400 remains the gate.
+Suspended-tenant approve: pre-existing system-wide absence (no provisioning path ever enforced it) — NOT a c1 regression; no invented rule.
+Post-Execution Review: PASS (in-target, no secrets, no live contact). No live shared mutation.
+
 ## U4-3b STOP resolution (2026-11-18)
 Executor STOP packet: pre-step allowlist unmasked the W-P5-01 size bound (ServicesView 875, committed U4-2-FIX P5, untouched by this unit). Tera ruling: **option 3 — existing approved deviation applies** (W-P5-01 + ISS-012 follow-up; no new exception, no split inside this unit). Proceed to independent reviews + live C proof.
 

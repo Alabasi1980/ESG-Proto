@@ -31,10 +31,10 @@ import {
 import { geOverview, linkAllTenants } from './adminPlatformOps.ts';
 import { listDepartments, listUsers, setDepartmentHead } from './adminDirectory.ts';
 import {
-  assignNotApplicable, createAssignment, deleteAssignment, listAssignments,
+  assignNotApplicable, createAssignment, deleteAssignment, liftNotApplicable, listAssignments,
 } from './adminAssignments.ts';
 import {
-  clientDashboard, createStaffList, listStaffLists, rejectStaffList, submitStaffList,
+  clientDashboard, createStaffList, deliverStaffList, listStaffLists, rejectStaffList, submitStaffList,
 } from './adminStaff.ts';
 import { approveStaffList, createUser, deactivateUser } from './adminProvisioning.ts';
 
@@ -62,10 +62,14 @@ router.get('/assignments', authMiddleware, requireDomainAccess, listAssignments)
 router.post('/assignments', authMiddleware, requireFreshPassword, requireDomainAccess, createAssignment);
 router.delete('/assignments', authMiddleware, requireFreshPassword, requireDomainAccess, deleteAssignment);
 router.post('/assignments/na', authMiddleware, requireFreshPassword, requireDomainAccess, assignNotApplicable);
+// TASK-PROTO-U4-3C: N/A lift (W bound-A only; reason mandatory, lands unevaluated).
+router.post('/assignments/na/lift', authMiddleware, requireFreshPassword, requireDomainAccess, liftNotApplicable);
 router.get('/staff-lists', authMiddleware, requireDomainAccess, listStaffLists);
 router.post('/staff-lists', authMiddleware, requireFreshPassword, requireDomainAccess, createStaffList);
 router.post('/staff-lists/:id/submit', authMiddleware, requireFreshPassword, requireDomainAccess, submitStaffList);
 router.post('/staff-lists/:id/reject', authMiddleware, requireFreshPassword, requireDomainAccess, rejectStaffList);
+// TASK-PROTO-U4-3C: credential delivery metadata (W bound-A; reveal-only now).
+router.post('/staff-lists/:id/deliver', authMiddleware, requireFreshPassword, requireDomainAccess, deliverStaffList);
 router.get('/client/dashboard', authMiddleware, requireDomainAccess, clientDashboard);
 
 // ---------------------------------------------------------------------------

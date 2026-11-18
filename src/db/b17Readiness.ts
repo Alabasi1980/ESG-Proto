@@ -133,7 +133,19 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // (b17_selection_update beside the delete policy, same scope) — new sha
 // 8c165c40… — and STRUCTURE_SQL fingerprints the added policy, so this shape
 // moves with the schema constants.
-export const B17_CONTENT_SHAPE = '90967166a353283de10488a43c393ac8';
+// TASK-PROTO-U4-3C (unit c1, delta APPROVED_FOR_GATE 2026-11-18): b17-content.sql
+// gained exactly the 17 delta branches (§RLS-a ×2, §RLS-b ×4, F1 deliver ×1,
+// §RLS-c ×1, §RLS-d ×1, STORE-e ×4, STORE-g ×4 — additive only, existing
+// policies untouched) and schema.sql gained the 2 tables + 5 delivery columns
+// + 2 CHECKs (no backfill, no rewrite). Re-measured on an own fresh PG18
+// scratch by scripts/u43c1-rehearse.ts (SUMMARY line in the same run):
+// old → new CONTENT 90967166 → 76a272de. Falsifiability in the same run:
+// the rehearsal cuts the delta tails at the U4-3C banner and the pre-shape
+// install reproduces the pre-change bytes exactly (90967166…), the forward
+// delta applies + reruns idempotently, and the rollback restores the pre-shape
+// exactly. PREDECESSOR_SHAPE/B17_SHAPE untouched (P1 DDL unchanged).
+// B17_CONTENT_VERSION stays B17_U2D (no version bump: additive substrate only).
+export const B17_CONTENT_SHAPE = '76a272de85164db95670b1d43365c6e0';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

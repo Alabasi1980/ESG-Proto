@@ -12,6 +12,10 @@
 
 export const CLIENT_FIELD_MASK_VALUES = [
   'hint', 'priority', 'weight', 'esg_class', 'reference', 'topic', 'objective', 'sort_order',
+  // TASK-PROTO-U4-3C (G6/DG-D2): U4-3 operational columns. Default VISIBLE to C
+  // unless W hides them via the visibility route (DG-D2 default). Evidence
+  // bytes are never masked away from W; attachment_required stays unmaskable.
+  'documents', 'initiatives', 'na_status',
 ] as const;
 
 export type ClientFieldMaskValue = (typeof CLIENT_FIELD_MASK_VALUES)[number];

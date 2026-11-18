@@ -1660,3 +1660,65 @@ ALTER TABLE approved_copy_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE item_versions FORCE ROW LEVEL SECURITY;
 ALTER TABLE approved_service_copies FORCE ROW LEVEL SECURITY;
 ALTER TABLE approved_copy_files FORCE ROW LEVEL SECURITY;
+
+--------------------------------------------------------------------------------
+-- TASK-PROTO-U4-3C-DELTA (unit c substrate, APPROVED_FOR_GATE 2026-11-18) —
+-- additive ONLY: 2 narrow tables + 5 staff_lists delivery columns + 2 CHECKs.
+-- Verbatim from prototype-app/project-control/task-engineering-reviews/
+-- TASK-PROTO-U4-3C-DELTA_TECHNICAL_SPECIFICATION.md §STORE:
+--   STORE-e table DO-block: spec ll.400-414 (D-5 derivation superseded, DD-5);
+--   RLS ENABLE/FORCE for the new tables: spec ll.415-416 / ll.555-556 (H13
+--   precedent — policies themselves live in b17-content.sql, never here);
+--   STORE-f columns + CHECKs: spec ll.485-491 (reveal-only now, DG-D3);
+--   STORE-g table DO-block: spec ll.544-554 (DD-7, allowlist + assignment gate).
+-- No existing column, row, policy or grant is changed; no backfill, no rewrite.
+-- Rollback: DROP TABLE IF EXISTS ×2 + DROP COLUMN ×5 + DROP CONSTRAINT ×2.
+--------------------------------------------------------------------------------
+
+-- STORE-e. dept_match_overrides: per-mapping override (G4 auto-match + manual
+-- override table). FK RESTRICT on client_department_id is the DB backstop for
+-- dept-removal-with-override; UNIQUE(client,service,code) blocks double-booking.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='dept_match_overrides') THEN
+    CREATE TABLE dept_match_overrides (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+      service_dept_code TEXT NOT NULL,
+      client_department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+      created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+      UNIQUE(client_id, service_id, service_dept_code)
+    );
+  END IF;
+END $$;
+ALTER TABLE dept_match_overrides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dept_match_overrides FORCE ROW LEVEL SECURITY;
+
+-- STORE-f. staff_lists delivery metadata (reveal-only now; per-recipient email
+-- table DEFERRED, never built in this unit). NULL = undelivered; no backfill.
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='staff_lists' AND column_name='delivery_channel') THEN ALTER TABLE staff_lists ADD COLUMN delivery_channel TEXT NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='staff_lists' AND column_name='delivery_status') THEN ALTER TABLE staff_lists ADD COLUMN delivery_status TEXT NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='staff_lists' AND column_name='revealed_by') THEN ALTER TABLE staff_lists ADD COLUMN revealed_by UUID REFERENCES users(id) ON DELETE SET NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='staff_lists' AND column_name='revealed_at') THEN ALTER TABLE staff_lists ADD COLUMN revealed_at TIMESTAMP WITH TIME ZONE NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='staff_lists' AND column_name='reveal_acked_at') THEN ALTER TABLE staff_lists ADD COLUMN reveal_acked_at TIMESTAMP WITH TIME ZONE NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='staff_lists_delivery_valid') THEN ALTER TABLE staff_lists ADD CONSTRAINT staff_lists_delivery_valid CHECK (delivery_channel IS NULL OR delivery_channel IN ('reveal','email')) ; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='staff_lists_delivery_status_valid') THEN ALTER TABLE staff_lists ADD CONSTRAINT staff_lists_delivery_status_valid CHECK (delivery_status IS NULL OR delivery_status IN ('undelivered','revealed','acked','emailed','failed')); END IF; END $$;
+
+-- STORE-g. participating_departments: the membership allowlist for
+-- PUT /workspace/participating-departments (DD-7). D-5 derivation becomes the
+-- EFFECTIVE rule (explicit set ∩ assignment gate), not the storage. FK RESTRICT
+-- on department_id is the DB backstop for dept-removal-with-assignments.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='participating_departments') THEN
+    CREATE TABLE participating_departments (
+      client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+      added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+      PRIMARY KEY (client_id, department_id)
+    );
+  END IF;
+END $$;
+ALTER TABLE participating_departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE participating_departments FORCE ROW LEVEL SECURITY;

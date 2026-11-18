@@ -44,10 +44,12 @@ import {
   isFrozenScope,
   notifyUsers,
   platformConfigContext,
+  readContext,
   writeFailure,
 } from './_shared.ts';
+import { domainTransaction } from './initiativeScope.ts';
 import { SAFE_USER_COLUMNS, assertTenantExists, platformTarget } from './adminCommon.ts';
-import { scopeError, scopeId } from '../scope.ts';
+import { ownTenant, scopeError, scopeId } from '../scope.ts';
 import { DeferredRefusal, deferredFailure } from './initiativeScope.ts';
 
 /** Same locked boundary as U2-D: live session -> live tab/generation -> matrix
@@ -80,9 +82,11 @@ export async function createUser(req: AuthenticatedRequest, res: Response): Prom
   try {
     const target = explicitTarget(req);
     const created = await configurationTransaction(req, target, async (client) => {
-      const creator = req.user!;
+      // No alias capture: the G1 ring requires every req.* read to sit inside
+      // the locked boundary — reads here are already inside it (U4-3C keeps the
+      // two configurationTransaction sites; approve moved to domainTransaction).
       const validation = validateNewUser(
-        { id: creator.id, role: creator.role, clientId: creator.clientId ?? null }, req.body ?? {}
+        { id: req.user!.id, role: req.user!.role, clientId: req.user!.clientId ?? null }, req.body ?? {}
       );
       if (!validation.ok) throw new DeferredRefusal(validation.status, { error: validation.error });
       const input = validation.user;
@@ -223,26 +227,34 @@ export async function deactivateUser(req: AuthenticatedRequest, res: Response): 
   }
 }
 
-/** §3.4 row 23 — approve a submitted staff list under explicit T: all-or-
- * nothing (one transaction; every failure rolls the batch back), OTP once in
- * this response only, no provisioning for W/C/E (matrix), cross-T 403
- * (target context hides a foreign list; the NULL-target read distinguishes it
- * from a nonexistent one). */
+/** §3.4 row 23 — approve a submitted staff list. TASK-PROTO-U4-3C (owner
+ * delta G-13, G3 UI-removal-only): the actor is now **W bound-to-A** (owner
+ * instruction supersedes the B17 §6 P leg); the P leg is DENIED (403
+ * `provision.actor_forbidden`, no provisioning, no OTP) but the branch is
+ * KEPT + audited for the emergency path. All-or-nothing (one transaction;
+ * every failure rolls the batch back), OTP once in this response only,
+ * explicit target = bound A (no explicit-T needed; mismatch → 403).
+ * WF-01 preserved: accounts only via this approved flow. */
 export async function approveStaffList(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const listId = scopeId(req.params.id, true)!;
-    const target = explicitTarget(req);
-    const result = await configurationTransaction(req, target, async (client) => {
+    const result = await domainTransaction(req, async (client) => {
+      // P-denied branch (kept, G3): platform contexts never provision here.
+      // Kept explicit (403 `provision.actor_forbidden`) beside the matrix so a
+      // future matrix mis-edit cannot silently re-admit P provisioning.
+      if (req.access!.mode === 'platform') {
+        throw Object.assign(new Error('Provisioning is a consultant (bound workspace) action.'),
+          { statusCode: 403, code: 'provision.actor_forbidden' });
+      }
+      if (req.access!.mode !== 'consultant' || req.access!.role !== 'ge_admin')
+        throw scopeError(403, 'workspace.mode_mismatch');
+      const tenant = ownTenant(req.access!, req.body?.clientId ?? req.query.clientId);
       const cur = await client.query(
         'SELECT id, client_id, status, submitted_by FROM staff_lists WHERE id = $1 AND client_id = $2 FOR UPDATE',
-        [listId, target]
+        [listId, tenant]
       );
       const list = cur.rows[0];
       if (!list) {
-        await setTenantContext(client, platformConfigContext(req, null));
-        const foreign = (await client.query('SELECT 1 FROM staff_lists WHERE id=$1 AND client_id<>$2', [listId, target])).rowCount;
-        await setTenantContext(client, platformConfigContext(req, target));
-        if (foreign) throw scopeError(403, 'scope.tenant_mismatch');
         throw Object.assign(new Error('Staff list not found.'), { statusCode: 404 });
       }
       if (list.status !== 'submitted') {
@@ -333,7 +345,7 @@ export async function approveStaffList(req: AuthenticatedRequest, res: Response)
         }
       }
       return { approved: true, accounts };
-    });
+    }, readContext);
     // OTPs leave the API exactly once, in this response. No other endpoint
     // returns password_hash or OTPs (proved by b17-domain-f3.ts).
     res.json(result);

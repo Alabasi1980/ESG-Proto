@@ -1435,3 +1435,278 @@ CREATE POLICY b17_approved_copy_files_insert ON approved_copy_files FOR INSERT W
       OR (b17_platform_config() AND b17_setting('target_id') IS NOT NULL
         AND c.client_id::text = b17_setting('target_id')))));
 
+-- ===========================================================================
+-- TASK-PROTO-U4-3C-DELTA (unit c substrate, APPROVED_FOR_GATE 2026-11-18) —
+-- additive RLS branches ONLY. Verbatim from prototype-app/project-control/
+-- task-engineering-reviews/TASK-PROTO-U4-3C-DELTA_TECHNICAL_SPECIFICATION.md
+-- §RLS + §STORE. Every branch carries DROP POLICY IF EXISTS (idempotent
+-- re-application, same contract as FIX P1/P4). Existing policies untouched;
+-- no FOR ALL widening; FORCE RLS retained. Audit: b17_audit_insert needs NO
+-- new branch — the existing OR b17_work_tenant(client_id) work branch already
+-- admits every W/C work audit row below (spec §API/DB notes + §6.5).
+-- Byte trace per hunk: RLS-a spec ll.191-208 · RLS-b spec ll.228-279 ·
+-- STORE-f deliver branch + F1 comment spec ll.492-518 · RLS-c spec ll.302-323 ·
+-- RLS-d + F2 pin comment spec ll.343-369 · STORE-e policies spec ll.417-459 ·
+-- STORE-g policies spec ll.557-599.
+-- ===========================================================================
+
+-- RLS-a — W link/unlink client_services (gap a). Mirrors the platform branch
+-- shape translated to the work context; strictly narrower than the existing
+-- visibility UPDATE (which lacks the role/actor pins — NOT widened here).
+-- Flags/mask unwritable via these branches (handler allowlist + visibility
+-- route own the mask column).
+DROP POLICY IF EXISTS b17_consultant_links_insert ON client_services;
+CREATE POLICY b17_consultant_links_insert ON client_services FOR INSERT WITH CHECK (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+  AND service_id IS NOT NULL
+);
+
+DROP POLICY IF EXISTS b17_consultant_links_delete ON client_services;
+CREATE POLICY b17_consultant_links_delete ON client_services FOR DELETE USING (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+);
+
+-- RLS-b — W approve/provision (gap b). (b3) USING pins the OLD row submitted
+-- (no draft→approved skip; WF-01 preserved); WITH CHECK pins NEW approved +
+-- decided_by=actor. (b4) pins forced rotation + role domain (never ge_admin,
+-- never rotation-free). P keeps its platform branches untouched.
+-- (b1) W/C own-tenant list reads (work; P keeps its platform branches untouched)
+DROP POLICY IF EXISTS b17_work_staff_read ON staff_lists;
+CREATE POLICY b17_work_staff_read ON staff_lists FOR SELECT USING (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') IN ('consultant', 'client')
+  AND b17_setting('current_actor_id') IS NOT NULL
+);
+
+-- (b2) W rows read for approve preflight (read-only; no row mutation widened)
+DROP POLICY IF EXISTS b17_consultant_staff_rows_read ON staff_list_rows;
+CREATE POLICY b17_consultant_staff_rows_read ON staff_list_rows FOR SELECT USING (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND EXISTS (SELECT 1 FROM staff_lists s WHERE s.id = staff_list_rows.list_id
+    AND b17_work_tenant(s.client_id))
+);
+
+-- (b3) W approve transition ONLY: submitted -> approved, decider = actor
+DROP POLICY IF EXISTS b17_consultant_staff_approve_update ON staff_lists;
+CREATE POLICY b17_consultant_staff_approve_update ON staff_lists FOR UPDATE
+  USING (
+    b17_work_tenant(client_id)
+    AND b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND status = 'submitted'
+  )
+  WITH CHECK (
+    b17_work_tenant(client_id)
+    AND b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND decided_by::text = b17_setting('current_actor_id')
+    AND status = 'approved'
+  );
+
+-- (b4) W provision INSERT (WF-01 pinned in SQL: forced rotation + non-platform roles only)
+DROP POLICY IF EXISTS b17_consultant_users_provision_insert ON users;
+CREATE POLICY b17_consultant_users_provision_insert ON users FOR INSERT WITH CHECK (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+  AND role IN ('employee', 'client_admin')
+  AND must_change_password = true
+  AND is_active = true
+);
+
+-- Shield F1 [Medium]: NARROW additive delivery-UPDATE branch (new-code path only).
+-- b3 (`b17_consultant_staff_approve_update`) is NOT widened — it still admits ONLY
+-- submitted -> approved. Delivery runs AFTER approval on an already-approved row, so it
+-- needs its own branch: USING approved + W bound-A -> WITH CHECK approved + delivery
+-- domain pins. RLS cannot column-scope: the HANDLER is the single-column guard
+-- (writes ONLY delivery_channel/delivery_status/revealed_by/revealed_at/reveal_acked_at,
+-- never status/client/decided_by — same discipline as serviceVisibility.ts).
+DROP POLICY IF EXISTS b17_consultant_staff_deliver_update ON staff_lists;
+CREATE POLICY b17_consultant_staff_deliver_update ON staff_lists FOR UPDATE
+  USING (
+    b17_work_tenant(client_id)
+    AND b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND status = 'approved'
+  )
+  WITH CHECK (
+    b17_work_tenant(client_id)
+    AND b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND status = 'approved'
+    AND (delivery_channel IS NULL OR delivery_channel IN ('reveal', 'email'))
+    AND (delivery_status IS NULL OR delivery_status IN ('undelivered', 'revealed', 'acked', 'emailed', 'failed'))
+  );
+-- W/C reads reuse (b1); W approve reuses b3. This branch is delivery-only.
+
+-- RLS-c — W-assisted password completion (gap c). Row scope admits the hash
+-- rotation; the HANDLER is the single-column guard (writes ONLY password_hash +
+-- updated_at, never email/role/client/department/is_active/must_change_password).
+DROP POLICY IF EXISTS b17_consultant_staff_complete_password ON users;
+CREATE POLICY b17_consultant_staff_complete_password ON users FOR UPDATE
+  USING (
+    b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND client_id::text = b17_setting('current_tenant_id')
+    AND id::text <> b17_setting('current_actor_id')
+    AND must_change_password = true
+    AND is_active = true
+    AND role IN ('employee', 'client_admin')
+  )
+  WITH CHECK (
+    b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND client_id::text = b17_setting('current_tenant_id')
+    AND must_change_password = true
+    AND is_active = true
+    AND role IN ('employee', 'client_admin')
+  );
+
+-- RLS-d — N/A lift (gap d). USING pins an N/A row on a linked item in A;
+-- WITH CHECK forces the landing state to UNEVALUATED (never direct-to-scored).
+-- Disclosure scope stays derived (no scope column): disclosure-N/A = ALL items
+-- under the disclosure N/A'd; lift disclosure = lift each.
+DROP POLICY IF EXISTS b17_consultant_evaluations_na_lift_update ON evaluations;
+CREATE POLICY b17_consultant_evaluations_na_lift_update ON evaluations FOR UPDATE
+  USING (
+    b17_work_tenant(client_id)
+    AND b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND b17_item_visible(client_id, item_id)
+    AND not_applicable = true
+  )
+  WITH CHECK (
+    b17_work_tenant(client_id)
+    AND b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND b17_item_visible(client_id, item_id)
+    AND not_applicable = false
+    AND not_evaluated = true
+    AND score IS NULL
+    AND na_reason IS NULL
+  );
+-- Shield F2 [Low]: WITH CHECK re-pins purpose/mode/role/actor/item_visible
+-- (defense-in-depth, mirrors b3). No behavior change beyond the pin; handler still
+-- owns reason-required (400 `na.reason_required`), freeze 409, and version lockstep.
+
+-- STORE-e policies — dept_match_overrides row scope (DD-5). W writes bound-A
+-- with the target dept proven inside A; W/C read own-tenant rows.
+DROP POLICY IF EXISTS b17_match_override_read ON dept_match_overrides;
+CREATE POLICY b17_match_override_read ON dept_match_overrides FOR SELECT USING (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') IN ('consultant', 'client')
+  AND b17_setting('current_actor_id') IS NOT NULL);
+DROP POLICY IF EXISTS b17_match_override_write ON dept_match_overrides;
+CREATE POLICY b17_match_override_write ON dept_match_overrides FOR INSERT WITH CHECK (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+  AND EXISTS (SELECT 1 FROM departments d WHERE d.id = client_department_id AND d.client_id::text = b17_setting('current_tenant_id')));
+DROP POLICY IF EXISTS b17_match_override_update ON dept_match_overrides;
+CREATE POLICY b17_match_override_update ON dept_match_overrides FOR UPDATE
+  USING (
+    b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND client_id::text = b17_setting('current_tenant_id')
+    AND b17_work_tenant(client_id)
+  )
+  WITH CHECK (
+    b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND client_id::text = b17_setting('current_tenant_id')
+    AND b17_work_tenant(client_id)
+    AND EXISTS (SELECT 1 FROM departments d WHERE d.id = client_department_id AND d.client_id::text = b17_setting('current_tenant_id')));
+DROP POLICY IF EXISTS b17_match_override_delete ON dept_match_overrides;
+-- Tenant DELETE only when no dependent work: handler refuses 409 when assignments
+-- reference the mapped dept; FK RESTRICT on client_department_id is the DB backstop.
+CREATE POLICY b17_match_override_delete ON dept_match_overrides FOR DELETE USING (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+  AND b17_work_tenant(client_id)
+);
+
+-- STORE-g policies — participating_departments row scope (DD-7). C reads the
+-- set; only W writes it. Handler refuses dept-removal-with-assignments 409
+-- before DELETE; FK RESTRICT on department_id is the DB backstop.
+DROP POLICY IF EXISTS b17_participating_read ON participating_departments;
+CREATE POLICY b17_participating_read ON participating_departments FOR SELECT USING (
+  b17_work_tenant(client_id)
+  AND b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') IN ('consultant', 'client')
+  AND b17_setting('current_actor_id') IS NOT NULL);
+DROP POLICY IF EXISTS b17_participating_write ON participating_departments;
+CREATE POLICY b17_participating_write ON participating_departments FOR INSERT WITH CHECK (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+  AND EXISTS (SELECT 1 FROM departments d WHERE d.id = department_id AND d.client_id::text = b17_setting('current_tenant_id')));
+DROP POLICY IF EXISTS b17_participating_update ON participating_departments;
+CREATE POLICY b17_participating_update ON participating_departments FOR UPDATE
+  USING (
+    b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND client_id::text = b17_setting('current_tenant_id')
+    AND b17_work_tenant(client_id)
+  )
+  WITH CHECK (
+    b17_setting('current_purpose') = 'work'
+    AND b17_setting('current_mode') = 'consultant'
+    AND b17_setting('current_user_role') = 'ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND client_id::text = b17_setting('current_tenant_id')
+    AND b17_work_tenant(client_id)
+    AND EXISTS (SELECT 1 FROM departments d WHERE d.id = department_id AND d.client_id::text = b17_setting('current_tenant_id')));
+DROP POLICY IF EXISTS b17_participating_delete ON participating_departments;
+-- Tenant DELETE only when no dependent work: handler refuses 409 when assignments
+-- exist for the dept; FK RESTRICT on department_id is the DB backstop.
+CREATE POLICY b17_participating_delete ON participating_departments FOR DELETE USING (
+  b17_setting('current_purpose') = 'work'
+  AND b17_setting('current_mode') = 'consultant'
+  AND b17_setting('current_user_role') = 'ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND client_id::text = b17_setting('current_tenant_id')
+  AND b17_work_tenant(client_id)
+);
+
