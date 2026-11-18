@@ -35,8 +35,8 @@ const service = (over: Partial<ServiceRow> & { id: string }): ServiceRow => ({
 const disclosure = (id: string, standardId: string, code: string, title: string) =>
   ({ id, standard_id: standardId, code, title, description: null });
 
-test('U4-2 §2 tab gating: the five tabs exist in contract order and only with a service', () => {
-  assert.deepEqual([...SERVICE_TABS], ['overview', 'content', 'rules', 'settings', 'import']);
+test('U4-2-FIX P5 §UI-1 tab gating: the four tabs exist in contract order and only with a service', () => {
+  assert.deepEqual([...SERVICE_TABS], ['overview', 'content', 'settings', 'import']);
   assert.deepEqual(tabsFor(null), [], 'no service → no tabs (workspace shows its empty state)');
   assert.deepEqual(tabsFor('svc-1'), [...SERVICE_TABS]);
   // The workspace render is gated on the resolved service, never on a raw id.
@@ -136,7 +136,7 @@ test('U4-2 R2 P2-08: a raw browser failure is replaced by the screen copy; serve
   assert.equal(friendlyError(new Error('Service code is required.'), 'screen copy'), 'Service code is required.');
 });
 
-test('U4-2 R2 layout pins: sticky without a clipping ancestor, drawer panel, real tablist, rules widths', () => {
+test('U4-2-FIX P5 R2 layout pins: sticky without a clipping ancestor, drawer panel, real tablist, P5 widths', () => {
   const view = source('src/views/ServicesView.tsx');
   // P1-01: the section can no longer clip the sticky header.
   assert.doesNotMatch(view, /className=\"[^\"]*overflow-hidden/);
@@ -148,9 +148,8 @@ test('U4-2 R2 layout pins: sticky without a clipping ancestor, drawer panel, rea
   assert.match(view, /id=\{`svc-panel-\$\{key\}`\}/);
   assert.match(view, /tabIndex=\{tab === key \? 0 : -1\}/);
   assert.match(view, /onKeyDown=\{onTabKey\}/);
-  // P1-03: widths never fight a w-full base class again.
-  assert.match(view, /\$\{FIELD_CLS\} w-48/);
-  assert.match(view, /\$\{FIELD_CLS\} w-32/);
+  // P1-03: widths never fight a w-full base class again (P5: flex + min-widths).
+  assert.match(view, /\$\{FIELD_CLS\} flex-1 min-w-40/);
   assert.match(view, /max-h-96/);
   // P1-05: the value cell stays RTL; code/date isolate LTR, localized text is
   // isolated by <bdi dir="ltr"> so a name can never flip the cell direction.
@@ -189,12 +188,15 @@ test('U4-2 R2 panel pins: drawer below xl, row highlight, dirty guard, confirm-b
   assert.doesNotMatch(panel, /<Save className="w-3\.5 h-3\.5" \/>\s*<\/button>\s*<\/div>\s*\)\)\}/);
 });
 
-test('U4-2 §3 wiring: existing endpoints only, apiFetch transport, P-only mount, label override', () => {
+test('U4-2-FIX P5 §3 wiring: catalog + service-scoped import endpoints only, apiFetch transport, P-only mount, label override', () => {
   const view = source('src/views/ServicesView.tsx');
   for (const path of ['/api/services', '/api/standards', '/api/disclosures', '/api/items', '/api/clients',
-    '/api/departments?clientId=', '/api/assignments', '/api/gri/preview', '/api/gri/commit']) {
+    '/api/departments?clientId=', '/api/import/preview', '/api/import/commit', '/import/template']) {
     assert.ok(view.includes(path), `missing existing endpoint: ${path}`);
   }
+  assert.ok(!view.includes('/api/assignments'), 'Services surface performs no assignment writes (INV-DEF-APP)');
+  assert.ok(!view.includes('/api/gri/preview') && !view.includes('/api/gri/commit'),
+    'import binds the canonical /api/import/* paths, not the one-release /api/gri/* aliases');
   assert.ok(view.includes('/api/services/${service.id}/standards'), 'service↔standard link uses the existing route');
   assert.ok(view.includes('/api/services/${service.id}'), 'name/settings writes use PATCH /api/services/:id');
   assert.doesNotMatch(view, /(^|[^i])fetch\(/, 'all traffic goes through apiFetch (auth + workspace headers)');

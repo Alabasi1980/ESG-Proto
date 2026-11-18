@@ -247,7 +247,12 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // mapping; E-1…E-9 live proof stays UNVERIFIED — reads only, no live
     // mutations). Under the 500-line new-file bound; no server/db/style
     // path moves in P5.
-    'src/lib/u42fix-p5.test.ts'];
+    'src/lib/u42fix-p5.test.ts',
+    // TASK-PROTO-U4-2-FIX P5 round 3 (W-P5-01 file hygiene, Tera-authorized):
+    // the settings-tab split — identity + named settings move verbatim into
+    // ServiceSettingsPanel (pure move, view keeps state/handlers). Under the
+    // 500-line new-file bound.
+    'src/components/services/ServiceSettingsPanel.tsx'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -407,7 +412,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P3-QA.md',
     // TASK-PROTO-U4-2-FIX P5 round 2 (Tera-authorized): the P4 QA report exact
     // path (Tera-owned reviewer input; bytes untouched) — same pattern.
-    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P4-QA.md']);
+    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P4-QA.md',
+    // TASK-PROTO-U4-2-FIX P5 round 3: the P5 QA report exact path
+    // (Tera-owned reviewer input; bytes untouched) — same pattern.
+    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P5-QA.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -456,7 +464,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,106); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test (via the ...newFiles spread)
+  assert.equal(allowed.size,107); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split (via the ...newFiles spread)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

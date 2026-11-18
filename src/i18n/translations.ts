@@ -667,25 +667,15 @@ export interface Translations {
     attachmentNotRequired: string;
     attachmentReadOnly: string;
     selectedCount: string;
-    bulkClient: string;
-    bulkDepartment: string;
     bulkAssign: string;
     bulkDone: string;
     bulkNoClients: string;
-    rulesScope: string;
-    rulesItems: string;
-    rulesSave: string;
-    rulesSaved: string;
-    rulesNoChanges: string;
-    rulesFilterPh: string;
-    rulesAnswerHint: string;
     rulesShownOf: string;
     discardDraft: string;
     dirtyDraft: string;
     unlinkStandardConfirm: string;
     identityTitle: string;
     identitySave: string;
-    jsonSettingsTitle: string;
     settingsHint: string;
     settingsSave: string;
     settingsInvalid: string;
@@ -694,7 +684,6 @@ export interface Translations {
     workspaceLoadFailed: string;
     fieldRequired: string;
     importTitle: string;
-    importTarget: string;
     importDrop: string;
     importFormats: string;
     importPreview: string;
@@ -703,9 +692,73 @@ export interface Translations {
     importConfirmAction: string;
     importing: string;
     importDone: string;
-    importNoClient: string;
-    importNoClientHint: string;
     importFailed: string;
+    contentGroups: string;
+    contentGroup: string;
+    contentDirect: string;
+    directHint: string;
+    archivedCount: string;
+    archivedSection: string;
+    archivedBadge: string;
+    linkedReadOnly: string;
+    approvedCopiesTitle: string;
+    approvedCopiesNone: string;
+    approvedCopySealed: string;
+    approvedCopyMissing: string;
+    approvedCopiesHint: string;
+    namedSettingsTitle: string;
+    namedSettingsHint: string;
+    namedSettingsReplace: string;
+    settingDefaultAnswerType: string;
+    settingDefaultAnswerTypeHint: string;
+    settingDefaultPriority: string;
+    settingDefaultPriorityHint: string;
+    settingDefaultEsgClass: string;
+    settingDefaultEsgClassHint: string;
+    settingAttachmentDefault: string;
+    settingAttachmentDefaultHint: string;
+    settingVisibleDefault: string;
+    settingVisibleDefaultHint: string;
+    frozenScopeBanner: string;
+    historyReopened: string;
+    historyTitle: string;
+    historyFailed: string;
+    historyEmpty: string;
+    templateDownload: string;
+    templateDownloadHint: string;
+    mappingTitle: string;
+    mappingHint: string;
+    mappingFileColumn: string;
+    importConfirmService: string;
+    unmappedTitle: string;
+    rowErrorsTitle: string;
+    commitBlocked: string;
+    previewClean: string;
+    createStandard: string;
+    editStandard: string;
+    deleteStandardConfirm: string;
+    createGroup: string;
+    newGroupStandard: string;
+    createGroupHint: string;
+    editGroup: string;
+    deleteGroupConfirm: string;
+    createDisclosure: string;
+    editDisclosure: string;
+    deleteDisclosureConfirm: string;
+    itemDepartment: string;
+    itemDepartmentNone: string;
+    singleDeptNote: string;
+    saveConflictHint: string;
+    deleteItemTitle: string;
+    deleteItemHint: string;
+    deleteReasonPh: string;
+    deleteItemConfirm: string;
+    itemArchivedNote: string;
+    bulkEditDone: string;
+    bulkUnset: string;
+    bulkEditApply: string;
+    bulkEditHint: string;
+    bulkRowOk: string;
   };
 
   taxonomy: {
@@ -1488,7 +1541,7 @@ export const translations: Record<Language, Translations> = {
     },
 
     servicesWorkspace: {
-      headerSubtitle: 'One workspace per service — definition, content, rules, settings, import',
+      headerSubtitle: 'One workspace per service — definition, content, settings, import',
       railSearchLabel: 'Search services',
       railSearchPh: 'Name or code',
       railEmpty: 'No services yet',
@@ -1544,25 +1597,15 @@ export const translations: Record<Language, Translations> = {
       attachmentNotRequired: 'No attachment',
       attachmentReadOnly: 'read from the server, not editable here',
       selectedCount: 'Selected: {n}',
-      bulkClient: 'Client',
-      bulkDepartment: 'Department',
       bulkAssign: 'Assign selected',
       bulkDone: '{n} assigned',
       bulkNoClients: 'No client is linked to this service.',
-      rulesScope: 'Service scope',
-      rulesItems: 'Item rules',
-      rulesSave: 'Save rules',
-      rulesSaved: '{n} saved',
-      rulesNoChanges: 'No changes to save.',
-      rulesFilterPh: 'Search items',
-      rulesAnswerHint: 'Only the answer type is saved; the attachment flag is read-only.',
       rulesShownOf: 'Showing {shown} of {total}',
       discardDraft: 'You have unsaved changes. Discard them?',
       dirtyDraft: 'Unsaved changes',
       unlinkStandardConfirm: 'Unlink standard {code} from this service?',
       identityTitle: 'Service identity',
       identitySave: 'Save identity',
-      jsonSettingsTitle: 'Service settings (JSON)',
       settingsHint: 'The object is written whole (replace) and capped at 8 KB. The API exposes no read of stored settings before writing.',
       settingsSave: 'Save settings',
       settingsInvalid: 'Enter a valid JSON object (not an array or a scalar).',
@@ -1571,7 +1614,6 @@ export const translations: Record<Language, Translations> = {
       workspaceLoadFailed: 'Services data could not be loaded.',
       fieldRequired: 'This field is required.',
       importTitle: 'Import service data',
-      importTarget: 'Target client',
       importDrop: 'Drop the file here or choose it',
       importFormats: 'Excel or CSV with columns: Standard Code, Standard Title, Category, Disclosure Code, Disclosure Title, Item Code, Requirement (optional: Priority, ESG Class, Answer Type, Hint, Department).',
       importPreview: 'Preview',
@@ -1580,9 +1622,73 @@ export const translations: Record<Language, Translations> = {
       importConfirmAction: 'Confirm import',
       importing: 'Importing...',
       importDone: 'Imported — standards / disclosures / items',
-      importNoClient: 'No client is linked to this service',
-      importNoClientHint: 'Importing needs a client linked to the service; link it from the Clients page first.',
       importFailed: 'The import could not be completed.',
+      contentGroups: 'Groups',
+      contentGroup: 'Group',
+      contentDirect: 'Direct items',
+      directHint: 'Items of the GENERAL disclosure — no standard or disclosure of their own.',
+      archivedCount: 'Archived items',
+      archivedSection: 'Archived (history retained)',
+      archivedBadge: 'Archived',
+      linkedReadOnly: 'read-only',
+      approvedCopiesTitle: 'Sealed approved copies',
+      approvedCopiesNone: 'No client is linked to this service yet.',
+      approvedCopySealed: 'Sealed',
+      approvedCopyMissing: 'No sealed copy',
+      approvedCopiesHint: 'Read-only. A sealed copy survives any later change to this service, including full removal.',
+      namedSettingsTitle: 'Service settings (named fields)',
+      namedSettingsHint: 'Only these named fields are written. The whole object replaces the previous one (max 8 KB). The API exposes no settings read before writing.',
+      namedSettingsReplace: 'Saved as one object — unknown keys are never sent.',
+      settingDefaultAnswerType: 'Default answer type',
+      settingDefaultAnswerTypeHint: 'Pre-selected for newly created items.',
+      settingDefaultPriority: 'Default priority',
+      settingDefaultPriorityHint: 'Weight follows priority (High 3 / Medium 2 / Low 1).',
+      settingDefaultEsgClass: 'Default classification',
+      settingDefaultEsgClassHint: 'Environmental, social, governance or general.',
+      settingAttachmentDefault: 'Attachment required by default',
+      settingAttachmentDefaultHint: 'New items require an attachment.',
+      settingVisibleDefault: 'Visible in reports by default',
+      settingVisibleDefaultHint: 'Visibility default for new items.',
+      frozenScopeBanner: 'Read-only — finally approved (GE-final snapshot).',
+      historyReopened: '{n} reopened answer(s) — the previous answers are kept in the history below.',
+      historyTitle: 'History',
+      historyFailed: 'History could not be loaded.',
+      historyEmpty: 'No versions or answers recorded yet.',
+      templateDownload: 'Download per-service template (.csv)',
+      templateDownloadHint: 'One template per service with the GRI columns for this service kind.',
+      mappingTitle: 'Column mapping',
+      mappingHint: 'Match each canonical column to a file header. Headers with no match are shown after preview — never silently dropped.',
+      mappingFileColumn: 'File header',
+      importConfirmService: 'Commit this preview into «{service}»? The catalogue is updated by this batch.',
+      unmappedTitle: 'Unmapped file columns',
+      rowErrorsTitle: 'Row errors',
+      commitBlocked: 'Commit is blocked while row errors exist — fix the file and preview again.',
+      previewClean: 'Preview is clean — no row errors.',
+      createStandard: 'New standard',
+      editStandard: 'Edit standard',
+      deleteStandardConfirm: 'Delete this standard? Refused while disclosures exist.',
+      createGroup: 'New group',
+      newGroupStandard: 'New group container ({code})',
+      createGroupHint: 'A group is a disclosure under a group-category standard. A new container standard is created only when none exists.',
+      editGroup: 'Edit group',
+      deleteGroupConfirm: 'Delete this group? Refused while items exist.',
+      createDisclosure: 'New disclosure',
+      editDisclosure: 'Edit disclosure',
+      deleteDisclosureConfirm: 'Delete this disclosure? Refused while items exist.',
+      itemDepartment: 'Department (single)',
+      itemDepartmentNone: 'No department',
+      singleDeptNote: 'One item belongs to at most one department. Assignment to clients happens outside this screen.',
+      saveConflictHint: 'Someone else saved first. Reload and retry — your draft is kept.',
+      deleteItemTitle: 'Delete item',
+      deleteItemHint: 'Items with tenant work are archived with their history kept — never hard-deleted. Only work-free items are permanently deleted.',
+      deleteReasonPh: 'Archive reason (optional)',
+      deleteItemConfirm: 'Confirm delete',
+      itemArchivedNote: 'Archived with history kept — read-only. It is out of the live scope.',
+      bulkEditDone: '{ok} of {n} updated',
+      bulkUnset: 'No change',
+      bulkEditApply: 'Apply bulk edit',
+      bulkEditHint: 'Only answer type, priority, classification and attachment flag. Department changes stay single-item.',
+      bulkRowOk: 'Updated',
     },
 
     taxonomy: {
@@ -2431,7 +2537,7 @@ export const translations: Record<Language, Translations> = {
     },
 
     servicesWorkspace: {
-      headerSubtitle: 'مساحة عمل لكل خدمة — التعريف والمحتوى والقواعد والإعدادات والاستيراد',
+      headerSubtitle: 'مساحة عمل لكل خدمة — التعريف والمحتوى والإعدادات والاستيراد',
       railSearchLabel: 'البحث في الخدمات',
       railSearchPh: 'الاسم أو الرمز',
       railEmpty: 'لا توجد خدمات بعد',
@@ -2487,25 +2593,15 @@ export const translations: Record<Language, Translations> = {
       attachmentNotRequired: 'بلا مرفق',
       attachmentReadOnly: 'تُقرأ من الخادم ولا تُحرَّر هنا',
       selectedCount: 'المحدد: {n}',
-      bulkClient: 'العميل',
-      bulkDepartment: 'القسم',
       bulkAssign: 'إسناد المحدد',
       bulkDone: 'تم الإسناد: {n}',
       bulkNoClients: 'لا عميل مرتبط بهذه الخدمة.',
-      rulesScope: 'نطاق الخدمة',
-      rulesItems: 'قواعد البنود',
-      rulesSave: 'حفظ القواعد',
-      rulesSaved: 'تم الحفظ: {n}',
-      rulesNoChanges: 'لا تغييرات لحفظها.',
-      rulesFilterPh: 'بحث في البنود',
-      rulesAnswerHint: 'يُحفظ نوع الإجابة فقط؛ حالة المرفق للقراءة.',
       rulesShownOf: 'عرض {shown} من {total}',
       discardDraft: 'لديك تغييرات غير محفوظة. تجاهلها؟',
       dirtyDraft: 'تغييرات غير محفوظة',
       unlinkStandardConfirm: 'فك ربط المعيار {code} من هذه الخدمة؟',
       identityTitle: 'هوية الخدمة',
       identitySave: 'حفظ الهوية',
-      jsonSettingsTitle: 'إعدادات الخدمة (JSON)',
       settingsHint: 'يُكتب الكائن كاملاً (استبدال) وبحد أقصى 8KB؛ لا يوفّر الـ API قراءة الإعدادات المحفوظة قبل الكتابة.',
       settingsSave: 'حفظ الإعدادات',
       settingsInvalid: 'أدخل كائن JSON صالحاً (لا مصفوفة ولا قيمة مفردة).',
@@ -2514,7 +2610,6 @@ export const translations: Record<Language, Translations> = {
       workspaceLoadFailed: 'تعذّر تحميل بيانات الخدمات.',
       fieldRequired: 'هذا الحقل مطلوب.',
       importTitle: 'استيراد بيانات الخدمة',
-      importTarget: 'العميل الهدف',
       importDrop: 'أفلت الملف هنا أو اختره',
       importFormats: 'Excel أو CSV بالأعمدة: Standard Code, Standard Title, Category, Disclosure Code, Disclosure Title, Item Code, Requirement (واختيارياً: Priority, ESG Class, Answer Type, Hint, Department).',
       importPreview: 'معاينة',
@@ -2523,9 +2618,73 @@ export const translations: Record<Language, Translations> = {
       importConfirmAction: 'تأكيد الاستيراد',
       importing: 'جارٍ الاستيراد...',
       importDone: 'تم الاستيراد — معايير / إفصاحات / بنود',
-      importNoClient: 'لا عميل مرتبط بهذه الخدمة',
-      importNoClientHint: 'الاستيراد يتطلب عميلاً مرتبطاً بالخدمة؛ اربط الخدمة بعميل من صفحة العملاء أولاً.',
       importFailed: 'تعذّر إكمال الاستيراد.',
+      contentGroups: 'المجموعات',
+      contentGroup: 'مجموعة',
+      contentDirect: 'بنود مباشرة',
+      directHint: 'بنود الإفصاح GENERAL — بلا معيار أو إفصاح خاص بها.',
+      archivedCount: 'البنود المؤرشفة',
+      archivedSection: 'مؤرشف (التاريخ محفوظ)',
+      archivedBadge: 'مؤرشف',
+      linkedReadOnly: 'للقراءة فقط',
+      approvedCopiesTitle: 'النسخ المعتمدة المختومة',
+      approvedCopiesNone: 'لا عميل مرتبط بهذه الخدمة بعد.',
+      approvedCopySealed: 'مختومة',
+      approvedCopyMissing: 'لا نسخة مختومة',
+      approvedCopiesHint: 'للقراءة فقط. النسخة المختومة تبقى بعد أي تغيير لاحق على الخدمة، بما فيه الإزالة الكاملة.',
+      namedSettingsTitle: 'إعدادات الخدمة (حقول مسماة)',
+      namedSettingsHint: 'تُكتب هذه الحقول المسماة فقط. يُستبدل الكائن كاملاً بالسابق (بحد أقصى 8KB). لا يوفّر الـ API قراءة الإعدادات قبل الكتابة.',
+      namedSettingsReplace: 'تُحفظ ككائن واحد — لا تُرسل مفاتيح غير معروفة أبداً.',
+      settingDefaultAnswerType: 'نوع الإجابة الافتراضي',
+      settingDefaultAnswerTypeHint: 'يُختار مسبقاً للبنود المنشأة حديثاً.',
+      settingDefaultPriority: 'الأولوية الافتراضية',
+      settingDefaultPriorityHint: 'الوزن يتبع الأولوية (مرتفعة 3 / متوسطة 2 / منخفضة 1).',
+      settingDefaultEsgClass: 'التصنيف الافتراضي',
+      settingDefaultEsgClassHint: 'بيئي أو اجتماعي أو حوكمة أو عام.',
+      settingAttachmentDefault: 'المرفق مطلوب افتراضياً',
+      settingAttachmentDefaultHint: 'البنود الجديدة تتطلب مرفقاً.',
+      settingVisibleDefault: 'ظاهرة في التقارير افتراضياً',
+      settingVisibleDefaultHint: 'الظهور الافتراضي للبنود الجديدة.',
+      frozenScopeBanner: 'للقراءة — معتمد نهائياً (لقطة GE النهائية).',
+      historyReopened: '{n} إجابة مُعاد فتحها — الإجابات السابقة محفوظة في السجل أدناه.',
+      historyTitle: 'السجل',
+      historyFailed: 'تعذّر تحميل السجل.',
+      historyEmpty: 'لا نسخ أو إجابات مسجلة بعد.',
+      templateDownload: 'تحميل قالب الخدمة (.csv)',
+      templateDownloadHint: 'قالب واحد لكل خدمة بأعمدة GRI الخاصة بهذا النوع من الخدمات.',
+      mappingTitle: 'مطابقة الأعمدة',
+      mappingHint: 'طابق كل عمود معياري مع عنوان في الملف. العناوين بلا مطابقة تُعرض بعد المعاينة — لا تُسقط بصمت أبداً.',
+      mappingFileColumn: 'عنوان الملف',
+      importConfirmService: 'اعتماد هذه المعاينة في «{service}»؟ سيُحدَّث الكتالوج بهذه الدفعة.',
+      unmappedTitle: 'أعمدة الملف غير المطابقة',
+      rowErrorsTitle: 'أخطاء الصفوف',
+      commitBlocked: 'الاعتماد محظور ما دامت أخطاء الصفوف موجودة — صحح الملف وأعد المعاينة.',
+      previewClean: 'المعاينة سليمة — لا أخطاء صفوف.',
+      createStandard: 'معيار جديد',
+      editStandard: 'تعديل المعيار',
+      deleteStandardConfirm: 'حذف هذا المعيار؟ يُرفض ما دامت إفصاحات موجودة تحته.',
+      createGroup: 'مجموعة جديدة',
+      newGroupStandard: 'حاوية مجموعات جديدة ({code})',
+      createGroupHint: 'المجموعة إفصاح تحت معيار بفئة مجموعة. تُنشأ حاوية جديدة فقط عند غيابها.',
+      editGroup: 'تعديل المجموعة',
+      deleteGroupConfirm: 'حذف هذه المجموعة؟ يُرفض ما دامت بنود موجودة تحتها.',
+      createDisclosure: 'إفصاح جديد',
+      editDisclosure: 'تعديل الإفصاح',
+      deleteDisclosureConfirm: 'حذف هذا الإفصاح؟ يُرفض ما دامت بنود موجودة تحته.',
+      itemDepartment: 'القسم (واحد)',
+      itemDepartmentNone: 'بلا قسم',
+      singleDeptNote: 'البند لقسم واحد على الأكثر. الإسناد للعملاء خارج هذه الشاشة.',
+      saveConflictHint: 'سبقك شخص آخر بالحفظ. أعد التحميل وحاول — مسودتك محفوظة.',
+      deleteItemTitle: 'حذف البند',
+      deleteItemHint: 'البنود ذات العمل المستأجَر تُؤرشف مع حفظ تاريخها — لا تُحذف نهائياً. الحذف النهائي للبنود بلا عمل فقط.',
+      deleteReasonPh: 'سبب الأرشفة (اختياري)',
+      deleteItemConfirm: 'تأكيد الحذف',
+      itemArchivedNote: 'مؤرشف مع حفظ التاريخ — للقراءة فقط. خارج النطاق الحي.',
+      bulkEditDone: 'حُدِّث {ok} من {n}',
+      bulkUnset: 'بلا تغيير',
+      bulkEditApply: 'تطبيق التحرير الجماعي',
+      bulkEditHint: 'نوع الإجابة والأولوية والتصنيف وحالة المرفق فقط. تغيير القسم يبقى مفرداً.',
+      bulkRowOk: 'حُدِّث',
     },
 
     taxonomy: {
