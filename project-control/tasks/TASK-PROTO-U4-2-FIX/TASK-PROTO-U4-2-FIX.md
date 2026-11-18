@@ -26,6 +26,10 @@ P4 pre-step: allowlist `qa-reports/TASK-PROTO-U4-2-FIX-P3-QA.md` exact path in g
 
 ### P4 — History / freeze / approved copy API
 PATCH/DELETE reopen+archive paths (answers→`reopened`, `REOPEN_ITEM_SCOPE`), `POST /api/approved-copies/seal` in GE-final txn, `GET …/approved-copy` (works after source deletion). Negative tests N-2/N-3/N-4.
+**P4 pre-step:** allowlist `qa-reports/TASK-PROTO-U4-2-FIX-P3-QA.md` exact path in guard → suite green before P4 work.
+**P4 must close:** (F1) live isolated-harness proof of P2+P4 handler paths (archive/reopen/version/seal + N-2/N-3/N-4 incl. approved-copy view after source deletion); (F2) SHIELD-P2-01 → emit audit row also on redundant archive (idempotent but tracked) — Tera decision 2026-11-17.
+**P4 RLS rule:** ONE narrow branch only — P-config answers UPDATE for the reopen path (plus viewer-read gaps for copy tables ONLY if P1 RLS proves insufficient; verify first, state the finding).
+**Result 2026-11-17: ACCEPTED.** 2 rounds (STOP-packet + rulings A/B/C). Evidence: 15/15 new tests · 424/424 suite · lint/build clean · F1 harness green (N3_COMPLETE/N2_REFUSED/N4_VERSIONS/zero-loss/rollback) · Shield PASS (0 blocking; U1/U2 accepted notes) · QA PASS (full) · Auditor CONDITIONAL with 2 Tera-closed conditions: (1) Shield P4 PASS confirmed — verdict PASS, 0 High/Med/Low-blocking, file:line evidence, session ses_e141a51a (no artifact file: review was read-only by design; verdict recorded here); (2) executor semgrep unevidenced → substituted by auditor's independent clean re-scan (zero in P4 hunks), recorded waiver. Ruling B (2nd branch) JUSTIFIED + live-verified. DG-04 notify leg refined: audit-trail + visible reopened status now; inbox push wording/channel → P5 UI decision (needs owner wording). Post-Execution PASS; no live mutation.
 
 ### P5 — Services screen correction
 Tabs `overview·content·settings·import` (Rules deleted, JSON editor deleted, no client/department controls, bulk-edit bar, history drawer, GROUP/direct rendering, import mapping UX). STYLE_CONTRACT binding; design-reviewer + QA pass. E-1…E-9.
@@ -55,6 +59,14 @@ Gate Status: PASS → delegate P2.
 ## P3 Pre-Execution Gate Result (2026-11-17)
 Smallest safe unit PASS (import path only: preview/commit aliases + template + mapping + catalog-only commit; no catalog CRUD changes, no history/seal) · one objective PASS · no secrets PASS · rollback PASS (code revert; no DDL in P3) · acceptance testable PASS (N-5 + row-level errors + zero-provisioning proof).
 Gate Status: PASS → delegate P3.
+
+## P4 Pre-Execution Gate Result (2026-11-17)
+Smallest safe unit PASS (history viewer + PATCH reopen + seal + copy viewer + F1/F2 only; import/catalog/screen untouched) · one objective PASS · no secrets PASS · rollback PASS (code revert; ONE narrow additive RLS branch, drop-policy fallback) · acceptance testable PASS (N-2/N-3/N-4 + live harness + matrix).
+Gate Status: PASS → delegate P4.
+
+## P5 Pre-Execution Gate Result (2026-11-17)
+Smallest safe unit PASS (Services screen correction only; no API/DB changes — P1→P4 endpoints consumed as built) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (E-1…E-9 + design-reviewer + QA) · design source: TASK-PROTO-U4-2 screen + spec UI module (no new visual language) · UI acceptance per UI_ACCEPTANCE_GATE + STYLE_CONTRACT.
+Gate Status: PASS → delegate P5 (ui-designer, then design-reviewer + QA).
 
 ## فهم القرار
 فهمي: الإصلاح خمس مراحل متسلسلة تبدأ بالقاعدة (إضافية فقط، بلا مساس بالحيّ) ثم الواجهات البرمجية ثم الشاشة، وكل مرحلة تُقبل قبل التالية.
