@@ -2,6 +2,7 @@
 // idempotence, with a tiny in-memory stand-in for the three catalog tables.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   GENERAL_DISCLOSURE_CODE,
   GENERAL_DISCLOSURE_TITLE,
@@ -11,6 +12,7 @@ import {
   generalStandardCode,
   sanitizeServiceCode,
   serviceBucketSuffix,
+  sha256Hex,
   type BucketDb,
 } from './generalBucket.ts';
 
@@ -152,4 +154,29 @@ test('U4-1c general bucket: titles are the owner-decided bilingual strings', () 
   assert.equal(GENERAL_STANDARD_TITLE, 'عام / General');
   assert.equal(GENERAL_DISCLOSURE_TITLE, 'أسئلة عامة / General questions');
   assert.equal(GENERAL_DISCLOSURE_CODE, 'GENERAL');
+});
+
+// TASK-PROTO-U4-2-FIX P5D: the pure-TS sha256Hex is byte-identical to
+// node:crypto — bucket codes must not move when the implementation does.
+test('P5D sha256Hex digest identity: fixed vectors match node:crypto exactly', () => {
+  // Known-answer: sha256('abc') from FIPS 180-4.
+  assert.equal(sha256Hex('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  const vectors = [
+    '', 'a', 'abc', 'not-a-uuid', 'also-not-a-uuid', '   ', 'GRI',
+    'خدمة عامة', '混合服务コード mixed 123',
+    'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(64), 'x'.repeat(65),
+    'y'.repeat(1000), 'GENERAL-'.repeat(40),
+  ];
+  for (const v of vectors) {
+    assert.equal(sha256Hex(v), createHash('sha256').update(v, 'utf8').digest('hex'),
+      `digest drift for vector of length ${v.length}`);
+  }
+});
+
+test('P5D bucket codes unchanged by the hash move: pinned digests end-to-end', () => {
+  // Pinned against node:crypto output (pre-move digests, must never move).
+  assert.equal(serviceBucketSuffix('not-a-uuid'), createHash('sha256').update('not-a-uuid').digest('hex').slice(0, 8).toUpperCase());
+  assert.equal(serviceBucketSuffix('x'), createHash('sha256').update('x').digest('hex').slice(0, 8).toUpperCase());
+  assert.equal(sanitizeServiceCode(''), `SERVICE-${createHash('sha256').update('').digest('hex').slice(0, 8).toUpperCase()}`);
+  assert.equal(generalStandardCode('GRI', 'short'), `GENERAL-GRI-${createHash('sha256').update('short').digest('hex').slice(0, 8).toUpperCase()}`);
 });

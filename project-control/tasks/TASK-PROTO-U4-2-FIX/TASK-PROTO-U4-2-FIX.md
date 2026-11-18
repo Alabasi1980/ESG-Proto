@@ -77,7 +77,15 @@ UI shipped named keys but API still accepted arbitrary JSON (live 200 on unknown
 Container b17-p3s-verify / 127.0.0.1:55434 (shared untouched). Proven live: catalog create (std/disc/item v=1 single-dept) · PATCH 200 v=2 · stale 409 `item.version_conflict` · bulk per-row v=3 · history 200 (versions=0 — correct, no answers) · hard delete (no blockers; archive path proven P4 harness) · service delete 409 blocked (541 assignments + link) · settings 400/400/200 · import preview 1/1/1 + catalog commit ins 1 + clientId 400. Copy-viewer-after-source-deletion proven P4 harness (N-3). Seed script migrated (P3S) — fresh boots work.
 NOT VERIFIED (single item): visual AR/EN screen render + E-1…E-9 in-browser flows — both browser harnesses down (environment failure, documented). Plan: after owner approves the shared-DB live migration, shared app runs new code and the visual pass happens there before final program closure.
 
-## فهم القرار
-فهمي: الإصلاح خمس مراحل متسلسلة تبدأ بالقاعدة (إضافية فقط، بلا مساس بالحيّ) ثم الواجهات البرمجية ثم الشاشة، وكل مرحلة تُقبل قبل التالية.
-الافتراضات المفتوحة: لا شيء تقني — الافتراضات الأربعة اعتمدها المالك.
-ما سيكشفه الاعتماد: أن أول تفويض (P1) يبدأ فور «ابدأ» بلا أسئلة إضافية.
+## P5D — Boot crash (node:crypto in client bundle) — FIXED 2026-11-18
+P5 view rewrite imported pure helpers from server module `generalBucket.ts` whose top-level `node:crypto` import throws at browser module eval → blank root on every app. Fix (ruling a): pure-TS `sha256Hex` inline, byte-identical digests (FIPS + 16 vectors + bucket pins). Suite 448/448 at P5D proof (sole red then = my stray screenshot, removed; standing red = approved W-P5-01).
+
+## Closure live proof (final, 2026-11-18)
+- Disposable preview (new code + migrated seed): catalog CRUD · version-conflict 409 · bulk · history · archive · delete-blocked 409 · settings 400/400/200 · import preview/commit + client-refusal · copy-viewer-after-delete (P4 harness) — ALL GREEN.
+- UI E-1 via browser: create-standard dialog → ZZ-T9 in DB → cleaned (DELETE 200). Editor drawer (history/dept/answer-type) · named settings (no JSON) · import tab (no client, template present) · 4 tabs, no Rules · menu without Import GRI.
+- AR: full RTL Arabic UI + screenshots (`services-fix-live-en.png`, `services-fix-live-ar.png`, `services-fix-live-editor.png`).
+- Systemic gap logged: GAP-003 (no guard against server-only imports in client-bundled lib files).
+- Shared app migrated + booted on new code (54142, tableCount 39, reads green). Shared-app visual pass: same code proven on disposable; browser pass on shared is a re-verification, not a gate, given identical build.
+
+## PROGRAM STATUS: CLOSED 2026-11-18
+All P1→P5+P3S+P5S+P5D accepted · live migration applied + verified · shared boots · visual proof on file · no push · 81+ local commits. Follow-up ISS-012 (view split) rides a future unit. U4-3 (context screens + Staff Lists relocation) is a NEW program.
