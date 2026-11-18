@@ -146,7 +146,8 @@ const PAGES: Record<NavContext, readonly MatrixEntry[]> = {
     { id: 'initiatives', order: 6, menu: true },
     { id: 'esg-profile', order: 7, menu: true, conditional: true },
     { id: 'reports', order: 8, menu: true, conditional: true },
-    { id: 'staff-lists', order: 9, menu: true },
+    // TASK-PROTO-U4-3b round 3: C `staff-lists` nav row hidden — the client
+    // console tab is the C staff surface; P keeps the page until unit (d).
     { id: 'notifications', order: 10, menu: true },
   ],
   employee: [

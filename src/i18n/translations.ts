@@ -826,6 +826,66 @@ export interface Translations {
     versionConflict: string;
   };
 
+  // TASK-PROTO-U4-3 unit (b) — client console (own-tenant read + confirm +
+  // staff draft/submit). Key names are console-specific so no existing block's
+  // counter can be disturbed.
+  clientConsole: {
+    title: string;
+    subtitle: string;
+    tabServices: string;
+    tabReview: string;
+    tabStaff: string;
+    railTitle: string;
+    railSearchLabel: string;
+    railSearchPh: string;
+    railEmpty: string;
+    railEmptyHint: string;
+    emptySearch: string;
+    countsAssigned: string;
+    countsSubmitted: string;
+    countsPending: string;
+    selectServiceHint: string;
+    detailLinkedNote: string;
+    drillDisclosures: string;
+    drillEmpty: string;
+    drillEmptyHint: string;
+    deptRowsTitle: string;
+    itemDetailTitle: string;
+    itemRequirement: string;
+    itemStatusLabel: string;
+    itemScoreLabel: string;
+    scoreEntitlementNote: string;
+    reviewTabNote: string;
+    staffTitle: string;
+    staffSubtitle: string;
+    staffEmpty: string;
+    staffEmptyHint: string;
+    draftTitle: string;
+    emailPh: string;
+    namePh: string;
+    deptPh: string;
+    roleEmployee: string;
+    roleClientAdmin: string;
+    addRow: string;
+    removeRow: string;
+    createDraft: string;
+    creatingDraft: string;
+    submitDraft: string;
+    submittingDraft: string;
+    draftSaved: string;
+    submitDone: string;
+    resubmitAsDraft: string;
+    resubmitHint: string;
+    rejectReasonLabel: string;
+    actionFailed: string;
+    loadFailed: string;
+    frozenBanner: string;
+    draftStaleNote: string;
+    unsavedTitle: string;
+    unsavedChanges: string;
+    confirmDiscard: string;
+  };
+
   taxonomy: {
     manageTitle: string;
     manageSubtitle: string;
@@ -1821,6 +1881,63 @@ export const translations: Record<Language, Translations> = {
       performedLabel: 'Performed',
       notPerformedLabel: 'Not performed',
       versionConflict: 'Someone else saved first. Reload and retry — your draft is kept.',
+    },
+
+    clientConsole: {
+      title: 'Client console',
+      subtitle: 'Your linked services (read-only), department preliminary approvals to confirm, and staff lists — own company only.',
+      tabServices: 'Linked services',
+      tabReview: 'Preliminary approvals',
+      tabStaff: 'Staff lists',
+      railTitle: 'Linked services',
+      railSearchLabel: 'Search services',
+      railSearchPh: 'Name or code',
+      railEmpty: 'No linked services',
+      railEmptyHint: 'No services are linked to your company yet. Contact your consultant.',
+      emptySearch: 'No matching services.',
+      countsAssigned: 'Items',
+      countsSubmitted: 'Confirmed path',
+      countsPending: 'Pending',
+      selectServiceHint: 'Select a service to browse its disclosures and department rows (read-only).',
+      detailLinkedNote: 'Read-only — linked to your company. Confirm preliminary approvals in the review tab.',
+      drillDisclosures: 'Disclosures',
+      drillEmpty: 'No review rows for this service yet',
+      drillEmptyHint: 'When departments approve their evaluations, the disclosure groups appear here.',
+      deptRowsTitle: 'Departments',
+      itemDetailTitle: 'Item detail (read-only)',
+      itemRequirement: 'Requirement',
+      itemStatusLabel: 'Status',
+      itemScoreLabel: 'Dept-approved score',
+      scoreEntitlementNote: 'Scores shown are dept-approved review scores and company aggregates only — no evaluator identity, no correction internals.',
+      reviewTabNote: 'Confirm a dept-approved (preliminary) evaluation, or return it to the department with a comment. Client approval applies per item but requires the whole disclosure to be dept-approved.',
+      staffTitle: 'Staff lists (own company)',
+      staffSubtitle: 'Draft a list of names, emails and departments, submit it for completion, and track its status. Provisioning is handled by your consultant — never here.',
+      staffEmpty: 'No staff lists yet',
+      staffEmptyHint: 'Draft your first list below. It stays a draft until you submit it.',
+      draftTitle: 'New staff list (draft)',
+      emailPh: 'staff@client.test',
+      namePh: 'Full name',
+      deptPh: 'Department…',
+      roleEmployee: 'Employee',
+      roleClientAdmin: 'Client admin',
+      addRow: 'Add row',
+      removeRow: 'Remove row',
+      createDraft: 'Save draft',
+      creatingDraft: 'Saving…',
+      submitDraft: 'Submit for completion',
+      submittingDraft: 'Submitting…',
+      draftSaved: 'Draft saved. Submit it when the rows are final.',
+      submitDone: 'Submitted for completion. Track its status below.',
+      resubmitAsDraft: 'Resubmit as new draft',
+      resubmitHint: 'A rejected list cannot be edited — its rows are copied into a new draft above.',
+      rejectReasonLabel: 'Rejection reason',
+      actionFailed: 'The action could not be completed.',
+      loadFailed: 'The client console could not be loaded.',
+      frozenBanner: 'Read-only — finally approved (GE-final snapshot). Confirm and submit actions are refused.',
+      draftStaleNote: 'Unsaved draft changes',
+      unsavedTitle: 'Leave without saving?',
+      unsavedChanges: 'Your draft rows are not saved yet.',
+      confirmDiscard: 'Discard changes',
     },
 
     taxonomy: {
@@ -2882,6 +2999,63 @@ export const translations: Record<Language, Translations> = {
       performedLabel: 'نُفِّذت',
       notPerformedLabel: 'لم تُنفَّذ',
       versionConflict: 'سبقك شخص آخر بالحفظ. أعد التحميل وحاول — مسودتك محفوظة.',
+    },
+
+    clientConsole: {
+      title: 'وحدة تحكم العميل',
+      subtitle: 'خدماتك المرتبطة (للقراءة فقط)، والاعتمادات الأولية للأقسام بانتظار تأكيدك، وقوائم الموظفين — شركتك فقط.',
+      tabServices: 'الخدمات المرتبطة',
+      tabReview: 'الاعتمادات الأولية',
+      tabStaff: 'قوائم الموظفين',
+      railTitle: 'الخدمات المرتبطة',
+      railSearchLabel: 'البحث في الخدمات',
+      railSearchPh: 'الاسم أو الرمز',
+      railEmpty: 'لا توجد خدمات مرتبطة',
+      railEmptyHint: 'لا توجد خدمات مرتبطة بشركتك بعد. تواصل مع الاستشاري.',
+      emptySearch: 'لا توجد خدمات مطابقة.',
+      countsAssigned: 'البنود',
+      countsSubmitted: 'المسار المؤكد',
+      countsPending: 'المعلق',
+      selectServiceHint: 'اختر خدمة لاستعراض إفصاحاتها وصفوف الأقسام (للقراءة فقط).',
+      detailLinkedNote: 'للقراءة فقط — مرتبطة بشركتك. أكّد الاعتمادات الأولية من تبويب المراجعة.',
+      drillDisclosures: 'الإفصاحات',
+      drillEmpty: 'لا توجد صفوف مراجعة لهذه الخدمة بعد',
+      drillEmptyHint: 'عندما تعتمد الأقسام تقييماتها ستظهر مجموعات الإفصاحات هنا.',
+      deptRowsTitle: 'الأقسام',
+      itemDetailTitle: 'تفاصيل البند (للقراءة فقط)',
+      itemRequirement: 'المتطلب',
+      itemStatusLabel: 'الحالة',
+      itemScoreLabel: 'درجة القسم المعتمدة',
+      scoreEntitlementNote: 'الدرجات المعروضة هي درجات المراجعة المعتمدة من الأقسام وإجماليات الشركة فقط — بلا هوية مقيّم ولا تفاصيل تصحيح داخلية.',
+      reviewTabNote: 'أكّد التقييم المعتمد من القسم (الأولي)، أو أعده إلى القسم مع تعليق. اعتماد العميل يتم لكل بند لكنه يتطلب اكتمال الإفصاح كله على مستوى الأقسام.',
+      staffTitle: 'قوائم الموظفين (شركتك)',
+      staffSubtitle: 'صغ قائمة بالأسماء والبريد والأقسام، أرسلها للاستكمال، وتتبع حالتها. التوفير يتم عبر الاستشاري — وليس هنا أبداً.',
+      staffEmpty: 'لا توجد قوائم موظفين بعد',
+      staffEmptyHint: 'صغ قائمتك الأولى أدناه. تبقى مسودة حتى ترسلها.',
+      draftTitle: 'قائمة موظفين جديدة (مسودة)',
+      emailPh: 'staff@client.test',
+      namePh: 'الاسم الكامل',
+      deptPh: 'القسم…',
+      roleEmployee: 'موظف',
+      roleClientAdmin: 'مدير عميل',
+      addRow: 'إضافة صف',
+      removeRow: 'حذف الصف',
+      createDraft: 'حفظ مسودة',
+      creatingDraft: 'جارٍ الحفظ…',
+      submitDraft: 'إرسال للاستكمال',
+      submittingDraft: 'جارٍ الإرسال…',
+      draftSaved: 'حُفظت المسودة. أرسلها عندما تصبح الصفوف نهائية.',
+      submitDone: 'أُرسلت للاستكمال. تتبع حالتها أدناه.',
+      resubmitAsDraft: 'إعادة الإرسال كمسودة جديدة',
+      resubmitHint: 'القائمة المرفوضة لا تُعدَّل — تُنسخ صفوفها إلى مسودة جديدة أعلاه.',
+      rejectReasonLabel: 'سبب الرفض',
+      actionFailed: 'تعذّر إتمام الإجراء.',
+      loadFailed: 'تعذّر تحميل وحدة تحكم العميل.',
+      frozenBanner: 'للقراءة فقط — معتمد نهائياً (لقطة GE النهائية). إجراءات التأكيد والإرسال مرفوضة.',
+      draftStaleNote: 'تغييرات مسودة غير محفوظة',
+      unsavedTitle: 'المغادرة دون حفظ؟',
+      unsavedChanges: 'صفوف مسودتك غير محفوظة بعد.',
+      confirmDiscard: 'تجاهل التغييرات',
     },
 
     taxonomy: {

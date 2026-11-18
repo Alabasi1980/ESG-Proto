@@ -40,6 +40,16 @@ INV-DEF-APP (no client writes from Services screen) · E own-dept · C never ans
 Smallest safe unit PASS (employee workspace UI only; existing answer/assignment/document/initiative APIs, no new endpoints) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (E-flows on disposable preview + QA + design review) · design source: FIX Services patterns (no new visual language) · UI acceptance per UI_ACCEPTANCE_GATE + STYLE_CONTRACT.
 Gate Status: PASS → delegate (a).
 
+## U4-3b Pre-Execution Gate Result (2026-11-18)
+Smallest safe unit PASS (client console UI only: services read-only + confirm preliminary + staff draft/submit; no new endpoints — use existing ClientReview/staff routes; if a needed endpoint is missing → STOP, do not invent) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (C-flows live on disposable + QA + design review) · pre-step: allowlist the 2 Tera-owned (a) live screenshots exact paths in guard.
+Gate Status: PASS → delegate (b).
+
+## U4-3b STOP resolution (2026-11-18)
+Executor STOP packet: pre-step allowlist unmasked the W-P5-01 size bound (ServicesView 875, committed U4-2-FIX P5, untouched by this unit). Tera ruling: **option 3 — existing approved deviation applies** (W-P5-01 + ISS-012 follow-up; no new exception, no split inside this unit). Proceed to independent reviews + live C proof.
+
+## U4-3b Result: ACCEPTED 2026-11-18 (3 rounds, cap respected)
+Evidence: u43b 12/12 · 471/472 (sole red = approved W-P5-01) · design APPROVE WITH NOTES (NOTE-1 fixed r2) · QA PARTIAL zero-fail, closed live by Tera on disposable preview: services read-only (zero answer inputs) · 2-1-3 head-preliminary→C-confirm→`client_approved` via UI · staff draft→submit (status `submitted`) · AR full-RTL + screenshots. Old C nav Staff Lists hidden r3 (console tab is the C surface; old view stays for P until (d)). No live shared contact. Follow-up: sibling screenshot allowlists ride pre-steps as established.
+
 ## فهم القرار
 فهمي: الموظف يرى خدمات قسمه ويجيب ويرفق؛ المدير يؤكد ويملأ القوائم؛ المستشار يطبّق الخدمة ويتحكم بالمرئي ويدبّر الحسابات؛ المنصة تخرج من التدبير.
 الافتراضات المفتوحة: لا شيء — G1–G7 محسومة بموافقتك.

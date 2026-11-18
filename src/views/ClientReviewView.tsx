@@ -275,9 +275,13 @@ export const ClientReviewView: React.FC<{ onChanged: () => void }> = ({ onChange
                       {d.departmentName}
                     </span>
                     {statusBadge(d.answerStatus, d.notApplicable)}
-                    {typeof d.score === 'number' && (
-                      <span className="text-[10px] font-mono text-muted">{d.score}</span>
-                    )}
+                    {/* NOTE-1 (U4-3b): score renders only for dept-approved rows
+                        (preliminary approved / client-approved) — same gating as
+                        the client console services drill. Server authoritative. */}
+                    {(d.answerStatus === 'approved' || d.answerStatus === 'client_approved') &&
+                      typeof d.score === 'number' && (
+                        <span className="text-[10px] font-mono text-muted">{d.score}</span>
+                      )}
                   </div>
                   {d.evaluationId && (d.answerStatus === 'approved' || d.answerStatus === 'client_approved') && (
                     <div className="flex items-center gap-1.5">

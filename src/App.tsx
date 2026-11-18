@@ -11,6 +11,7 @@ import { StandardsView } from './views/StandardsView.tsx';
 import { ServicesView } from './views/ServicesView.tsx';
 import { GapAnalysisView } from './views/GapAnalysisView.tsx';
 import { EmployeeServicesView } from './views/EmployeeServicesView.tsx';
+import { ClientConsoleView } from './views/ClientConsoleView.tsx';
 import { ActionsView } from './views/ActionsView.tsx';
 import { InitiativesView } from './views/InitiativesView.tsx';
 import { EsgProfileView } from './views/EsgProfileView.tsx';
@@ -269,8 +270,10 @@ const MainApp: React.FC = () => {
       case 'gap-analysis':
         // TASK-PROTO-U4-3 unit (a): the employee landing mounts the services
         // workspace (own-dept services → items + documents + initiatives).
-        // No nav-matrix change: the page id and its E label are untouched.
-        return user?.role === 'employee' ? <EmployeeServicesView /> : <GapAnalysisView setActiveTab={setActiveTab} />;
+        // TASK-PROTO-U4-3 unit (b): the client_admin landing mounts the client
+        // console (linked-services read + preliminary confirm + staff fill).
+        // No nav-matrix change: the page id and its labels are untouched.
+        return user?.role === 'employee' ? <EmployeeServicesView /> : user?.role === 'client_admin' ? <ClientConsoleView /> : <GapAnalysisView setActiveTab={setActiveTab} />;
       case 'actions':
         return <ActionsView />;
       case 'initiatives':

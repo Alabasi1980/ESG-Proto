@@ -53,7 +53,7 @@ const EXPECTED: Record<NavContext, readonly Row[]> = {
     ['gap-analysis', 4, true, 'تحليل الفجوات', 'Gap Analysis'],
     ['actions', 5, true, 'الإجراءات التصحيحية', 'Corrective Actions'],
     ['initiatives', 6, true, 'المبادرات المسندة', 'Assigned Initiatives'],
-    ['staff-lists', 9, true, 'قوائم الموظفين', 'Staff Lists'],
+    // TASK-PROTO-U4-3b round 3: C `staff-lists` hidden — console tab covers it.
     ['notifications', 10, true, 'الإشعارات', 'Notifications'],
   ],
   employee: [
@@ -321,14 +321,18 @@ test('U3-B1 nav model never exceeds the approved server page sets (default capab
   assert.deepEqual(sorted(pagesIn('employee')), sorted(permittedPages(accessFor('employee'))));
   // W/C withhold exactly the two unproven `*` rows; the server's alias-shaped
   // equivalents (client-dashboard in W) are alias-only in the UI, not pages.
+  // TASK-PROTO-U4-3b round 3: C additionally withholds `staff-lists` (hidden nav
+  // row — console tab covers it; P keeps the page). W untouched.
   for (const context of ['consultant', 'client'] as const) {
     const withheld = permittedPages(accessFor(context)).filter((id) => !pagesIn(context).includes(id as PageId));
     for (const id of withheld) {
       const aliasShaped = (context === 'consultant' && id === 'client-dashboard')
         || (context === 'client' && id === 'dashboard');
-      assert.ok(aliasShaped || id === 'esg-profile' || id === 'reports', `${context}: unexpected withheld page ${id}`);
+      const clientHiddenStaff = context === 'client' && id === 'staff-lists';
+      assert.ok(aliasShaped || id === 'esg-profile' || id === 'reports' || clientHiddenStaff, `${context}: unexpected withheld page ${id}`);
     }
     assert.ok(withheld.includes('esg-profile') && withheld.includes('reports'), `${context}: conditionals withheld`);
+    if (context === 'client') assert.ok(withheld.includes('staff-lists'), 'C withholds the hidden staff-lists row');
   }
 });
 

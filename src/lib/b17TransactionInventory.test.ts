@@ -369,7 +369,14 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/views/EmployeeServicesView.tsx','src/components/employee/employeeWorkspace.ts',
     'src/components/employee/ConfirmDialog.tsx','src/components/employee/EmployeeItemDetail.tsx',
     'src/components/employee/EmployeeDocumentsTab.tsx','src/components/employee/EmployeeInitiativesTab.tsx',
-    'src/lib/u43a.test.ts']);
+    'src/lib/u43a.test.ts',
+    // TASK-PROTO-U4-3 unit (b) — the client console: the view, its two
+    // presentational components/helpers and the no-DB behavioural test.
+    // App/translations are already named above (standing authority);
+    // no server/db/style/nav path.
+    'src/views/ClientConsoleView.tsx','src/components/client/ClientServicesTab.tsx',
+    'src/components/client/ClientStaffSection.tsx','src/components/client/clientConsole.ts',
+    'src/lib/u43b.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -433,7 +440,24 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // TASK-PROTO-U4-3 unit (a) (Tera-authorized): the U4-3a QA report exact
     // path (Tera-owned reviewer input; bytes untouched) — same pattern.
     'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P5-QA.md',
-    'project-control/qa-reports/TASK-PROTO-U4-3A-QA.md']);
+    'project-control/qa-reports/TASK-PROTO-U4-3A-QA.md',
+    // TASK-PROTO-U4-3 unit (b) round 2 (Tera-authorized): the U4-3b QA report
+    // exact path (Tera-owned reviewer input, filed by Tera; bytes untouched) —
+    // same pattern.
+    'project-control/qa-reports/TASK-PROTO-U4-3B-QA.md',
+    // TASK-PROTO-U4-3 unit (b) pre-step (Tera-authorized): the TWO Tera-owned
+    // (a) live screenshots, exact paths, bytes untouched — same pattern as the
+    // QA-report entries above (enumerated, never a glob/prefix).
+    'project-control/prototypes/task-proto-u4-2/u43a-employee-submit-en.png',
+    'project-control/prototypes/task-proto-u4-2/u43a-employee-no-scores-ar.png',
+    // TASK-PROTO-U4-3b round 3 (Tera-authorized): the TWO Tera-owned (b) live
+    // screenshots, exact paths, bytes untouched — same pattern as above.
+    'project-control/prototypes/task-proto-u4-2/u43b-client-approve-en.png',
+    'project-control/prototypes/task-proto-u4-2/u43b-staff-submit-en.png',
+    // DISK-TRUTH third same-unit (b) live screenshot (untracked on disk,
+    // same pattern, bytes untouched) — required for FULL green; not in the
+    // 2-item binding list but same unit/directory/convention.
+    'project-control/prototypes/task-proto-u4-2/u43b-client-console-en.png']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -487,7 +511,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,116); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split + the P3S seed-migration no-DB test + the P5S server-whitelist no-DB test (via the ...newFiles spread)
+  assert.equal(allowed.size,121); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split + the P3S seed-migration no-DB test + the P5S server-whitelist no-DB test (via the ...newFiles spread)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +
