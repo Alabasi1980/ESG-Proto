@@ -70,6 +70,13 @@ Gate Status: PASS → delegate P4.
 Smallest safe unit PASS (Services screen correction only; no API/DB changes — P1→P4 endpoints consumed as built) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (E-1…E-9 + design-reviewer + QA) · design source: TASK-PROTO-U4-2 screen + spec UI module (no new visual language) · UI acceptance per UI_ACCEPTANCE_GATE + STYLE_CONTRACT.
 Gate Status: PASS → delegate P5 (ui-designer, then design-reviewer + QA).
 
+## P5S — Server settings whitelist (Tera-found live gap, closed 2026-11-18)
+UI shipped named keys but API still accepted arbitrary JSON (live 200 on unknown_key). Fix: `checkServiceSettingsKeys` closed set + shapes; unknown → 400 `service.settings_unknown`, bad shape → 400 `service.settings_invalid`; 8KB + `{}` behavior preserved. 2 rounds (build + C3-era pin update). Suite 445/446 (sole red = approved W-P5-01). **Live proof on disposable preview: unknown → 400, bad shape → 400, known → 200.** No live shared contact.
+
+## Closure live proof (disposable preview, new code + migrated seed, 2026-11-18)
+Container b17-p3s-verify / 127.0.0.1:55434 (shared untouched). Proven live: catalog create (std/disc/item v=1 single-dept) · PATCH 200 v=2 · stale 409 `item.version_conflict` · bulk per-row v=3 · history 200 (versions=0 — correct, no answers) · hard delete (no blockers; archive path proven P4 harness) · service delete 409 blocked (541 assignments + link) · settings 400/400/200 · import preview 1/1/1 + catalog commit ins 1 + clientId 400. Copy-viewer-after-source-deletion proven P4 harness (N-3). Seed script migrated (P3S) — fresh boots work.
+NOT VERIFIED (single item): visual AR/EN screen render + E-1…E-9 in-browser flows — both browser harnesses down (environment failure, documented). Plan: after owner approves the shared-DB live migration, shared app runs new code and the visual pass happens there before final program closure.
+
 ## فهم القرار
 فهمي: الإصلاح خمس مراحل متسلسلة تبدأ بالقاعدة (إضافية فقط، بلا مساس بالحيّ) ثم الواجهات البرمجية ثم الشاشة، وكل مرحلة تُقبل قبل التالية.
 الافتراضات المفتوحة: لا شيء تقني — الافتراضات الأربعة اعتمدها المالك.
