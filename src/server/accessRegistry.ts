@@ -117,6 +117,16 @@ export const LEGACY_ROUTES: readonly RouteDeclaration[] = [
     'POST /items/:id/links|P#catalog-equivalence-mapping',
     'DELETE /items/:id/links|P#catalog-equivalence-mapping',
     'GET /items/:id/links|P#catalog-metadata-only-no-tenant-overlay;W:L;C:L;E:L+D#both-ends-linked-own-department-state-only',
+    // TASK-PROTO-U4-2-FIX P4: history viewer (P global; W/C own-tenant linked,
+    // C gap-gated; E own-department provenance) + sealed-copy viewer (P@T
+    // target; W/C own-tenant; E denied — no E row).
+    'GET /items/:id/history|P#catalog-history-global;W:L;C:L;E:L+D#own-tenant-linked-gap-gated-own-provenance',
+    'GET /services/:id/approved-copy|P@T#target-sealed-copy-view;W:L;C:L#own-tenant-sealed-copy-view',
+    // TASK-PROTO-U4-2-FIX P4: standalone approved-copy seal (P-only, explicit
+    // target T). Mounted on the taxonomy (P catalog) surface so the phase-A
+    // targetless switch does not flag routes/evaluations.ts as a CfgØ file;
+    // the shared helper + GE-final entry stay evaluations-side (no cycle).
+    'POST /approved-copies/seal|P@T#seal-approved-copy-target-bound',
   ], true),
   ...group('gri', [
     'POST /gri/preview|P#authenticate-before-upload-parser',

@@ -1,10 +1,12 @@
 import express, { type Response, type NextFunction } from 'express';
-import { recordAuditLog } from '../db/index.ts';
+import type pg from 'pg';
+import { recordAuditLog, setTenantContext } from '../db/index.ts';
+import { sealApprovedCopy } from './routes/evaluations.ts';
 import { domainTransaction, deferredFailure, DeferredRefusal } from './routes/initiativeScope.ts';
 import { authMiddleware, type AuthenticatedRequest } from './auth.ts';
 import { requireDomainAccess } from './access.ts';
-import { readContext, requireFreshPassword } from './routes/_shared.ts';
-import { maskedItemFields, scopeId, scopeError } from './scope.ts';
+import { readContext, requireFreshPassword, platformConfigContext, isFrozenScope, frozenWriteError } from './routes/_shared.ts';
+import { maskedItemFields, scopeId, scopeError, ownTenant, ownDepartment, assertOwnDepartmentRows, LINKED_ITEM_SQL, SCOPED_ITEM_SQL } from './scope.ts';
 import { EMPTY_CLIENT_FIELD_MASK, stripMaskedFields } from '../lib/clientFieldMask.ts';
 import { parseServiceSettings } from '../lib/serviceSettings.ts';
 // TASK-PROTO-U4-1c (OD-12 §5–§7): item classification + the per-service
@@ -1222,10 +1224,62 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
       return res.status(400).json({ error: 'No editable field provided.' });
     }
 
+    // TASK-PROTO-U4-2-FIX P4 (OD-13 G-3): version gate + snapshot + reopen, one txn.
+    // `reason` is the caller-supplied history note for the version row (capped).
+    const bodyReason =
+      typeof body.reason === 'string' && body.reason.trim() !== '' ? body.reason.trim().slice(0, 500) : null;
     const updated = await domainTransaction(req, async (client) => {
       const user = req.user!;
-      const cur = await client.query('SELECT id, code FROM items WHERE id = $1', [req.params.id]);
+      const cur = await client.query('SELECT id, code, version, status FROM items WHERE id = $1 FOR UPDATE', [req.params.id]);
       if (!cur.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+      if (cur.rows[0].status === 'archived') {
+        throw Object.assign(new Error('Item is archived. Unarchive it before editing.'), {
+          statusCode: 409, code: 'item.archived',
+        });
+      }
+      // Stale write → 409 item.version_conflict (same shape as the bulk row error).
+      const gate = checkItemVersion(cur.rows[0].version, body.expectedVersion);
+      if (!gate.ok) {
+        if (gate.status === 409) {
+          throw Object.assign(new Error(gate.error), {
+            statusCode: 409, code: 'item.version_conflict',
+            provided: body.expectedVersion ?? null, current: cur.rows[0].version,
+          });
+        }
+        throw Object.assign(new Error(gate.error), { statusCode: gate.status });
+      }
+      // Reopen detection: pre-final answers on this item (explicit status column
+      // only — the CfgØ ring forbids value/correction_history projections here).
+      const ansRes = await client.query(
+        'SELECT id, client_id, department_id, status FROM answers WHERE item_id = $1',
+        [req.params.id]
+      );
+      const reopenable = ansRes.rows.filter(
+        (a: any) => a.status === 'submitted' || a.status === 'approved' || a.status === 'client_approved'
+      );
+      // Frozen scope refuses first (API pre-check; the is_scope_frozen
+      // triggers are the backstop and are mapped to the same 409 below).
+      // Tenant discovery runs over ALL answers on the item, not just the
+      // reopenable subset: a frozen scope cannot hold pre-final states, but
+      // the check must not depend on that invariant to fire.
+      // Context note: the frozen fact binds an explicit tenant
+      // (current_tenant_id = target_id = T), so the check runs under a
+      // per-tenant target-bound switch; targetless platform config would
+      // evaluate every scope as unfrozen. The switch is transaction-local and
+      // rolled back with the rest on any refusal.
+      {
+        const tenants = [...new Set(ansRes.rows.map((a: any) => String(a.client_id)))];
+        for (const tenant of tenants) {
+          await setTenantContext(client as unknown as pg.PoolClient, platformConfigContext(req, tenant));
+          const frozen = await isFrozenScope(client, tenant, req.params.id);
+          await setTenantContext(client as unknown as pg.PoolClient, platformConfigContext(req, null));
+          if (frozen) {
+            throw Object.assign(frozenWriteError(), { code: 'FROZEN_SCOPE' });
+          }
+        }
+      }
+      // The pre-edit row for the version snapshot (the row is already locked).
+      const full = await client.query('SELECT * FROM items WHERE id = $1', [req.params.id]);
       if (departmentTouched) {
         if (departmentId) {
           const dept = await client.query('SELECT id FROM departments WHERE id = $1', [departmentId]);
@@ -1238,27 +1292,100 @@ router.patch('/items/:id', authMiddleware, requireFreshPassword, requireDomainAc
         changed.push('departmentId');
       }
       params.push(req.params.id);
+      let reopened = 0;
+      if (reopenable.length > 0) {
+        // INV-HISTORY: snapshot first (insert-before-update), using the
+        // pre-edit row locked above.
+        await client.query(
+          'INSERT INTO item_versions (item_id, version, snapshot, changed_by, reason) VALUES ($1, $2, $3, $4, $5)',
+          [req.params.id, cur.rows[0].version, full.rows[0], user.id, bodyReason]
+        );
+      }
+      // Version lockstep: every successful PATCH bumps items.version.
       const upd = await client.query(
-        `UPDATE items SET ${sets.join(', ')} WHERE id = $${params.length}
+        `UPDATE items SET ${sets.join(', ')}, version = version + 1 WHERE id = $${params.length}
          RETURNING id, disclosure_id, code, requirement, answer_type, hint, priority,
                    esg_class, weight, objective, topic, reference, department_id, sort_order,
-                   indicator_code, tags`,
+                   indicator_code, tags, version, status`,
         params
       );
       const row = upd.rows[0];
+      if (reopenable.length > 0) {
+        // Answers are RLS-visible only under the targetless configuration
+        // (the summary-loop SELECT branch), so the write runs targetless —
+        // where the reopen branch admits it. The frozen trigger backstop is
+        // blind under targetless (the fact needs a bound tenant), hence the
+        // tenant-bound re-check below closes the freeze-landing-mid-write
+        // race: a freeze detected after the write rolls the whole txn back.
+        const reRes = await client.query(
+          `UPDATE answers SET status = 'reopened', version = version + 1, updated_at = NOW()
+           WHERE id = ANY($1::uuid[])`,
+          [reopenable.map((a: any) => String(a.id))]
+        );
+        reopened = reRes.rowCount ?? 0;
+        if (reopened !== reopenable.length) {
+          throw Object.assign(new Error('Failed to reopen item answers.'), { statusCode: 500 });
+        }
+        {
+          const tenants = [...new Set(reopenable.map((a: any) => String(a.client_id)))];
+          for (const tenant of tenants) {
+            await setTenantContext(client as unknown as pg.PoolClient, platformConfigContext(req, tenant));
+            const frozen = await isFrozenScope(client, tenant, req.params.id);
+            await setTenantContext(client as unknown as pg.PoolClient, platformConfigContext(req, null));
+            if (frozen) {
+              throw Object.assign(frozenWriteError(), { code: 'FROZEN_SCOPE' });
+            }
+          }
+        }
+      }
       await recordAuditLog(client, {
         clientId: null,
         userId: user.id,
-        action: 'UPDATE_ITEM',
+        action: reopened > 0 ? 'REOPEN_ITEM_SCOPE' : 'UPDATE_ITEM',
         entityType: 'items',
         entityId: row.id,
-        payload: { code: row.code, fields: changed },
+        payload:
+          reopened > 0
+            ? {
+                code: row.code, fields: changed, fromVersion: cur.rows[0].version,
+                toVersion: row.version, reopenedAnswers: reopened, reason: bodyReason,
+              }
+            : { code: row.code, fields: changed },
       });
-      return row;
+      return reopened > 0 ? { ...row, reopenedAnswers: reopened } : row;
     });
     res.json(updated);
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
+    // P4 coded refusals (own codes, never a PG diagnostic): version conflict,
+    // archived, and frozen scope keep their {error, code} body. Anything else
+    // stays on the byte-preserving catalog path. Literal bodies only — no
+    // err.message/err.code echo (G2 E3-02 ring).
+    if (err?.statusCode === 409 && err?.code === 'item.version_conflict') {
+      res.status(409).json({
+        error: `Item changed since version ${err.provided} (now at ${err.current}). Reload and retry.`,
+        code: 'item.version_conflict',
+      });
+      return;
+    }
+    if (err?.statusCode === 409 && err?.code === 'item.archived') {
+      res.status(409).json({ error: 'Item is archived. Unarchive it before editing.', code: 'item.archived' });
+      return;
+    }
+    if (err?.statusCode === 409 && err?.code === 'FROZEN_SCOPE') {
+      res.status(409).json({
+        error: 'This scope is frozen by GE final approval. Editing is disabled; only append-only snapshot notes are allowed.',
+        code: 'FROZEN_SCOPE',
+      });
+      return;
+    }
+    if (typeof err?.message === 'string' && err.message.includes('FROZEN_SCOPE')) {
+      res.status(409).json({
+        error: 'This scope is frozen by GE final approval. Editing is disabled; only append-only snapshot notes are allowed.',
+        code: 'FROZEN_SCOPE',
+      });
+      return;
+    }
     catalogFailure(res, err, 'Failed to update item');
   }
 });
@@ -1277,8 +1404,20 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
       const row = cur.rows[0];
       if (!row) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
       // DELETE is idempotent: an archived item is already out of the live
-      // scope, so a repeat reports the state without auditing again.
-      if (row.status === 'archived') return { archived: true };
+      // scope, so a repeat reports the same state. TASK-PROTO-U4-2-FIX P4
+      // (F2, Tera decision): the repeat is tracked — an audit row is emitted
+      // on the redundant archive too (idempotent but tracked).
+      if (row.status === 'archived') {
+        await recordAuditLog(client, {
+          clientId: null,
+          userId: user.id,
+          action: 'ARCHIVE_ITEM',
+          entityType: 'items',
+          entityId: req.params.id,
+          payload: { code: row.code, reason: archiveReason, redundant: true },
+        });
+        return { archived: true };
+      }
       // §22/§23 D1: truthful catalog-wide counts for every blocker — answers,
       // evaluations and assignments (incl. OTHER tenants' rows) come from the
       // count-only definer, so the archive decision can never fail open into
@@ -1334,6 +1473,272 @@ router.delete('/items/:id', authMiddleware, requireFreshPassword, requireDomainA
   } catch (err: any) {
     if (deferredFailure(res, err)) return;
     catalogFailure(res, err, 'Failed to delete item');
+  }
+});
+
+// TASK-PROTO-U4-2-FIX P4 (OD-13 G-3/G-4, API §API-2/§API-5): item edit-history
+// viewer. Matrix: P catalog-global; W own-tenant linked; C own-tenant linked
+// + gap-gated (same gap fact as the evaluations reads); E own-department
+// provenance only (G-SHARED fail-closed). versions[] is newest-first with
+// {version, snapshot, changedBy, changedAt, reason}; answersSummary is
+// counts-by-status only — never values/history (CfgØ ring). Unknown combos
+// fail closed (ownTenant/assertWorkScope + RLS).
+router.get('/items/:id/history', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      const id = req.params.id;
+      if (access.mode === 'platform') {
+        // P sees the global catalog through the platform configuration arm.
+        const itemRes = await client.query(
+          `SELECT i.id, i.code, i.requirement, i.version, i.status,
+                  d.code AS disclosure_code, s.code AS standard_code
+           FROM items i
+           JOIN disclosures d ON d.id = i.disclosure_id
+           JOIN standards s ON s.id = d.standard_id
+           WHERE i.id = $1`,
+          [id]
+        );
+        if (!itemRes.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+        const versions = await client.query(
+          `SELECT version, snapshot, changed_by, changed_at, reason FROM item_versions
+           WHERE item_id = $1 ORDER BY version DESC`,
+          [id]
+        );
+        const summary = await client.query(
+          'SELECT status, COUNT(*)::int AS count FROM answers WHERE item_id = $1 GROUP BY status ORDER BY status',
+          [id]
+        );
+        return {
+          versions: versions.rows.map((v: any) => ({
+            version: v.version, snapshot: v.snapshot, changedBy: v.changed_by,
+            changedAt: v.changed_at, reason: v.reason,
+          })),
+          answersSummary: summary.rows,
+        };
+      }
+      // W/C/E: the tenant is always the caller's OWN (comparison only).
+      const tenant = ownTenant(access, req.query.clientId);
+      const ownDept = ownDepartment(access);
+      const predicate = ownDept ? SCOPED_ITEM_SQL : LINKED_ITEM_SQL;
+      const params: any[] = ownDept ? [tenant, null, ownDept] : [tenant, null];
+      const itemRes = await client.query(
+        `SELECT i.id, i.code, i.requirement, i.version, i.status FROM items i
+         WHERE i.id = $${params.length + 1} AND ${predicate}`,
+        [...params, id]
+      );
+      if (!itemRes.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+      // C gap gate (same fact as the evaluations reads): a non-gapped item is
+      // invisible to the client reader — fail closed with the generic 404.
+      if (access.mode === 'client') {
+        const gap = await client.query(`SELECT b17_content_fact('gap',$1,$2) AS ok`, [tenant, id]);
+        if (!gap.rows[0]?.ok) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+      }
+      // E provenance: own retained assignment + single-department answers (the
+      // same shape the own-department evaluation fact requires) — a
+      // foreign-department/shared item yields no history at all. No evaluations
+      // read here (targetless-platform ring). The item_versions RLS branch
+      // re-checks the full fact as defence in depth.
+      if (ownDept) {
+        const prov = await client.query(
+          `SELECT 1 FROM assignments a WHERE a.client_id = $1 AND a.item_id = $2 AND a.department_id = $3
+           AND NOT EXISTS (SELECT 1 FROM answers o WHERE o.client_id = a.client_id AND o.item_id = a.item_id AND o.department_id <> $3)`,
+          [tenant, id, ownDept]
+        );
+        if (!prov.rows[0]) throw Object.assign(new Error('Item not found.'), { statusCode: 404 });
+      }
+      const versions = await client.query(
+        `SELECT version, snapshot, changed_by, changed_at, reason FROM item_versions
+         WHERE item_id = $1 ORDER BY version DESC`,
+        [id]
+      );
+      const summary = await client.query(
+        'SELECT status, COUNT(*)::int AS count FROM answers WHERE client_id = $1 AND item_id = $2 GROUP BY status ORDER BY status',
+        [tenant, id]
+      );
+      const answers = await client.query(
+        `SELECT id, department_id, status FROM answers
+         WHERE client_id = $1 AND item_id = $2 AND ($3::uuid IS NULL OR department_id = $3)`,
+        [tenant, id, ownDept]
+      );
+      assertOwnDepartmentRows(access, answers.rows);
+      return {
+        versions: versions.rows.map((v: any) => ({
+          version: v.version, snapshot: v.snapshot, changedBy: v.changed_by,
+          changedAt: v.changed_at, reason: v.reason,
+        })),
+        answersSummary: summary.rows,
+      };
+    }, (live) => (live.access!.mode === 'platform' ? platformConfigContext(live, null) : readContext(live)));
+    res.json(data);
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    catalogFailure(res, err, 'Failed to fetch item history');
+  }
+});
+
+// TASK-PROTO-U4-2-FIX P4 (OD-13 G-5, API §API-2/§API-5): sealed approved-copy
+// viewer. Matrix: P (explicit target T); W/C own-tenant (comparison only); E
+// denied (no matrix row — refused before any SQL). Payload + files only, no
+// catalog joins, so the copy stays complete after full source-service removal
+// (N-3). Attachment bytes are base64-encoded in the files array.
+/** Explicit-target tenant for the sealed-copy viewer (P), else the caller's own
+ * tenant with the supplied id compared only (W/C). E never reaches here
+ * (matrix denial + the handler refusal below). Reads req inline — no
+ * authority binding, so the G1 pre-lock capture ring stays green. */
+function viewerTenant(req: AuthenticatedRequest): string {
+  if (req.access!.mode === 'platform') {
+    return scopeId(typeof req.query.clientId === 'string' ? req.query.clientId.trim() : '', true)!;
+  }
+  return ownTenant(req.access!, req.query.clientId);
+}
+
+router.get('/services/:id/approved-copy', authMiddleware, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.access!.mode === 'employee') {
+      return res.status(403).json({ error: 'Employees may not view approved copies.', code: 'scope.denied' });
+    }
+    if (typeof req.query.clientId !== 'string' || !req.query.clientId.trim()) {
+      return res.status(400).json({ error: 'clientId is required.' });
+    }
+    const tenant = viewerTenant(req);
+    const data = await domainTransaction(req, async (client) => {
+      const access = req.access!;
+      if (access.mode === 'platform') {
+        const exists = await client.query('SELECT id FROM clients WHERE id = $1', [tenant]);
+        if (!exists.rows[0]) {
+          throw Object.assign(new Error('Target tenant not found for the given clientId.'), { statusCode: 404 });
+        }
+      }
+      const copyRes = await client.query(
+        `SELECT id, client_id, service_id, service_code, sealed_at, sealed_by, content_hash, payload, status
+         FROM approved_service_copies WHERE client_id = $1 AND service_id = $2
+         ORDER BY sealed_at DESC LIMIT 1`,
+        [tenant, req.params.id]
+      );
+      const copy = copyRes.rows[0];
+      if (!copy) {
+        throw Object.assign(new Error('No sealed approved copy for this service and client.'), {
+          statusCode: 404, code: 'copy.not_found',
+        });
+      }
+      const filesRes = await client.query(
+        `SELECT id, answer_ref, file_name, mime, size_bytes, data FROM approved_copy_files
+         WHERE copy_id = $1 ORDER BY file_name ASC, id ASC`,
+        [copy.id]
+      );
+      return {
+        ...copy,
+        files: filesRes.rows.map((f: any) => ({ ...f, data: Buffer.from(f.data).toString('base64') })),
+      };
+    }, (live) => (live.access!.mode === 'platform' ? platformConfigContext(live, tenant) : readContext(live)));
+    res.json(data);
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    if (err?.statusCode === 404 && err?.code === 'copy.not_found') {
+      res.status(404).json({ error: 'No sealed approved copy for this service and client.', code: 'copy.not_found' });
+      return;
+    }
+    catalogFailure(res, err, 'Failed to fetch approved copy');
+  }
+});
+
+// TASK-PROTO-U4-2-FIX P4 (OD-13 G-5): standalone approved-copy seal (P-only, taxonomy surface:
+// explicit target T, mounted on the taxonomy (P catalog) surface. Two phases in ONE transaction (atomic by construction):
+//  - Phase A under the targetless platform configuration: verify definition,
+//    linkage, the assigned item set, and freeze coverage â€” the seal requires a
+//    GE-final freeze covering every assigned item of the service (the freeze
+//    gate already proved client-approval, which P cannot re-read from
+//    evaluations). Summary-loop readable; explicit non-sensitive columns only.
+//  - Phase B switches to the target-bound configuration context: byte copy
+//    (b17_attachments_seal_read) + copy/file/audit inserts (P@T branches).
+// Mismatch with an existing sealed copy â†’ ROLLBACK + 409 copy.seal_conflict.
+router.post('/approved-copies/seal', authMiddleware, requireFreshPassword, requireDomainAccess, validateTaxonomyIds, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // P-only is enforced by the matrix (non-P never reaches the handler);
+    // inline read, no authority binding (G1 ring).
+    if (req.access!.mode !== 'platform') {
+      return res.status(403).json({ error: 'Only platform administrators may seal approved copies.', code: 'scope.denied' });
+    }
+    const body = req.body ?? {};
+    const clientId = scopeId(body.clientId, true)!;
+    const serviceId = scopeId(body.serviceId, true)!;
+    const result = await domainTransaction(req, async (client) => {
+      const user = req.user!;
+      // Phase A: targetless verification reads (same PoolClient cast as Phase B).
+      await setTenantContext(client as unknown as pg.PoolClient, platformConfigContext(req, null));
+      const svcRes = await client.query('SELECT id, code FROM services WHERE id = $1', [serviceId]);
+      if (!svcRes.rows[0]) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
+      const linkRes = await client.query(
+        'SELECT service_id FROM client_services WHERE client_id = $1 AND service_id = $2',
+        [clientId, serviceId]
+      );
+      if (!linkRes.rows[0]) {
+        throw Object.assign(new Error('Service is not linked to this client.'), { statusCode: 409 });
+      }
+      const itemRes = await client.query(
+        `SELECT i.id FROM items i
+         JOIN disclosures d ON d.id = i.disclosure_id
+         JOIN service_standards ss ON ss.standard_id = d.standard_id
+         JOIN assignments a ON a.item_id = i.id AND a.client_id = $2
+         WHERE ss.service_id = $1`,
+        [serviceId, clientId]
+      );
+      const ids = itemRes.rows.map((r: any) => String(r.id));
+      if (ids.length === 0) {
+        throw Object.assign(new Error('Nothing to seal: this service has no assigned items for the client.'), {
+          statusCode: 400,
+        });
+      }
+      const ansRes = await client.query(
+        `SELECT id, item_id, department_id, status, value, version, updated_at FROM answers
+         WHERE client_id = $1 AND item_id = ANY($2::uuid[]) ORDER BY item_id ASC, department_id ASC`,
+        [clientId, ids]
+      );
+      // Freeze coverage: every assigned item must sit inside a frozen snapshot
+      // (any scope â€” the union proves GE-final approval, which P cannot
+      // re-derive from evaluations). Uncovered â†’ refuse before any write.
+      const snapRes = await client.query(
+        'SELECT scope_type, payload FROM review_snapshots WHERE client_id = $1 ORDER BY created_at DESC LIMIT 50',
+        [clientId]
+      );
+      const frozen = new Set<string>();
+      for (const row of snapRes.rows) {
+        const items = row.payload && typeof row.payload === 'object' ? (row.payload as { items?: unknown }).items : null;
+        if (Array.isArray(items)) {
+          for (const entry of items) {
+            const itemId = (entry as { itemId?: unknown })?.itemId;
+            if (typeof itemId === 'string') frozen.add(itemId);
+          }
+        }
+      }
+      const uncovered = ids.filter((id) => !frozen.has(id));
+      if (uncovered.length > 0) {
+        throw Object.assign(
+          new Error(`Cannot seal: ${uncovered.length} assigned item(s) are not covered by a GE-final freeze yet.`),
+          { statusCode: 400, code: 'copy.scope_not_covered' }
+        );
+      }
+      // Phase B: target-bound byte copy + inserts (own txn, atomic).
+      await setTenantContext(client as unknown as pg.PoolClient, platformConfigContext(req, clientId));
+      return sealApprovedCopy(
+        client,
+        { clientId, serviceId, sealedBy: user.id },
+        { answers: ansRes.rows, frozenScores: null }
+      );
+    }, (live) => platformConfigContext(live, scopeId((req.body ?? {}).clientId, true)));
+    res.status(result.deduped ? 200 : 201).json(result);
+  } catch (err: any) {
+    if (deferredFailure(res, err)) return;
+    if (err?.statusCode === 409 && err?.code === 'copy.seal_conflict') {
+      res.status(409).json({ error: 'A sealed copy already exists for this client and service with different content. Sealed copies are immutable.', code: 'copy.seal_conflict' });
+      return;
+    }
+    if (err?.statusCode === 400 && err?.code === 'copy.scope_not_covered') {
+      res.status(400).json({ error: 'Cannot seal: assigned items are not covered by a GE-final freeze yet.', code: 'copy.scope_not_covered' });
+      return;
+    }
+    catalogFailure(res, err, 'Failed to seal approved copy');
   }
 });
 

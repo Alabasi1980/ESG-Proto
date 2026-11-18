@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 
 const root=path.resolve('src/server');
 const inventory: Record<string,[number,number]> = {
-  'taxonomy.ts':[23,4], 'routes/gri.ts':[3,2], 'routes/evaluations.ts':[14,14],
+  'taxonomy.ts':[26,4], 'routes/gri.ts':[3,2], 'routes/evaluations.ts':[14,14],
   'routes/actions.ts':[3,3], 'routes/storage.ts':[5,5], 'routes/audit.ts':[1,1],
   'routes/notifications.ts':[4,4], 'routes/adminClients.ts':[8,0],
   'routes/adminDirectory.ts':[3,0], 'routes/adminAssignments.ts':[4,1],
@@ -73,10 +73,10 @@ test('G1 every business call site is classified, explicit P-work exceptions reta
     }
     total+=sites.length;work+=explicitWork.length;
   }
-  assert.equal(total,99);assert.equal(work,38);
+  assert.equal(total,102);assert.equal(work,38);
   const provisioning=readFileSync(path.join(root,'routes/adminProvisioning.ts'),'utf8');
   assert.equal((provisioning.match(/await configurationTransaction\(req, target,/g) ?? []).length,3);
-  assert.equal(total+3,102,'85 baseline sites minus merged GET clients branch, plus H13 settings, the U4-1a visibility row, the eleven U4-1c rows and the four U4-2-FIX P2 catalog routes');
+  assert.equal(total+3,105,'85 baseline sites minus merged GET clients branch, plus H13 settings, the U4-1a visibility row, the eleven U4-1c rows, the four U4-2-FIX P2 catalog routes and the three U4-2-FIX P4 routes (history + viewer + seal)');
   const clients=readFileSync(path.join(root,'routes/adminClients.ts'),'utf8');
   assert.match(boundaries(clients)[0].text,/live\.access!\.mode === 'platform' \? platformGlobalContext\(live\) : readContext\(live\)/);
   const directory=readFileSync(path.join(root,'routes/adminDirectory.ts'),'utf8');
@@ -142,7 +142,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // target-bound requirement branch); its sha256 pin and the readiness pin
   // (constant + note) move with it.
   const h13RoutesSha256='a810933dcab117669a42036ec3d6affe944f5cd1f4e73a68096b4561bbce9820';
-  const h13AccessRegistrySha256='1927266df008472593f8269cdf289f5e2b6b23c96ed144bb38a617293bf57dc3';
+  const h13AccessRegistrySha256='5d14cfc1fad1471629a5a788eb9946504c0bf897a5a70ab5a969725b8401a58a';
   // TASK-PROTO-U4-2-FIX P2: the taxonomy group gains the four P-only catalog
   // rows (POST /standards, POST /disclosures, POST /items/bulk,
   // DELETE /services/:id); re-pinned deliberately over LF-normalized bytes.
@@ -154,7 +154,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // U4-1c-PROTECT round 3 (§21): b17-content.sql carries the ONE approved hunk
   // (b17_selection_update, same scope as the delete policy); sha + readiness
   // shape move together, version label stays B17_U2D.
-  const h13ContentSha256='781b8afe736c38c1eb0685b567dece1838de8e760723bff37c4a795257cdeac3';
+  const h13ContentSha256='9d08ad5636a99fd7c86d45e6a2ae0239e91df7e428c460c58124c4b2b5261188';
   const postH12Pins: Record<string,string> = {
     'src/server/auth.ts': h13AuthSha256,
     'src/server/routes.ts': h13RoutesSha256,
@@ -185,7 +185,9 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   // U4-1c-PROTECT round 3: all three STRUCTURE constants moved (nullable
   // archived marker + NOT NULL RESTRICT link); the content sha is unchanged.
   // Re-pinned deliberately.
-  const h13ReadinessSha256='a8e729551b8d8b3f560adbd75e579e849cb3c522f1edbb3d97f2a73e1a5b44b6';
+  // TASK-PROTO-U4-2-FIX P4: only the content constant moved (the two policy
+  // hunks add policies, fingerprinted by STRUCTURE_SQL); re-pinned deliberately.
+  const h13ReadinessSha256='326306f15ca662eb64dabe8e8c12b5ed54212c3c937535a10500840819a0fb2a';
   assert.equal(createHash('sha256')
     .update(readFileSync('src/db/b17Readiness.ts','utf8').replace(/\r\n/g,'\n'),'utf8')
     .digest('hex'),h13ReadinessSha256,
@@ -231,7 +233,21 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'src/lib/u42fix-p2.test.ts',
     // TASK-PROTO-U4-2-FIX P3: the no-DB behavioral + matrix test for the
     // service-scoped import redesign (preview/commit/template, N-5).
-    'src/lib/u42fix-p3.test.ts'];
+    'src/lib/u42fix-p3.test.ts',
+    // TASK-PROTO-U4-2-FIX P4: the no-DB behavioral + matrix test for the
+    // history viewer + reopen txn + seal + copy viewer (incl. N-2/N-4), and
+    // the isolated live-proof harness (own PG18 cluster, archive → reopen →
+    // version-conflict → seal → delete-source → view copy → N-2/N-4 →
+    // rollback). Both under the 500-line new-file bound.
+    'src/lib/u42fix-p4.test.ts',
+    'scripts/u42fix-p4-rehearse.ts',
+    // TASK-PROTO-U4-2-FIX P5 (screen correction, UI-only): the no-DB
+    // behavioral test for the corrected Services screen (tabs, flexible
+    // tree, CRUD wiring, bulk subset, history, named settings, import
+    // mapping; E-1…E-9 live proof stays UNVERIFIED — reads only, no live
+    // mutations). Under the 500-line new-file bound; no server/db/style
+    // path moves in P5.
+    'src/lib/u42fix-p5.test.ts'];
   const allowed=new Set(['src/server/taxonomy.ts',
     // U4-1b round 2 (SHIELD M-02): the W-only N/A shortcut gains the
     // attachment_required guard; no other assignment handler moves.
@@ -385,7 +401,13 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     'project-control/prototypes/task-proto-u4-2/services-ar.png',
     'project-control/prototypes/task-proto-u4-2/services-content.png',
     'project-control/prototypes/task-proto-u4-2/services-drill.png',
-    'project-control/audit-reports/TASK-PROTO-U4-1c-PROTECT-FINAL.md']);
+    'project-control/audit-reports/TASK-PROTO-U4-1c-PROTECT-FINAL.md',
+    // TASK-PROTO-U4-2-FIX P4 pre-step (Tera-owned control artifact): the P3 QA
+    // report exact path — allowlisted so the suite is green before P4 work.
+    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P3-QA.md',
+    // TASK-PROTO-U4-2-FIX P5 round 2 (Tera-authorized): the P4 QA report exact
+    // path (Tera-owned reviewer input; bytes untouched) — same pattern.
+    'project-control/qa-reports/TASK-PROTO-U4-2-FIX-P4-QA.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -434,7 +456,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,103); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test (via the ...newFiles spread)
+  assert.equal(allowed.size,106); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test (via the ...newFiles spread)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +

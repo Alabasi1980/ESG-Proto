@@ -66,6 +66,15 @@ export const B17_VERSION = 'B17_U1';
 // Windows (schema.sql is applied raw; b17.sql/b17-content.sql go through the
 // LF-normalizing helpers below) — an LF checkout measures different hashes.
 // B17_CONTENT_VERSION stays B17_U2D (no version bump: additive substrate only).
+// TASK-PROTO-U4-2-FIX P4 (DB, Tera rulings B+C): b17-content.sql gained exactly
+// two narrow branches — b17_answers_reopen_update (reopen-only UPDATE) and
+// b17_attachments_seal_read (target-bound SELECT). Re-measured on an own fresh
+// PG18 scratch by scripts/u42fix-p4-rehearse.ts (SHAPE line in its SUMMARY):
+// old to new CONTENT 0e6bf990 to 90967166. Falsifiability in the same run:
+// the file carries exactly one policy per branch (DROP+CREATE enumerated in
+// src/lib/u42fix-p4.test.ts); dropping both hunks restores the pre-P4 bytes
+// and therefore the 0e6bf990 shape. PREDECESSOR/B17 pins untouched (schema.sql
+// and b17.sql unchanged — P4 ships no DDL).
 export const PREDECESSOR_SHAPE = '61462b72e42c5b27911eb7087c756abd';
 export const B17_SHAPE = 'e1bb70b605f9a59be49cf1c25a396c0a';
 export const B17_CONTENT_VERSION = 'B17_U2D';
@@ -124,7 +133,7 @@ export const B17_CONTENT_VERSION = 'B17_U2D';
 // (b17_selection_update beside the delete policy, same scope) — new sha
 // 8c165c40… — and STRUCTURE_SQL fingerprints the added policy, so this shape
 // moves with the schema constants.
-export const B17_CONTENT_SHAPE = '0e6bf990aec442804b3504e559a97cc3';
+export const B17_CONTENT_SHAPE = '90967166a353283de10488a43c393ac8';
 /** The complete sanctioned b17_* SECURITY DEFINER surface (task §23 goal 6),
  * sorted. Drift refusal is strict: the live definer set must equal this list
  * EXACTLY, and every member must keep owner-only EXECUTE. */

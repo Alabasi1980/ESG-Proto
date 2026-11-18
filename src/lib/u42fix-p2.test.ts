@@ -201,8 +201,13 @@ test('P2 shape: new actions are audited in-txn; the closed error-code set holds'
   }
   assert.ok(!src.includes('service.settings_unknown'),
     'no settings whitelist yet (C3) — the branch stays byte-identical');
-  assert.ok(!src.includes('REOPEN_ITEM_SCOPE'),
-    'no half-reopen (C1) — the reopen leg waits for the RLS decision');
+  // TASK-PROTO-U4-2-FIX P4 (Tera round-2 ruling A): the C1 guard has served
+  // its purpose — P4 implements the full reopen leg (version gate + snapshot
+  // + answers→reopened + REOPEN_ITEM_SCOPE, one txn, behind the P-config
+  // answers-update RLS branch). The reopen behavior is pinned in
+  // src/lib/u42fix-p4.test.ts; this file keeps the P2 audit/code pins only.
+  assert.ok(src.includes('REOPEN_ITEM_SCOPE'),
+    'P4 now owns the reopen leg (C1 closed by the RLS decision + P4 implementation)');
 });
 
 test('P2 shape: bulk never aborts siblings; archive leaves the live scope', () => {

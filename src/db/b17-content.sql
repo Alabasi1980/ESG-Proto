@@ -421,6 +421,23 @@ CREATE POLICY b17_attachments_delete ON evidence_attachments FOR DELETE USING
       AND uploaded_by::text=b17_setting('current_actor_id'))
     OR b17_setting('current_mode')='consultant'));
 
+-- TASK-PROTO-U4-2-FIX P4 (Tera ruling B, option a): ONE narrow read branch so
+-- the P-only standalone seal (`POST /api/approved-copies/seal`) can copy the
+-- sealed tenant's attachment bytes with absolute byte immunity (INV-6). The
+-- branch is context-gated only (platform.config + explicit target T + platform
+-- mode + ge_admin + bound actor): row narrowing to the seal's answer ids is
+-- handler-enforced (the handler resolves the answer id list under the
+-- targetless summary context first, then switches to the target-bound context
+-- for the byte copy — an answers tenant join inside the policy would re-enter
+-- RLS that denies P@T and admit nothing). Read-only; no INSERT/UPDATE/DELETE.
+-- DROP-IF-EXISTS so whole-file re-application stays idempotent.
+DROP POLICY IF EXISTS b17_attachments_seal_read ON evidence_attachments;
+CREATE POLICY b17_attachments_seal_read ON evidence_attachments FOR SELECT USING (
+  b17_platform_config() AND b17_setting('current_mode')='platform'
+  AND b17_setting('current_user_role')='ge_admin'
+  AND b17_setting('current_actor_id') IS NOT NULL
+  AND b17_setting('target_id') IS NOT NULL);
+
 -- actions: W may create inside A only (owner department belongs to A, plus a
 -- linked item or an explicit linked service for a standalone action). W/C may
 -- update only rows the read scope already admits. WF-04 transition legality
@@ -1029,6 +1046,27 @@ CREATE POLICY b17_answers_workflow_update ON answers FOR UPDATE
           AND b17_content_fact('department',client_id,department_id))
       OR (b17_setting('current_mode')='consultant'
           AND b17_setting('current_user_role')='ge_admin')));
+
+-- TASK-PROTO-U4-2-FIX P4 (Tera ruling C): ONE narrow UPDATE branch for the
+-- catalog reopen leg (`PATCH /api/items/:id` reopen path, OD-13 G-3). The
+-- catalog item write already runs under the targetless platform configuration
+-- (b17_catalog_config_update), but the paired answers→`reopened` transition
+-- has no platform branch — without this the reopen txn rolls back under RLS.
+-- Reopen-only purpose, enforced in SQL: USING admits only the three pre-final
+-- states, WITH CHECK admits only `reopened` (no other status can be minted
+-- through it); context-gated to platform mode + ge_admin + bound actor.
+-- Tenant scoping is handler-enforced (the handler reopens only answers of the
+-- item being versioned). No INSERT/DELETE. DROP-IF-EXISTS for idempotent
+-- re-application.
+DROP POLICY IF EXISTS b17_answers_reopen_update ON answers;
+CREATE POLICY b17_answers_reopen_update ON answers FOR UPDATE
+  USING (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('current_user_role')='ge_admin'
+    AND b17_setting('current_actor_id') IS NOT NULL
+    AND status IN ('submitted','approved','client_approved'))
+  WITH CHECK (b17_platform_config() AND b17_setting('current_mode')='platform'
+    AND b17_setting('current_user_role')='ge_admin'
+    AND status='reopened');
 
 -- evaluations INSERT = the E draft save ONLY. Same ON CONFLICT/WITH CHECK
 -- reasoning as answers: on the INSERT path there is BY DEFINITION no existing

@@ -5,8 +5,10 @@
 // S-23 notification fan-out on submit + all four decision endpoints.
 
 import express, { type Response } from 'express';
+import type pg from 'pg';
 import {
   recordAuditLog,
+  setTenantContext,
 } from '../../db/index.ts';
 import {
   authMiddleware,
@@ -32,6 +34,7 @@ import {
 import {
   readContext,
   requireFreshPassword,
+  platformConfigContext,
   isFrozenScope,
   frozenWriteError,
   toFrozenError,
@@ -1598,6 +1601,185 @@ router.get('/client-review', authMiddleware, requireDomainAccess, async (req: Au
 });
 
 // ----------------------------------------------------------------------
+// TASK-PROTO-U4-2-FIX P4 (OD-13 G-5, INV-APPROVED-IMMUNE): approved-copy seal.
+//
+// One mechanism, two entries (uniform byte immunity):
+//  - inside POST /reviews/ge-final (W freeze context) when `sealServiceId`
+//    is supplied and fully covered by the frozen scope — same txn as the
+//    snapshot insert, atomic by construction;
+//  - standalone POST /approved-copies/seal (P-only, explicit target T): the
+//    handler first verifies under the targetless platform configuration
+//    (catalog + answer states + prior snapshots are summary-loop readable),
+//    then switches to the target-bound configuration context for the byte
+//    copy (b17_attachments_seal_read) and the copy/file/audit inserts.
+//
+// Reads use explicit columns only (no SELECT * on answers/review_snapshots,
+// no value/correction_history/payload/score projections from a CfgØ root —
+// both callers run under non-targetless selectors). Attachment bytes come
+// from evidence_attachments under the caller's own admitted context.
+// Idempotent on identical content_hash; hash mismatch on an existing copy →
+// 409 copy.seal_conflict with ROLLBACK. No catalog FKs in the copy rows, so
+// the sealed copy survives full source-service removal (N-3).
+// ----------------------------------------------------------------------
+
+export interface SealInput {
+  clientId: string;
+  serviceId: string;
+  sealedBy: string;
+}
+
+/** Pre-resolved freeze evidence (standalone P seal: answers and snapshots are
+ * not SELECT-visible under the target-bound P@T context, so the caller
+ * resolves them under the targetless summary context and passes them in). */
+export interface SealPre {
+  answers: any[];
+  frozenScores: any[] | null;
+}
+
+export interface SealResult {
+  copy: any;
+  files: number;
+  deduped: boolean;
+}
+
+export async function sealApprovedCopy(client: pg.PoolClient, input: SealInput, pre?: SealPre): Promise<SealResult> {
+  const { clientId, serviceId, sealedBy } = input;
+  // 1. Definition + linkage (platform-readable catalog; the copy keeps the
+  // service CODE for display after the source row is gone).
+  const svcRes = await client.query(
+    'SELECT id, code, name, description, settings, created_at FROM services WHERE id = $1',
+    [serviceId]
+  );
+  const service = svcRes.rows[0];
+  if (!service) throw Object.assign(new Error('Service not found.'), { statusCode: 404 });
+  const linked = await client.query(
+    'SELECT 1 FROM client_services WHERE client_id = $1 AND service_id = $2',
+    [clientId, serviceId]
+  );
+  if (!linked.rows[0]) {
+    throw Object.assign(new Error('Service is not linked to this client.'), { statusCode: 409 });
+  }
+  // 2. Content tree: standards → disclosures → items (explicit columns).
+  const stdRes = await client.query(
+    `SELECT st.id, st.code, st.title, st.category FROM standards st
+     JOIN service_standards ss ON ss.standard_id = st.id
+     WHERE ss.service_id = $1 ORDER BY st.code ASC`,
+    [serviceId]
+  );
+  const content: any[] = [];
+  const itemIds: string[] = [];
+  for (const st of stdRes.rows) {
+    const discRes = await client.query(
+      `SELECT id, code, title, description, sort_order FROM disclosures
+       WHERE standard_id = $1 ORDER BY sort_order ASC NULLS LAST, code ASC`,
+      [st.id]
+    );
+    const disclosures: any[] = [];
+    for (const d of discRes.rows) {
+      const itemRes = await client.query(
+        `SELECT id, code, requirement, answer_type, hint, priority, esg_class, weight,
+                objective, topic, reference, department_id, sort_order, attachment_required,
+                indicator_code, tags, version, status
+         FROM items WHERE disclosure_id = $1 ORDER BY sort_order ASC NULLS LAST, code ASC`,
+        [d.id]
+      );
+      for (const it of itemRes.rows) itemIds.push(String(it.id));
+      disclosures.push({ ...d, items: itemRes.rows });
+    }
+    content.push({ ...st, disclosures });
+  }
+  // 3. Results: per-item answer states (+values where the caller may read them)
+  // and frozen scores from the freeze evidence, when supplied. The standalone
+  // P seal pre-resolves both under the targetless summary context (answers and
+  // snapshots are not SELECT-visible under the target-bound P@T context) and
+  // passes them in; the GE-final path reads them here under W.
+  let answers: any[] = pre?.answers ?? [];
+  if (!pre?.answers && itemIds.length > 0) {
+    const ansRes = await client.query(
+      `SELECT id, item_id, department_id, status, value, version, updated_at FROM answers
+       WHERE client_id = $1 AND item_id = ANY($2::uuid[]) ORDER BY item_id ASC, department_id ASC`,
+      [clientId, itemIds]
+    );
+    answers = ansRes.rows;
+  }
+  let frozenScores: any[] | null = pre?.frozenScores ?? null;
+  if (!pre && itemIds.length > 0) {
+    try {
+      const snapRes = await client.query(
+        `SELECT payload FROM review_snapshots WHERE client_id = $1 AND scope_type = 'tenant'
+         ORDER BY created_at DESC LIMIT 1`,
+        [clientId]
+      );
+      if (snapRes.rows[0]?.payload && typeof snapRes.rows[0].payload === 'object') {
+        const snapItems = (snapRes.rows[0].payload as { items?: unknown }).items;
+        if (Array.isArray(snapItems)) frozenScores = snapItems as any[];
+      }
+    } catch {
+      frozenScores = null; // scores are supplementary; the answer states carry the results.
+    }
+  }
+  const payload = {
+    definition: service,
+    content,
+    scope: { clientId, serviceId, serviceCode: service.code },
+    results: { answers, frozenScores },
+  };
+  const contentHash = snapshotContentHash(payload);
+  // 4. Idempotency: same bytes → same copy (deduped); different bytes on an
+  // existing copy → the sealed copy is immutable, refuse with ROLLBACK.
+  const existing = await client.query(
+    'SELECT id, content_hash FROM approved_service_copies WHERE client_id = $1 AND service_id = $2 ORDER BY sealed_at DESC LIMIT 1',
+    [clientId, serviceId]
+  );
+  if (existing.rows[0]) {
+    if (existing.rows[0].content_hash === contentHash) {
+      const n = await client.query('SELECT COUNT(*)::int AS n FROM approved_copy_files WHERE copy_id = $1', [
+        existing.rows[0].id,
+      ]);
+      const full = await client.query('SELECT * FROM approved_service_copies WHERE id = $1', [existing.rows[0].id]);
+      return { copy: full.rows[0], files: n.rows[0]?.n ?? 0, deduped: true };
+    }
+    throw Object.assign(
+      new Error('A sealed copy already exists for this client and service with different content. Sealed copies are immutable.'),
+      { statusCode: 409, code: 'copy.seal_conflict' }
+    );
+  }
+  // 5. Attachment bytes (caller-context admitted: W consultant branch, or the
+  // P4 seal SELECT branch after the target-bound switch).
+  const fileRows: any[] = [];
+  if (answers.length > 0) {
+    const attRes = await client.query(
+      `SELECT id, answer_id, file_name, mime, size_bytes, data FROM evidence_attachments
+       WHERE answer_id = ANY($1::uuid[]) ORDER BY file_name ASC, id ASC`,
+      [answers.map((a: any) => String(a.id))]
+    );
+    for (const f of attRes.rows) fileRows.push(f);
+  }
+  const copyRes = await client.query(
+    `INSERT INTO approved_service_copies (client_id, service_id, service_code, sealed_by, content_hash, payload, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'sealed') RETURNING *`,
+    [clientId, serviceId, service.code, sealedBy, contentHash, JSON.stringify(payload)]
+  );
+  const copy = copyRes.rows[0];
+  for (const f of fileRows) {
+    await client.query(
+      `INSERT INTO approved_copy_files (copy_id, answer_ref, file_name, mime, size_bytes, data)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [copy.id, String(f.answer_id), f.file_name, f.mime, f.size_bytes, f.data]
+    );
+  }
+  await recordAuditLog(client, {
+    clientId,
+    userId: sealedBy,
+    action: 'APPROVED_COPY_SEALED',
+    entityType: 'approved_service_copies',
+    entityId: copy.id,
+    payload: { clientId, serviceId, serviceCode: service.code, contentHash, files: fileRows.length },
+  });
+  return { copy, files: fileRows.length, deduped: false };
+}
+
+// ----------------------------------------------------------------------
 // 6D. GE final + freeze (MP-45, S-18/M-10, WF-03/WF-05)
 // ----------------------------------------------------------------------
 
@@ -1918,9 +2100,35 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDo
       const contentHash = snapshotContentHash(payload);
       const snapRes = await client.query(
         `INSERT INTO review_snapshots (client_id, scope_type, scope_ref, payload, content_hash, created_by)
-          VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
         [clientId, scope, scopeRef, JSON.stringify(payload), contentHash, user.id]
       );
+
+      // TASK-PROTO-U4-2-FIX P4: optional in-txn seal of one fully-covered
+      // linked service — same transaction as the snapshot insert above, so
+      // snapshot + sealed copy commit or roll back together (spec DB-5).
+      let seal: SealResult | null = null;
+      const sealServiceId =
+        typeof body.sealServiceId === 'string' && body.sealServiceId.trim() ? body.sealServiceId.trim() : null;
+      if (sealServiceId) {
+        scopeId(sealServiceId, true);
+        const covered = new Set(items.map((it) => String(it.itemId)));
+        const svcItems = await client.query(
+          `SELECT i.id FROM items i
+           JOIN disclosures d ON d.id = i.disclosure_id
+           JOIN service_standards ss ON ss.standard_id = d.standard_id
+           JOIN assignments a ON a.item_id = i.id AND a.client_id = $2
+           WHERE ss.service_id = $1`,
+          [sealServiceId, clientId]
+        );
+        if (svcItems.rows.length === 0 || svcItems.rows.some((r: any) => !covered.has(String(r.id)))) {
+          throw Object.assign(
+            new Error('The seal service is not fully covered by this frozen scope. Only a fully client-approved service can be sealed.'),
+            { statusCode: 400, code: 'copy.scope_not_covered' }
+          );
+        }
+        seal = await sealApprovedCopy(client, { clientId, serviceId: sealServiceId, sealedBy: user.id });
+      }
 
       await recordAuditLog(client, {
         clientId,
@@ -1931,7 +2139,10 @@ router.post('/reviews/ge-final', authMiddleware, requireFreshPassword, requireDo
         payload: { scope, scopeRef, contentHash, aggregate: aggregate.aggregateScore, coverage: aggregate.coveragePercentage },
       });
 
-      return { snapshot: snapRes.rows[0], aggregate, finalApprovals: finalApprovals.length };
+      return {
+        snapshot: snapRes.rows[0], aggregate, finalApprovals: finalApprovals.length,
+        seal: seal ? { copyId: seal.copy.id, files: seal.files, deduped: seal.deduped } : null,
+      };
     }, readContext);
 
     res.status(201).json(result);
