@@ -402,7 +402,19 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // no server/db/style/nav path.
     'src/views/ClientConsoleView.tsx','src/components/client/ClientServicesTab.tsx',
     'src/components/client/ClientStaffSection.tsx','src/components/client/clientConsole.ts',
-    'src/lib/u43b.test.ts']);
+    'src/lib/u43b.test.ts',
+    // TASK-PROTO-U4-3 unit (c2) — the consultant application console (W bound
+    // to A): the view, its pure helpers, five tab components and the no-DB
+    // behavioural test. App/navModel/translations carry standing authority
+    // (already named above); no server/db/style path. This inventory file
+    // itself is already named above (line 290).
+    'src/views/ConsultantConsoleView.tsx','src/components/consultant/consultantConsole.ts',
+    'src/components/consultant/ConsultantServicesTab.tsx',
+    'src/components/consultant/ConsultantMatchingTab.tsx',
+    'src/components/consultant/ConsultantScopeTab.tsx',
+    'src/components/consultant/ConsultantMasksTab.tsx',
+    'src/components/consultant/ConsultantStaffTab.tsx',
+    'src/lib/u43c2.test.ts']);
   // G1 ruling 4 (§11): reviewer-owned report paths are excluded from the
   // executor-scope guard by exact path only — never a glob/loophole — so
   // append-rounds stay green without weakening the guard.
@@ -483,7 +495,10 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
     // DISK-TRUTH third same-unit (b) live screenshot (untracked on disk,
     // same pattern, bytes untouched) — required for FULL green; not in the
     // 2-item binding list but same unit/directory/convention.
-    'project-control/prototypes/task-proto-u4-2/u43b-client-console-en.png']);
+    'project-control/prototypes/task-proto-u4-2/u43b-client-console-en.png',
+    // TASK-PROTO-U4-3C2 round 2 (Tera-authorized): the U4-3c2 QA report exact
+    // path (reviewer-owned input, filed by QA; bytes untouched) — same pattern.
+    'project-control/qa-reports/TASK-PROTO-U4-3C2-QA.md']);
   // H12: the task contract is a Tera-owned INPUT that arrives untracked in the
   // executor worktree — it is not an executor write (excluded by exact path only).
   const controlInputs=new Set(['project-control/tasks/TASK-PROTO-H12/TASK-PROTO-H12.md',
@@ -542,7 +557,7 @@ test('G1 protected policies, route keys, auth/lifecycle and capabilities are byt
   const changed=[...execFileSync('git',['diff','--name-only','HEAD'],{encoding:'utf8'}).trim().split('\n'),
     ...execFileSync('git',['ls-files','--others','--exclude-standard'],{encoding:'utf8'}).trim().split('\n')]
     .filter(Boolean).map(file => file.trim()).filter(file => !reviewerReports.has(file) && !controlInputs.has(file) && !authorizedDeletions.has(file));
-  assert.equal(allowed.size,127); // 94 through U4-1c-PROTECT + the 4 U4-2 workspace paths + the 1 U4-2-FIX P1 rehearsal script + the P2 shared catalog validators + the P2 no-DB test + the P3 mapping parser (allowed edit) + the P3 no-DB import test + the P4 no-DB test + the P4 harness + the P5 no-DB screen test + the P5 round-3 settings split + the P3S seed-migration no-DB test + the P5S server-whitelist no-DB test + the U4-3C workspace writer + the U4-3C no-DB test + the U4-3C rehearsal + the 3 U4-3C widened mount/handler paths (via the ...newFiles spread + the U4-3C block above)
+  assert.equal(allowed.size,135); // 127 through U4-3C widened mounts + the 8 U4-3C2 console paths (view + helper + 5 tabs + no-DB test, block above)
   for (const file of changed) assert.ok(allowed.has(file),`Unapproved write: ${file}`);
   // PROTECT justification: src/server/routes/documents.ts is an EXISTING owner
   // (U4-1c), not a new file; the cohesive safety boundary (requirement anchor +
@@ -583,4 +598,36 @@ test('G2 OBS-3: adminProvisioning authority captures stay inside configurationTr
   for (const local of captures)
     assert.ok(sites.some(site => local.index!>site.start && local.index!<site.end),
       `adminProvisioning pre-lock authority capture at offset ${local.index} outside configurationTransaction`);
+});
+
+// TASK-PROTO-U4-3C unit (c2) — enumerated UI-purity pins (no server change):
+// the consultant console is composition over c1 + pre-existing routes, so it
+// must add zero transaction sites, zero audit writes and zero RLS-adjacent
+// imports. Any future server write from this surface fails these pins.
+test('U4-3C2 UI-only: consultant console adds no server transaction sites', () => {
+  const uiFiles = [
+    'src/views/ConsultantConsoleView.tsx',
+    'src/components/consultant/consultantConsole.ts',
+    'src/components/consultant/ConsultantServicesTab.tsx',
+    'src/components/consultant/ConsultantMatchingTab.tsx',
+    'src/components/consultant/ConsultantScopeTab.tsx',
+    'src/components/consultant/ConsultantMasksTab.tsx',
+    'src/components/consultant/ConsultantStaffTab.tsx',
+  ];
+  for (const file of uiFiles) {
+    const source = readFileSync(file, 'utf8');
+    assert.doesNotMatch(source, /\bdomainTransaction\s*\(/, `${file}: no transaction boundary`);
+    assert.doesNotMatch(source, /\brecordAuditLog\s*\(/, `${file}: no audit write`);
+    assert.doesNotMatch(source, /from '.*\.\.\/\.\.\/server\//, `${file}: no server import`);
+    assert.doesNotMatch(source, /from '.*\.\.\/\.\.\/db\//, `${file}: no db import`);
+  }
+});
+
+test('U4-3C2 UI-only: c1 server substrate untouched (5 workspace + 1 approve boundaries)', () => {
+  const workspace = readFileSync(path.join(root, 'routes/workspace.ts'), 'utf8');
+  assert.equal((mask(workspace).match(/\bdomainTransaction\s*\(/g) ?? []).length, 5,
+    'workspace.ts keeps its 5 c1 boundaries');
+  const provisioning = readFileSync(path.join(root, 'routes/adminProvisioning.ts'), 'utf8');
+  assert.equal((mask(provisioning).match(/\bdomainTransaction\s*\(/g) ?? []).length, 1,
+    'adminProvisioning.ts keeps its 1 shifted approve boundary');
 });

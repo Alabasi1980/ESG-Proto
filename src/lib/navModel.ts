@@ -88,7 +88,9 @@ const LABEL_OVERRIDES: Partial<Record<NavContext, Partial<Record<PageId, PageLab
   // services workspace, so the P label follows the service identity. W/C keep
   // the GRI catalogue page and its label untouched.
   platform: { 'standards': { ar: 'الخدمات', en: 'Services' } },
-  consultant: { 'initiatives': { ar: 'المبادرات المسندة', en: 'Assigned Initiatives' } },
+  consultant: {
+    'initiatives': { ar: 'المبادرات المسندة', en: 'Assigned Initiatives' },
+  },
   client: { 'initiatives': { ar: 'المبادرات المسندة', en: 'Assigned Initiatives' } },
   employee: { 'gap-analysis': { ar: 'إفصاحات قسمي', en: 'My department disclosures' } },
 };

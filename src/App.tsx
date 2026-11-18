@@ -12,6 +12,7 @@ import { ServicesView } from './views/ServicesView.tsx';
 import { GapAnalysisView } from './views/GapAnalysisView.tsx';
 import { EmployeeServicesView } from './views/EmployeeServicesView.tsx';
 import { ClientConsoleView } from './views/ClientConsoleView.tsx';
+import { ConsultantConsoleView } from './views/ConsultantConsoleView.tsx';
 import { ActionsView } from './views/ActionsView.tsx';
 import { InitiativesView } from './views/InitiativesView.tsx';
 import { EsgProfileView } from './views/EsgProfileView.tsx';
@@ -272,8 +273,11 @@ const MainApp: React.FC = () => {
         // workspace (own-dept services → items + documents + initiatives).
         // TASK-PROTO-U4-3 unit (b): the client_admin landing mounts the client
         // console (linked-services read + preliminary confirm + staff fill).
-        // No nav-matrix change: the page id and its labels are untouched.
-        return user?.role === 'employee' ? <EmployeeServicesView /> : user?.role === 'client_admin' ? <ClientConsoleView /> : <GapAnalysisView setActiveTab={setActiveTab} />;
+        // TASK-PROTO-U4-3 unit (c2): the consultant (W, bound workspace)
+        // landing mounts the consultant application console (link + depts +
+        // matching + N/A + masks + staff completion/delivery). No nav-matrix
+        // change: the page id and the P/E branches are untouched.
+        return user?.role === 'employee' ? <EmployeeServicesView /> : user?.role === 'client_admin' ? <ClientConsoleView /> : context === 'consultant' ? <ConsultantConsoleView /> : <GapAnalysisView setActiveTab={setActiveTab} />;
       case 'actions':
         return <ActionsView />;
       case 'initiatives':

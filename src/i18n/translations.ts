@@ -886,6 +886,125 @@ export interface Translations {
     confirmDiscard: string;
   };
 
+  consultantConsole: {
+    title: string;
+    subtitle: string;
+    boundTenant: string;
+    tabServices: string;
+    tabMatching: string;
+    tabScope: string;
+    tabMasks: string;
+    tabStaff: string;
+    svcLinkedTitle: string;
+    svcCatalogTitle: string;
+    svcSearchPh: string;
+    svcLink: string;
+    svcLinking: string;
+    svcLinkedEmpty: string;
+    svcCatalogEmpty: string;
+    svcUnlink: string;
+    svcUnlinkConfirm: string;
+    svcUnlinkCancel: string;
+    svcNoCatalog: string;
+    svcParticipatingTitle: string;
+    svcParticipatingHint: string;
+    svcHasWork: string;
+    svcSaveParticipating: string;
+    svcSaving: string;
+    svcParticipatingSaved: string;
+    emptySearch: string;
+    matchTitle: string;
+    matchHint: string;
+    matchSuggestNote: string;
+    matchUnmatchedTitle: string;
+    matchUnmatchedHint: string;
+    matchBlocking: string;
+    matchOverrideLabel: string;
+    matchUnmappedLabel: string;
+    matchSave: string;
+    matchSaving: string;
+    matchSaved: string;
+    matchEmpty: string;
+    matchSvcCode: string;
+    matchSvcDeptCode: string;
+    scopeTitle: string;
+    scopeHint: string;
+    scopeItem: string;
+    scopeDisclosure: string;
+    scopeItemPh: string;
+    scopeDisclosurePh: string;
+    scopeDeptPh: string;
+    naReasonLabel: string;
+    justificationLabel: string;
+    justificationPh: string;
+    setNa: string;
+    settingNa: string;
+    liftTitle: string;
+    liftHint: string;
+    liftReasonLabel: string;
+    liftReasonPh: string;
+    liftNa: string;
+    liftingNa: string;
+    naStateTitle: string;
+    naEmpty: string;
+    aggregatesNote: string;
+    naDone: string;
+    liftDone: string;
+    reasonRequired: string;
+    attachmentNote: string;
+    masksTitle: string;
+    masksHint: string;
+    masksSave: string;
+    masksSaving: string;
+    masksSaved: string;
+    masksNewBadge: string;
+    masksFailClosed: string;
+    masksDefaultVisible: string;
+    staffTitle: string;
+    staffHint: string;
+    staffSearchPh: string;
+    staffEmpty: string;
+    approveButton: string;
+    approving: string;
+    approveConfirm: string;
+    rejectButton: string;
+    rejecting: string;
+    rejectReasonPh: string;
+    rejectDone: string;
+    approveDone: string;
+    otpTitle: string;
+    otpWarning: string;
+    otpOnceNote: string;
+    copyButton: string;
+    copied: string;
+    acknowledgeButton: string;
+    deliveryTitle: string;
+    deliverReveal: string;
+    delivering: string;
+    revealedNote: string;
+    ackedNote: string;
+    emailTry: string;
+    emailUnavailableNote: string;
+    completePwTitle: string;
+    completePwHint: string;
+    tempPasswordPh: string;
+    setTempButton: string;
+    settingTemp: string;
+    mustChangeNote: string;
+    completedNote: string;
+    pendingPwEmpty: string;
+    loadFailed: string;
+    actionFailed: string;
+    frozenBanner: string;
+    suspendedBanner: string;
+    offlineNote: string;
+    unsavedTitle: string;
+    unsavedChanges: string;
+    confirmDiscard: string;
+    modeMismatch: string;
+    boundOnlyNote: string;
+  };
+
   taxonomy: {
     manageTitle: string;
     manageSubtitle: string;
@@ -1938,6 +2057,125 @@ export const translations: Record<Language, Translations> = {
       unsavedTitle: 'Leave without saving?',
       unsavedChanges: 'Your draft rows are not saved yet.',
       confirmDiscard: 'Discard changes',
+    },
+
+    consultantConsole: {
+      title: 'Client application',
+      subtitle: 'Link services, match departments, scope N/A, control client-visible columns, and complete staff accounts — this bound workspace only.',
+      boundTenant: 'Bound tenant',
+      tabServices: 'Services',
+      tabMatching: 'Dept matching',
+      tabScope: 'N/A scope',
+      tabMasks: 'Client-visible columns',
+      tabStaff: 'Staff completion',
+      svcLinkedTitle: 'Linked services',
+      svcCatalogTitle: 'Link a new service',
+      svcSearchPh: 'Name or code',
+      svcLink: 'Link service',
+      svcLinking: 'Linking…',
+      svcLinkedEmpty: 'No services linked yet',
+      svcCatalogEmpty: 'Every catalogue service is already linked.',
+      svcUnlink: 'Unlink',
+      svcUnlinkConfirm: 'Confirm unlink',
+      svcUnlinkCancel: 'Keep',
+      svcNoCatalog: 'No catalogue services available.',
+      svcParticipatingTitle: 'Participating departments',
+      svcParticipatingHint: 'Choose the tenant departments that take part in this application. Removing a department with existing work is refused.',
+      svcHasWork: 'has work',
+      svcSaveParticipating: 'Save participating set',
+      svcSaving: 'Saving…',
+      svcParticipatingSaved: 'Participating departments saved.',
+      emptySearch: 'No matching entries.',
+      matchTitle: 'Department matching',
+      matchHint: 'Service department codes are auto-matched to tenant departments by exact code. Override any row, then save the table.',
+      matchSuggestNote: 'Suggested by code equality — review, override if needed, then save.',
+      matchUnmatchedTitle: 'Unmatched service codes',
+      matchUnmatchedHint: 'These service department codes have no tenant department yet. Map every row before assignment-affecting actions.',
+      matchBlocking: 'Matching incomplete: unmatched codes block assignment-affecting actions (server: match.incomplete).',
+      matchOverrideLabel: 'Tenant department',
+      matchUnmappedLabel: 'Unmapped…',
+      matchSave: 'Save matching',
+      matchSaving: 'Saving…',
+      matchSaved: 'Department matching saved.',
+      matchEmpty: 'No service department codes referenced yet. Queue rows of linked services will appear here.',
+      matchSvcCode: 'Service code',
+      matchSvcDeptCode: 'Service dept code',
+      scopeTitle: 'Per-scope N/A',
+      scopeHint: 'Mark an item or a whole disclosure not-applicable. Reason is mandatory from the closed list. W-only set and lift.',
+      scopeItem: 'Item scope',
+      scopeDisclosure: 'Disclosure scope',
+      scopeItemPh: 'Item…',
+      scopeDisclosurePh: 'Disclosure…',
+      scopeDeptPh: 'Department…',
+      naReasonLabel: 'N/A reason (required)',
+      justificationLabel: 'Justification',
+      justificationPh: 'Why is this scope not applicable?…',
+      setNa: 'Set N/A',
+      settingNa: 'Setting…',
+      liftTitle: 'Lift N/A',
+      liftHint: 'Lifting returns the scope to unevaluated (never direct-to-scored). Reason is mandatory.',
+      liftReasonLabel: 'Lift reason (required)',
+      liftReasonPh: 'Why is the N/A lifted?…',
+      liftNa: 'Lift N/A',
+      liftingNa: 'Lifting…',
+      naStateTitle: 'Current N/A state',
+      naEmpty: 'No N/A evaluations in this tenant.',
+      aggregatesNote: 'N/A scopes are excluded from aggregates — never counted, never zero-filled.',
+      naDone: 'N/A scope set.',
+      liftDone: 'N/A scope lifted (unevaluated).',
+      reasonRequired: 'A reason from the closed list is required.',
+      attachmentNote: 'Items requiring an attachment refuse the shortcut (409 assignment.na_attachment_required) — file N/A through the evaluation workflow with the attachment.',
+      masksTitle: 'Client-visible columns',
+      masksHint: 'Choose which item columns the client sees for each linked service. Writes only the mask column.',
+      masksSave: 'Save mask',
+      masksSaving: 'Saving…',
+      masksSaved: 'Client-visible columns saved.',
+      masksNewBadge: 'New U4-3',
+      masksFailClosed: 'Fail-closed: a malformed or unknown stored mask hides every maskable column. Unknown keys are refused (400).',
+      masksDefaultVisible: 'New operational columns (documents, initiatives, na_status) stay visible to the client unless hidden here.',
+      staffTitle: 'Staff completion & delivery',
+      staffHint: 'Approve submitted lists (accounts provision, OTP shown once), reject with reason, complete passwords, and deliver credentials by one-time reveal.',
+      staffSearchPh: 'Search by email or name',
+      staffEmpty: 'No staff lists for this tenant yet.',
+      approveButton: 'Approve & provision',
+      approving: 'Provisioning…',
+      approveConfirm: 'Provision accounts? OTPs show ONCE in the next panel.',
+      rejectButton: 'Reject',
+      rejecting: 'Rejecting…',
+      rejectReasonPh: 'Rejection reason (required)…',
+      rejectDone: 'Staff list rejected.',
+      approveDone: 'Accounts provisioned — copy the one-time passwords now.',
+      otpTitle: 'One-time passwords — shown ONCE (copy now, never stored)',
+      otpWarning: 'Passwords are bcrypt-hashed; plaintext never stored or logged. Accounts start with forced password change.',
+      otpOnceNote: 'This panel is the only place these passwords ever appear. Acknowledge to clear them from memory.',
+      copyButton: 'Copy',
+      copied: 'Copied',
+      acknowledgeButton: 'Acknowledge & clear',
+      deliveryTitle: 'Credential delivery (reveal-only)',
+      deliverReveal: 'Mark revealed',
+      delivering: 'Delivering…',
+      revealedNote: 'Revealed to consultant. Relay the credentials to the client out of band, then acknowledge.',
+      ackedNote: 'Delivery acknowledged — credentials can no longer be displayed.',
+      emailTry: 'Try email channel',
+      emailUnavailableNote: 'Email delivery is unavailable (reveal-only mode, server: delivery.email_unavailable). No email form is built.',
+      completePwTitle: 'W-assisted password completion',
+      completePwHint: 'Set a temporary password for a pending account. Forced change stays on until the owner rotates it.',
+      tempPasswordPh: 'Temporary password…',
+      setTempButton: 'Set temporary',
+      settingTemp: 'Setting…',
+      mustChangeNote: 'must_change_password stays true — the account cannot act before the forced rotation.',
+      completedNote: 'Temporary password set (hash-only storage).',
+      pendingPwEmpty: 'No pending-password accounts. Provisioned accounts appear here while must-change is on.',
+      loadFailed: 'The consultant console could not be loaded.',
+      actionFailed: 'The action could not be completed.',
+      frozenBanner: 'Read-only — finally approved (GE-final snapshot). Application writes are refused.',
+      suspendedBanner: 'This tenant is suspended. Application writes are refused (403 tenant.suspended).',
+      offlineNote: 'You are offline. Changes cannot be sent until the connection returns.',
+      unsavedTitle: 'Leave without saving?',
+      unsavedChanges: 'Your draft edits are not saved yet.',
+      confirmDiscard: 'Discard changes',
+      modeMismatch: 'Consultant workspace only. Enter the client workspace to use this console.',
+      boundOnlyNote: 'Bound to this workspace tenant — no tenant picker, no cross-tenant writes.',
     },
 
     taxonomy: {
@@ -3056,6 +3294,125 @@ export const translations: Record<Language, Translations> = {
       unsavedTitle: 'المغادرة دون حفظ؟',
       unsavedChanges: 'صفوف مسودتك غير محفوظة بعد.',
       confirmDiscard: 'تجاهل التغييرات',
+    },
+
+    consultantConsole: {
+      title: 'تطبيق العميل',
+      subtitle: 'اربط الخدمات، وطابق الأقسام، وحدد نطاق N/A، وتحكم بالأعمدة المرئية للعميل، واستكمل حسابات الموظفين — مساحة العمل المرتبطة هذه فقط.',
+      boundTenant: 'المستأجر المرتبط',
+      tabServices: 'الخدمات',
+      tabMatching: 'مطابقة الأقسام',
+      tabScope: 'نطاق N/A',
+      tabMasks: 'الأعمدة المرئية للعميل',
+      tabStaff: 'استكمال الموظفين',
+      svcLinkedTitle: 'الخدمات المرتبطة',
+      svcCatalogTitle: 'اربط خدمة جديدة',
+      svcSearchPh: 'الاسم أو الرمز',
+      svcLink: 'ربط الخدمة',
+      svcLinking: 'جارٍ الربط…',
+      svcLinkedEmpty: 'لا توجد خدمات مرتبطة بعد',
+      svcCatalogEmpty: 'كل خدمات الكتالوج مرتبطة مسبقاً.',
+      svcUnlink: 'فك الارتباط',
+      svcUnlinkConfirm: 'تأكيد الفك',
+      svcUnlinkCancel: 'إبقاء',
+      svcNoCatalog: 'لا توجد خدمات كتالوج متاحة.',
+      svcParticipatingTitle: 'الأقسام المشاركة',
+      svcParticipatingHint: 'اختر أقسام المستأجر المشاركة في هذا التطبيق. إزالة قسم له عمل قائم مرفوضة.',
+      svcHasWork: 'له عمل',
+      svcSaveParticipating: 'حفظ المجموعة المشاركة',
+      svcSaving: 'جارٍ الحفظ…',
+      svcParticipatingSaved: 'حُفظت الأقسام المشاركة.',
+      emptySearch: 'لا توجد مدخلات مطابقة.',
+      matchTitle: 'مطابقة الأقسام',
+      matchHint: 'تُطابق رموز أقسام الخدمة مع أقسام المستأجر تلقائياً بالمساواة التامة للرمز. تجاوز أي صف ثم احفظ الجدول.',
+      matchSuggestNote: 'مقترح بمساواة الرمز — راجع وتجاوز عند الحاجة ثم احفظ.',
+      matchUnmatchedTitle: 'رموز خدمة غير مطابقة',
+      matchUnmatchedHint: 'رموز أقسام الخدمة هذه بلا قسم مستأجر بعد. طابق كل صف قبل الإجراءات المؤثرة على الإسناد.',
+      matchBlocking: 'المطابقة غير مكتملة: الرموز غير المطابقة تحجب الإجراءات المؤثرة على الإسناد (الخادم: match.incomplete).',
+      matchOverrideLabel: 'قسم المستأجر',
+      matchUnmappedLabel: 'بلا مطابقة…',
+      matchSave: 'حفظ المطابقة',
+      matchSaving: 'جارٍ الحفظ…',
+      matchSaved: 'حُفظت مطابقة الأقسام.',
+      matchEmpty: 'لا توجد رموز أقسام خدمة مشار إليها بعد. ستظهر هنا صفوف قائمة الانتظار للخدمات المرتبطة.',
+      matchSvcCode: 'رمز الخدمة',
+      matchSvcDeptCode: 'رمز قسم الخدمة',
+      scopeTitle: 'N/A لكل نطاق',
+      scopeHint: 'ضع علامة عدم انطباق على بند أو على إفصاح كامل. السبب إجباري من القائمة المغلقة. الضبط والرفع للاستشاري فقط.',
+      scopeItem: 'نطاق البند',
+      scopeDisclosure: 'نطاق الإفصاح',
+      scopeItemPh: 'البند…',
+      scopeDisclosurePh: 'الإفصاح…',
+      scopeDeptPh: 'القسم…',
+      naReasonLabel: 'سبب N/A (إجباري)',
+      justificationLabel: 'المبرر',
+      justificationPh: 'لماذا لا ينطبق هذا النطاق؟…',
+      setNa: 'ضبط N/A',
+      settingNa: 'جارٍ الضبط…',
+      liftTitle: 'رفع N/A',
+      liftHint: 'الرفع يعيد النطاق إلى غير مُقيَّم (وليس إلى درجة مباشرة أبداً). السبب إجباري.',
+      liftReasonLabel: 'سبب الرفع (إجباري)',
+      liftReasonPh: 'لماذا رُفع عدم الانطباق؟…',
+      liftNa: 'رفع N/A',
+      liftingNa: 'جارٍ الرفع…',
+      naStateTitle: 'حالة N/A الحالية',
+      naEmpty: 'لا توجد تقييمات N/A في هذا المستأجر.',
+      aggregatesNote: 'نطاقات N/A مستبعدة من الإجماليات — لا تُحتسب ولا تُصفَّر أبداً.',
+      naDone: 'تم ضبط نطاق N/A.',
+      liftDone: 'تم رفع نطاق N/A (عاد غير مُقيَّم).',
+      reasonRequired: 'السبب من القائمة المغلقة إجباري.',
+      attachmentNote: 'البنود التي تتطلب مرفقاً ترفض الاختصار (409 assignment.na_attachment_required) — سجّل N/A عبر مسار التقييم مع المرفق.',
+      masksTitle: 'الأعمدة المرئية للعميل',
+      masksHint: 'اختر أعمدة البنود التي يراها العميل لكل خدمة مرتبطة. الكتابة تطال عمود القناع فقط.',
+      masksSave: 'حفظ القناع',
+      masksSaving: 'جارٍ الحفظ…',
+      masksSaved: 'حُفظت الأعمدة المرئية للعميل.',
+      masksNewBadge: 'جديد U4-3',
+      masksFailClosed: 'إغلاق فاشل آمن: القناع المخزن التالف أو المجهول يحجب كل الأعمدة القابلة للقناع. المفاتيح المجهولة مرفوضة (400).',
+      masksDefaultVisible: 'الأعمدة التشغيلية الجديدة (documents, initiatives, na_status) تبقى مرئية للعميل ما لم تُخفَ هنا.',
+      staffTitle: 'استكمال الموظفين والتسليم',
+      staffHint: 'اعتمد القوائم المرسلة (تُنشأ الحسابات وتظهر OTP مرة واحدة)، وارفض بسبب، وأكمل كلمات المرور، وسلّم بيانات الاعتماد بالكشف لمرة واحدة.',
+      staffSearchPh: 'ابحث بالبريد أو الاسم',
+      staffEmpty: 'لا توجد قوائم موظفين لهذا المستأجر بعد.',
+      approveButton: 'اعتماد وتوفير',
+      approving: 'جارٍ التوفير…',
+      approveConfirm: 'توفير الحسابات؟ ستظهر OTP مرة واحدة في اللوحة التالية.',
+      rejectButton: 'رفض',
+      rejecting: 'جارٍ الرفض…',
+      rejectReasonPh: 'سبب الرفض (إجباري)…',
+      rejectDone: 'رُفضت قائمة الموظفين.',
+      approveDone: 'تم توفير الحسابات — انسخ كلمات المرور لمرة واحدة الآن.',
+      otpTitle: 'كلمات مرور لمرة واحدة — تُعرض مرة واحدة (انسخ الآن، لا تُخزن أبداً)',
+      otpWarning: 'كلمات المرور مُجزأة بـ bcrypt؛ النص الصريح لا يُخزن ولا يُسجل. الحسابات تبدأ بتغيير إجباري لكلمة المرور.',
+      otpOnceNote: 'هذه اللوحة هي المكان الوحيد الذي تظهر فيه كلمات المرور. أقرّ لمسحها من الذاكرة.',
+      copyButton: 'نسخ',
+      copied: 'نُسخ',
+      acknowledgeButton: 'إقرار ومسح',
+      deliveryTitle: 'تسليم بيانات الاعتماد (كشف فقط)',
+      deliverReveal: 'تعليم كمكشوف',
+      delivering: 'جارٍ التسليم…',
+      revealedNote: 'كُشف للاستشاري. بلّغ بيانات الاعتماد للعميل خارج النظام ثم أقرّ.',
+      ackedNote: 'تم إقرار التسليم — لم يعد بالإمكان عرض بيانات الاعتماد.',
+      emailTry: 'تجربة قناة البريد',
+      emailUnavailableNote: 'تسليم البريد غير متاح (وضع الكشف فقط، الخادم: delivery.email_unavailable). لا يوجد نموذج بريد مبني.',
+      completePwTitle: 'إكمال كلمة المرور بمساعدة W',
+      completePwHint: 'اضبط كلمة مرور مؤقتة لحساب معلق. يبقى التغيير الإجباري مفعّلاً حتى يديرها مالكها.',
+      tempPasswordPh: 'كلمة مرور مؤقتة…',
+      setTempButton: 'ضبط المؤقتة',
+      settingTemp: 'جارٍ الضبط…',
+      mustChangeNote: 'يبقى must_change_password مفعّلاً — لا يعمل الحساب قبل التدوير الإجباري.',
+      completedNote: 'ضُبطت كلمة المرور المؤقتة (تخزين مجزأ فقط).',
+      pendingPwEmpty: 'لا توجد حسابات معلقة لكلمة المرور. تظهر هنا الحسابات الموفَّرة أثناء تفعيل التغيير الإجباري.',
+      loadFailed: 'تعذّر تحميل وحدة تحكم الاستشاري.',
+      actionFailed: 'تعذّر إتمام الإجراء.',
+      frozenBanner: 'للقراءة فقط — معتمد نهائياً (لقطة GE النهائية). كتابات التطبيق مرفوضة.',
+      suspendedBanner: 'هذا المستأجر موقوف. كتابات التطبيق مرفوضة (403 tenant.suspended).',
+      offlineNote: 'أنت غير متصل. لا يمكن إرسال التغييرات حتى عودة الاتصال.',
+      unsavedTitle: 'المغادرة دون حفظ؟',
+      unsavedChanges: 'تعديلات مسودتك غير محفوظة بعد.',
+      confirmDiscard: 'تجاهل التغييرات',
+      modeMismatch: 'وحدة تحكم الاستشاري فقط. ادخل مساحة عمل العميل لاستخدام هذه الوحدة.',
+      boundOnlyNote: 'مرتبط بمستأجر مساحة العمل هذه — لا منتقي مستأجرين ولا كتابات عبر المستأجرين.',
     },
 
     taxonomy: {

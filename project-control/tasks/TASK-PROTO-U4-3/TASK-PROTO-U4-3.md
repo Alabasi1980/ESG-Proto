@@ -66,6 +66,11 @@ Forbidden: UI · FIX behavior change · live/shared DB · secrets · commits.
 Migration: construct + rehearse on scratch ONLY (no live apply — separate owner execution approval later, FIX pattern).
 
 ## U4-3c1 Result: ACCEPTED 2026-11-18 (3 rounds, cap respected)
+Evidence: 10/10 new tests · 481/482 (sole red = approved W-P5-01) · rehearsal green (forward/idempotent/rollback, zero loss) · Shield PASS (F1 fixed r3, F2 documented) · Auditor CONDITIONAL satisfied · QA PARTIAL zero-fail (C7 → c2 live proof) · Post-Execution PASS · no live shared mutation. Full detail: AUD-0050 + activity log 2026-11-18.
+
+## U4-3c2 Pre-Execution Gate Result (2026-11-18)
+Smallest safe unit PASS (consultant console UI only; consumes c1 APIs — no new endpoints) · one objective PASS · no secrets PASS · rollback PASS (code revert) · acceptance testable PASS (W-flows live on disposable + QA + design review).
+Gate Status: PASS → delegate (c2) (ui-designer; SecurityAgent spot-check on W delivery UI + QA live + design review).
 Evidence: 10/10 new tests · 481/482 (sole red = approved W-P5-01) · lint/build clean · rehearsal green (forward/idempotent/link/participation/matching/approve/deliver/na-lift/rollback, zero loss) · Shield PASS (F1 fixed r3: frozen+suspended guards on deliver; F2 email-reserve documented as intentional until G1-i; suspension-on-approve: no pattern anywhere → no invented rule, recorded observation) · Auditor CONDITIONAL satisfied (Shield re-audit done here; QA run done; no live contact evidenced) · QA PARTIAL zero-fail (C7 live-server paths → c2 live proof; report filed by Tera — agent tool gap).
 F2 recorded: RLS-deliver email value stays reserved until the G1-i email table lands; handler 400 remains the gate.
 Suspended-tenant approve: pre-existing system-wide absence (no provisioning path ever enforced it) — NOT a c1 regression; no invented rule.
