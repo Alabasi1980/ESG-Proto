@@ -33,6 +33,8 @@ PATCH/DELETE reopen+archive paths (answers→`reopened`, `REOPEN_ITEM_SCOPE`), `
 
 ### P5 — Services screen correction
 Tabs `overview·content·settings·import` (Rules deleted, JSON editor deleted, no client/department controls, bulk-edit bar, history drawer, GROUP/direct rendering, import mapping UX). STYLE_CONTRACT binding; design-reviewer + QA pass. E-1…E-9.
+**Result 2026-11-17: ACCEPTED with approved deviation W-P5-01.** 3 rounds (build/pins/notes+split — cap respected, no round 4). Evidence: 13/13 new tests · 436/437 (sole red = G1 size-bound on view files) · lint/build clean · zero literal colours · design-reviewer APPROVE WITH NOTES (NOTE-1 subtitle wording + NOTE-2 orphan keys — both fixed r3, Tera-verified by diff+suite) · QA functional PASS on all 13 pins (report filed by Tera — agent tool gap; live E-flows NOT VERIFIED-live → closure preview).
+Deviation W-P5-01 APPROVED (Tera, Delivery Stop Rule — quality/format, no operational risk): `ServicesView.tsx` 875 + `ServiceContentPanel.tsx` 842 vs 500 cap — pure-move limit reached under frozen pins; cohesive single workspace; tracked as ISS-012 follow-up (split when pins allow, suite-green proof). Functional acceptance unaffected (behavioral pins all green).
 
 ## Global invariants (every phase)
 INV-DEF-APP (no client writes from Services) · INV-SINGLE-DEPT · INV-CODE-IMMUTABLE · INV-FREEZE · INV-APPROVED-IMMUNE · INV-HISTORY · INV-IMPORT-SAFE · INV-TENANT-ISOLATION · INV-AUDIT. No secrets in code/logs/reports. No push. No live DB writes without backup + separate explicit approval.

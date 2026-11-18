@@ -53,4 +53,4 @@ ISS-004 (منطق/صلاحيات) · ISS-006 (بيانات/جلسة) · ISS-010 
 
 ## TASK-PROTO-U4-2 — شاشة الخدمات (P)
 ## TASK-PROTO-U4-2-FIX — تصحيح شاشة الخدمات (OD-13)
-- Status: **P1 ACCEPTED · P2 ACCEPTED (2 follow-ups → P4)** — spec APPROVED_FOR_GATE · Gate PASS · defaults approved 2026-11-17 · Build Mode «ابدأ» · 398/398 · Shield PASS/PASS · QA PASS/PARTIAL · live shared mutation: none · لا نشر
+- Status: **P1 ACCEPTED · P2 ACCEPTED · P3 ACCEPTED · P4 ACCEPTED · P5 ACCEPTED (deviation W-P5-01 + ISS-012)** — spec APPROVED_FOR_GATE · Gate PASS · defaults approved 2026-11-17 · Build Mode «ابدأ» · 436/437 (functional green) · Shield PASS ×4 · QA PASS/PARTIAL/PARTIAL/PASS/PASS-functional · live shared mutation: none · لا نشر · **Next: closure isolated preview → program closure**
